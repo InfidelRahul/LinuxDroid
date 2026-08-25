@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LinuxDroid</string>
+    <string name="session_notification_channel_id">linuxdroid_session</string>
+    <string name="session_notification_channel_name">Linux Session</string>
+    <string name="session_notification_channel_desc">Shows Linux session status</string>
+    <string name="notification_session_running">Linux session running</string>
+    <string name="notification_session_starting">Starting Linux session…</string>
+    <string name="notification_session_stopping">Stopping Linux session…</string>
+    <string name="action_stop_session">Stop</string>
+</resources>
