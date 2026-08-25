@@ -24,7 +24,7 @@ fun AboutScreen() {
         ) {
             Text("LinuxDroid", style = MaterialTheme.typography.headlineMedium)
             Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyLarge)
-            Divider()
+            HorizontalDivider()
             AboutItem("Architecture", "Rootless Linux userspace on Android")
             AboutItem("Runtime", "proot (ptrace-based rootless chroot)")
             AboutItem("Initial Distribution", "Debian arm64")
@@ -32,7 +32,7 @@ fun AboutScreen() {
             AboutItem("Root Required", "No")
             AboutItem("VM Required", "No")
             AboutItem("Custom Kernel Required", "No")
-            Divider()
+            HorizontalDivider()
             Text(
                 "LinuxDroid provides a persistent, rootless Linux userspace running directly on Android hardware.",
                 style = MaterialTheme.typography.bodyMedium,
