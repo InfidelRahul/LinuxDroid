@@ -1,8 +1,19 @@
 package com.linuxdroid.core.process
 
 import com.linuxdroid.core.model.*
-import com.linuxdroid.core.runtime.ProcessStateEvent
 import kotlinx.coroutines.flow.Flow
+
+/**
+ * Event emitted when a managed process changes state.
+ * Defined here in core-process to avoid circular dependency with core-runtime.
+ */
+sealed class ProcessStateEvent {
+    abstract val handleId: String
+    data class Started(override val handleId: String, val pid: Int) : ProcessStateEvent()
+    data class Exited(override val handleId: String, val exitCode: Int) : ProcessStateEvent()
+    data class Signaled(override val handleId: String, val signal: Int) : ProcessStateEvent()
+    data class Failed(override val handleId: String, val error: String) : ProcessStateEvent()
+}
 
 /**
  * ProcessManager tracks and manages all Linux processes spawned by LinuxDroid.
