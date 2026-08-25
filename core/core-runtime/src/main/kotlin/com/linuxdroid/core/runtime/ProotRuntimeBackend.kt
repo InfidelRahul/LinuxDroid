@@ -133,7 +133,7 @@ class ProotRuntimeBackend(
             .directory(rootfs)
             .redirectErrorStream(false)
 
-        prootCmd.environmentVariables().forEach { (k, v) ->
+        buildEnvironmentVariables(extraEnv).forEach { (k, v) ->
             processBuilder.environment()[k] = v
         }
 
@@ -311,13 +311,15 @@ class ProotRuntimeBackend(
         }
     }
 
-    private fun List<String>.environmentVariables(): Map<String, String> = buildMap {
+    private fun buildEnvironmentVariables(extraEnv: Map<String, String>): Map<String, String> = buildMap {
         put("HOME", "/root")
         put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
         put("TERM", "xterm-256color")
         put("LANG", "C.UTF-8")
         put("USER", "root")
         put("LOGNAME", "root")
+        // User-provided overrides (can override defaults)
+        putAll(extraEnv)
     }
 }
 

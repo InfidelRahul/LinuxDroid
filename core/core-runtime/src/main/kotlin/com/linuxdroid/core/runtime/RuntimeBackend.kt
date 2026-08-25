@@ -3,6 +3,8 @@ package com.linuxdroid.core.runtime
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.ProcessHandle
 import com.linuxdroid.core.model.ProcessResult
+import com.linuxdroid.core.model.ProcessStateEvent
+import com.linuxdroid.core.model.SessionId
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -68,7 +70,7 @@ interface RuntimeBackend {
         command: List<String>,
         workingDirectory: String = "/",
         extraEnv: Map<String, String> = emptyMap(),
-        sessionId: com.linuxdroid.core.model.SessionId? = null,
+        sessionId: SessionId? = null,
     ): ProcessHandle
 
     /**
@@ -107,16 +109,4 @@ interface RuntimeBackend {
      * A Flow that emits events when a managed process changes state.
      */
     val processEvents: Flow<ProcessStateEvent>
-}
-
-/**
- * An event emitted when a managed process changes state.
- */
-sealed class ProcessStateEvent {
-    abstract val handleId: String
-
-    data class Started(override val handleId: String, val pid: Int) : ProcessStateEvent()
-    data class Exited(override val handleId: String, val exitCode: Int) : ProcessStateEvent()
-    data class Signaled(override val handleId: String, val signal: Int) : ProcessStateEvent()
-    data class Failed(override val handleId: String, val error: String) : ProcessStateEvent()
 }
