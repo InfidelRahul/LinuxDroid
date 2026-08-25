@@ -1,0 +1,29 @@
+# Built by Gradle
+.gradle/
+build/
+
+# Local configuration
+local.properties
+*.keystore
+*.jks
+
+# Android Studio
+.idea/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+
+# Generated files
+app/src/main/assets/proot/
+
+# Sensitive files
+google-services.json
+signing.properties
+
+# Temporary files
+*.log
+*.tmp
+
+# NDK generated
+.cxx/

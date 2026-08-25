@@ -29,7 +29,7 @@ class EnvironmentStateMachineTest {
         )
     }
 
-    // ─── Valid transitions ────────────────────────────────────────────────────────────────
+    // ─── Valid transitions ────────────────────────────────────────────────────
 
     @Test fun `CREATED to INSTALLING is valid`() {
         val env = makeEnvironment(EnvironmentState.CREATED)
@@ -92,7 +92,7 @@ class EnvironmentStateMachineTest {
         assertThat(updated.state).isEqualTo(EnvironmentState.READY)
     }
 
-    // ─── Invalid transitions ──────────────────────────────────────────────────────────
+    // ─── Invalid transitions ──────────────────────────────────────────────────
 
     @Test fun `CREATED to RUNNING is invalid`() {
         val env = makeEnvironment(EnvironmentState.CREATED)
@@ -115,7 +115,7 @@ class EnvironmentStateMachineTest {
         }
     }
 
-    @Test fun `READY to RUNNING is invalid (must go through STARTING)`() {
+    @Test fun `READY to RUNNING is invalid - must go through STARTING`() {
         val env = makeEnvironment(EnvironmentState.READY)
         assertFailsWith<IllegalStateTransitionException> {
             env.withState(EnvironmentState.RUNNING)
@@ -129,7 +129,7 @@ class EnvironmentStateMachineTest {
         }
     }
 
-    // ─── Invariants ────────────────────────────────────────────────────────────────────
+    // ─── Invariants ───────────────────────────────────────────────────────────
 
     @Test fun `EnvironmentId is immutable across state transitions`() {
         val env = makeEnvironment(EnvironmentState.READY)
@@ -160,7 +160,6 @@ class EnvironmentStateMachineTest {
             state = EnvironmentState.FAILED,
             failureMessage = "Old error"
         )
-        // Simulate: FAILED -> RECOVERING -> READY
         val recovering = failedEnv.withState(EnvironmentState.RECOVERING)
         val ready = recovering.withState(EnvironmentState.READY)
         assertThat(ready.failureMessage).isNull()
