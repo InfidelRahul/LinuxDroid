@@ -60,7 +60,7 @@ class ProotRuntimeBackend(
         log.info("proot binary: ${prootBinary.path} (exists=${prootBinary.exists()})")
     }
 
-    override suspend fun initialize(environment: Environment) = withContext(Dispatchers.IO) {
+    override suspend fun initialize(environment: Environment): Unit = withContext(Dispatchers.IO) {
         log.info("Initializing proot runtime for ${environment.id}")
         // Verify rootfs exists — never recreate it here
         val rootfs = storage.rootfsDir(environment.id)
@@ -91,7 +91,7 @@ class ProotRuntimeBackend(
         activeProcesses.entries
             .filter { it.value.environmentId == environment.id }
             .forEach { (handleId, process) ->
-                log.debug("Terminating process $handleId (PID ${process.process?.pid()})")
+                log.debug("Terminating process $handleId (PID ${getProcessPid(process.process)})")
                 try {
                     process.process?.destroyForcibly()
                 } catch (e: Exception) {
@@ -138,7 +138,7 @@ class ProotRuntimeBackend(
         }
 
         val process = processBuilder.start()
-        val pid = try { process.pid().toInt() } catch (_: Exception) { -1 }
+        val pid = getProcessPid(process)
 
         val prootProcess = ProotProcess(
             handleId = handleId,
@@ -218,7 +218,7 @@ class ProotRuntimeBackend(
             sessionId = prootProcess.sessionId,
             command = prootProcess.command,
             workingDirectory = "/",
-            pid = try { process?.pid()?.toInt() ?: -1 } catch (_: Exception) { -1 },
+            pid = getProcessPid(process),
             state = state,
             exitCode = if (state == ProcessState.EXITED) {
                 try { process?.exitValue() } catch (_: Exception) { null }
@@ -333,3 +333,28 @@ private data class ProotProcess(
 /** Extension to get EnvironmentConfiguration.runtimeConfig safely. */
 private val EnvironmentConfiguration.runtimeConfig: RuntimeConfig
     get() = this.runtime
+
+/**
+ * Safely gets the PID of a Java Process using reflection.
+ *
+ * Uses reflection to access the PID field which is stored differently
+ * on Android vs. JVM. Avoids `Process.pid()` which is API 26+/Java 9+
+ * and may not be available in all build environments.
+ */
+private fun getProcessPid(process: Process?): Int {
+    if (process == null) return -1
+    return try {
+        // Java 9+ / Android API 26+: use pid() method
+        val method = process.javaClass.getMethod("pid")
+        (method.invoke(process) as Long).toInt()
+    } catch (_: Exception) {
+        try {
+            // Android internal: UNIXProcess has a 'pid' field
+            val field = process.javaClass.getDeclaredField("pid")
+            field.isAccessible = true
+            field.getInt(process)
+        } catch (_: Exception) {
+            -1
+        }
+    }
+}

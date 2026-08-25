@@ -16,7 +16,7 @@ import com.linuxdroid.core.database.entity.EnvironmentEntity
 @Database(
     entities = [EnvironmentEntity::class],
     version = 1,
-    exportSchema = true,
+    exportSchema = false,
 )
 abstract class LinuxDroidDatabase : RoomDatabase() {
 
@@ -35,7 +35,7 @@ abstract class LinuxDroidDatabase : RoomDatabase() {
                     LinuxDroidDatabase::class.java,
                     DATABASE_NAME,
                 )
-                    .fallbackToDestructiveMigration(from = 1)
+                    .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
             }

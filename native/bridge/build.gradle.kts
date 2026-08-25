@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.linuxdroid.native_bridge"
     compileSdk = libs.versions.compileSdk.get().toInt()
+    ndkVersion = "27.2.12479018"
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
         ndk {
