@@ -1,11 +1,10 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
-    namespace = "com.linuxdroid.core.model"
+    namespace = "com.linuxdroid.linux.bootstrap"
     compileSdk = libs.versions.compileSdk.get().toInt()
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
@@ -18,10 +17,13 @@ android {
 }
 
 dependencies {
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.core)
+    implementation(project(":core:core-model"))
+    implementation(project(":core:core-logging"))
+    implementation(project(":core:core-filesystem"))
+    implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
 }
+

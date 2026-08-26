@@ -65,4 +65,12 @@ object AppModule {
         runtime: RuntimeBackend,
         storageManager: AndroidStorageManager,
     ): DiagnosticsManager = DiagnosticsManager(storage, runtime, storageManager)
+
+    @Provides
+    @Singleton
+    fun provideRootfsBootstrapper(
+        @ApplicationContext context: Context,
+        storage: EnvironmentStorage,
+    ): com.linuxdroid.linux.bootstrap.RootfsBootstrapper =
+        com.linuxdroid.linux.bootstrap.RootfsBootstrapper(context, storage)
 }

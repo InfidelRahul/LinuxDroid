@@ -90,6 +90,9 @@ dependencies {
     // Native bridge
     implementation(project(":native:bridge"))
 
+    // Linux modules
+    implementation(project(":linux:bootstrap"))
+
     // Room - explicitly declared in app so DI module can reference RoomDatabase
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

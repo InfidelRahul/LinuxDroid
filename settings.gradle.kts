@@ -42,5 +42,8 @@ include(":core:core-network")
 include(":core:core-package")
 include(":core:core-diagnostics")
 
+// Linux modules
+include(":linux:bootstrap")
+
 // Native bridge module
 include(":native:bridge")
