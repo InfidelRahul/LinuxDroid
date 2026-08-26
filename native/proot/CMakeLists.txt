@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(proot_runtime VERSION 5.4.0 LANGUAGES C)
+project(proot_runtime VERSION 5.4.0 LANGUAGES C ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -8,19 +8,13 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 if("${ANDROID_ABI}" STREQUAL "arm64-v8a")
     set(LOADER_ARCH_FLAG "-DARCH_ARM64")
     set(LOADER_TARGET_TRIPLE "--target=aarch64-none-linux-android24")
-    set(OBJCOPY_TARGET "elf64-littleaarch64")
-    set(OBJCOPY_ARCH "aarch64")
     set(LOADER_ADDRESS "0x2000000000")
+elseif("${ANDROID_ABI}" STREQUAL "x86_64")
     set(LOADER_ARCH_FLAG "-DARCH_X86_64")
     set(LOADER_TARGET_TRIPLE "--target=x86_64-none-linux-android24")
-    set(OBJCOPY_TARGET "elf64-x86-64")
-    set(OBJCOPY_ARCH "i386:x86-64")
     set(LOADER_ADDRESS "0x600000000000")
 else()
-endif()
-
-if(NOT CMAKE_OBJCOPY OR NOT EXISTS "${CMAKE_OBJCOPY}")
-    set(CMAKE_OBJCOPY "${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objcopy")
+    message(FATAL_ERROR "Unsupported ANDROID_ABI: ${ANDROID_ABI}")
 endif()
 
 # 1. Compile static talloc library
@@ -35,7 +29,6 @@ target_compile_definitions(talloc PRIVATE
 
 # 2. Build standalone loader.elf
 set(LOADER_ELF "${CMAKE_CURRENT_BINARY_DIR}/loader.elf")
-set(LOADER_WRAPPED_O "${CMAKE_CURRENT_BINARY_DIR}/loader-wrapped.o")
 
 add_custom_command(
     OUTPUT ${LOADER_ELF}
@@ -58,19 +51,6 @@ add_custom_command(
             ${CMAKE_CURRENT_SOURCE_DIR}/src/loader/assembly-arm64.h
             ${CMAKE_CURRENT_SOURCE_DIR}/src/loader/assembly-x86_64.h
     COMMENT "Compiling standalone loader for ${ANDROID_ABI}"
-)
-
-add_custom_command(
-    OUTPUT ${LOADER_WRAPPED_O}
-    COMMAND ${CMAKE_OBJCOPY}
-        --input-target binary
-        --output-target ${OBJCOPY_TARGET}
-        --binary-architecture ${OBJCOPY_ARCH}
-        loader.elf
-        loader-wrapped.o
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS ${LOADER_ELF}
-    COMMENT "Wrapping loader.elf into object file ${LOADER_WRAPPED_O}"
 )
 
 # 3. Build proot executable
@@ -113,8 +93,10 @@ set(PROOT_SOURCES
     src/extension/link2symlink/link2symlink.c
     src/extension/portmap/portmap.c
     src/extension/portmap/map.c
-    ${LOADER_WRAPPED_O}
+    src/loader/loader-wrapped.S
 )
+
+set_source_files_properties(src/loader/loader-wrapped.S PROPERTIES OBJECT_DEPENDS ${LOADER_ELF})
 
 add_executable(proot ${PROOT_SOURCES})
 
@@ -122,6 +104,7 @@ target_include_directories(proot PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/uthash
     ${CMAKE_CURRENT_SOURCE_DIR}/src/talloc
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_compile_definitions(proot PRIVATE
