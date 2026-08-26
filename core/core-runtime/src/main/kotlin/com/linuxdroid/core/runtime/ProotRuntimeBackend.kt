@@ -28,8 +28,8 @@ import java.util.concurrent.TimeUnit
  * 1. Primary: Executes libproot.so located in `context.applicationInfo.nativeLibraryDir`
  *    (PIE executable extracted by Android package manager, permitted by SELinux and kernel without error=13).
  * 2. Fallback: Extracts to app code-cache / runtime dir with native POSIX chmod 0755.
- * 3. Dynamic Linker: DT_RUNPATH is set to $ORIGIN; LD_LIBRARY_PATH includes nativeLibraryDir
- *    so libtalloc.so and libandroid-shmem.so resolve natively.
+ * 3. Dynamic Linker: DT_RUNPATH is set to $ORIGIN so libtalloc.so and libandroid-shmem.so resolve natively.
+ * 4. Guest Isolation: Uses /usr/bin/env -i to clear host Android environment variables and prevent glibc linker conflicts.
  */
 class ProotRuntimeBackend(
     private val context: Context,
@@ -79,6 +79,7 @@ class ProotRuntimeBackend(
             )
         }
         storage.cleanRuntimeState(environment.id)
+        storage.tmpDir(environment.id).mkdirs()
     }
 
     override suspend fun start(environment: Environment) = withContext(Dispatchers.IO) {
@@ -129,6 +130,7 @@ class ProotRuntimeBackend(
     ): ProcessHandle = withContext(Dispatchers.IO) {
         val handleId = UUID.randomUUID().toString()
         val rootfs = storage.rootfsDir(environment.id)
+        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val proot = ensureProotBinary()
 
         log.info("Executing in proot: ${command.joinToString(" ")} (handle=$handleId)")
@@ -139,21 +141,16 @@ class ProotRuntimeBackend(
             userCommand = command,
             workingDirectory = workingDirectory,
             config = environment.configuration,
+            tmpDir = tmpDir,
+            extraEnv = extraEnv,
         )
 
         val processBuilder = ProcessBuilder(prootCmd)
             .directory(rootfs)
             .redirectErrorStream(false)
 
-        val nativeLibDir = context.applicationInfo.nativeLibraryDir
-        val prootParent = proot.parentFile?.absolutePath ?: ""
-        val ldPath = listOf(nativeLibDir, prootParent).filter { it.isNotBlank() }.joinToString(":")
-        processBuilder.environment()["LD_LIBRARY_PATH"] = ldPath
-        processBuilder.environment()["PROOT_TMP_DIR"] = storage.tmpDir(environment.id).absolutePath
-
-        buildEnvironmentVariables(extraEnv).forEach { (k, v) ->
-            processBuilder.environment()[k] = v
-        }
+        // Set host environment variables for PRoot process
+        processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
 
         val process: Process
         try {
@@ -357,12 +354,7 @@ class ProotRuntimeBackend(
 
         // Test run execution probe (proot --help)
         return try {
-            val nativeLibDir = context.applicationInfo.nativeLibraryDir
-            val prootParent = binary.parentFile?.absolutePath ?: ""
-            val ldPath = listOf(nativeLibDir, prootParent).filter { it.isNotBlank() }.joinToString(":")
-
             val pb = ProcessBuilder(binary.absolutePath, "--help")
-            pb.environment()["LD_LIBRARY_PATH"] = ldPath
             val proc = pb.start()
             val finished = proc.waitFor(3, TimeUnit.SECONDS)
             if (!finished) {
@@ -514,35 +506,50 @@ class ProotRuntimeBackend(
         userCommand: List<String>,
         workingDirectory: String,
         config: EnvironmentConfiguration,
+        tmpDir: File,
+        extraEnv: Map<String, String>,
     ): List<String> {
         return buildList {
             add(prootBinary.absolutePath)
-            add("--rootfs=${rootfs.absolutePath}")
-            add("--root-id")
-            add("--cwd=$workingDirectory")
-            add("--bind=/dev")
-            add("--bind=/proc")
-            add("--bind=/sys")
-            add("--bind=/dev/urandom:/dev/random")
+            add("-0")
+            add("--kill-on-exit")
             add("--link2symlink")
-            if (config.runtimeConfig.sharedStorageEnabled) {
+            add("--sysvipc")
+            add("-r")
+            add(rootfs.absolutePath)
+            add("-b")
+            add("/dev")
+            add("-b")
+            add("/proc")
+            add("-b")
+            add("/sys")
+            add("-b")
+            add("${tmpDir.absolutePath}:/tmp")
+            if (config.runtime.sharedStorageEnabled) {
                 val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
                 if (sharedDir.exists() && sharedDir.canRead()) {
-                    add("--bind=${sharedDir.absolutePath}:/home/user/Android")
+                    add("-b")
+                    add("${sharedDir.absolutePath}:/home/user/Android")
                 }
+            }
+            add("-w")
+            add(workingDirectory)
+
+            // Pristine guest environment via /usr/bin/env -i
+            add("/usr/bin/env")
+            add("-i")
+            add("HOME=/root")
+            add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            add("TERM=xterm-256color")
+            add("LANG=C.UTF-8")
+            add("USER=root")
+            add("LOGNAME=root")
+            add("TMPDIR=/tmp")
+            extraEnv.forEach { (k, v) ->
+                add("$k=$v")
             }
             addAll(userCommand)
         }
-    }
-
-    private fun buildEnvironmentVariables(extraEnv: Map<String, String>): Map<String, String> = buildMap {
-        put("HOME", "/root")
-        put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-        put("TERM", "xterm-256color")
-        put("LANG", "C.UTF-8")
-        put("USER", "root")
-        put("LOGNAME", "root")
-        putAll(extraEnv)
     }
 }
 
@@ -553,9 +560,6 @@ private data class ProotProcess(
     val process: Process?,
     val command: List<String>,
 )
-
-private val EnvironmentConfiguration.runtimeConfig: RuntimeConfig
-    get() = this.runtime
 
 private fun getProcessPid(process: Process?): Int {
     if (process == null) return -1

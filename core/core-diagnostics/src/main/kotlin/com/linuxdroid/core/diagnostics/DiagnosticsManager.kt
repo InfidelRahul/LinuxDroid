@@ -166,6 +166,27 @@ class DiagnosticsManager(
             }
         }
         return try {
+            // Stage 1: Minimal binary test (/bin/true)
+            val resTrue = runtimeBackend.executeAndWait(
+                environment = environment,
+                command = listOf("/bin/true"),
+                timeoutMs = 5_000,
+            )
+            if (resTrue.exitCode != 0) {
+                val reason = when (resTrue.exitCode) {
+                    139 -> "PRoot / rootfs dynamic linker crashed with SIGSEGV (signal 11 / exit=139)"
+                    127 -> "/bin/true or dynamic library missing in rootfs (exit=127)"
+                    126 -> "/bin/true permission denied or not executable (exit=126)"
+                    else -> "PRoot binary test failed (exit=${resTrue.exitCode}): ${resTrue.stderr.ifBlank { resTrue.stdout }}"
+                }
+                return DiagnosticCheck(
+                    name = "Linux Userspace",
+                    status = DiagnosticStatus.ERROR,
+                    detail = reason,
+                )
+            }
+
+            // Stage 2: Full shell execution (/bin/sh -c "uname -a")
             val result = runtimeBackend.executeAndWait(
                 environment = environment,
                 command = listOf("/bin/sh", "-c", "uname -a"),
@@ -178,10 +199,16 @@ class DiagnosticsManager(
                     detail = "/bin/sh (uname -a) OK: ${result.stdout.trim()}",
                 )
             } else {
+                val reason = when (result.exitCode) {
+                    139 -> "/bin/sh shell crashed with SIGSEGV (signal 11 / exit=139)"
+                    127 -> "/bin/sh executable not found in rootfs (exit=127)"
+                    126 -> "/bin/sh permission denied in rootfs (exit=126)"
+                    else -> "PRoot /bin/sh failed (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}"
+                }
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.ERROR,
-                    detail = "PRoot /bin/sh startup failed (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}",
+                    detail = reason,
                 )
             }
         } catch (e: Exception) {

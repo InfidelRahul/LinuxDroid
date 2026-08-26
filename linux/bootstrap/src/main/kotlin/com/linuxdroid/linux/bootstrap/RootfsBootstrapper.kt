@@ -41,20 +41,24 @@ class RootfsBootstrapper(
     private val log = LinuxDroidLogger(LogSubsystem.BOOTSTRAP)
 
     companion object {
-        private val DISTRIBUTION_SOURCES = mapOf(
-            Distribution.DEBIAN to RootfsSource(
-                url = "https://github.com/termux/proot-distro/releases/download/v4.5.0/debian-aarch64-pd-v4.5.0.tar.xz",
+        fun getRootfsSource(distribution: Distribution, architecture: Architecture): RootfsSource {
+            val archSuffix = when (architecture) {
+                Architecture.ARM64 -> "aarch64"
+                Architecture.X86_64 -> "x86_64"
+            }
+            val distroName = when (distribution) {
+                Distribution.DEBIAN -> "debian"
+                Distribution.UBUNTU -> "ubuntu"
+                Distribution.ARCH_LINUX -> "archlinux"
+                Distribution.ALPINE -> "alpine"
+            }
+            return RootfsSource(
+                url = "https://github.com/termux/proot-distro/releases/download/v4.5.0/${distroName}-${archSuffix}-pd-v4.5.0.tar.xz",
                 sha256 = null,
                 format = ArchiveFormat.TAR_XZ,
                 stripComponents = 1,
-            ),
-            Distribution.UBUNTU to RootfsSource(
-                url = "https://github.com/termux/proot-distro/releases/download/v4.5.0/ubuntu-aarch64-pd-v4.5.0.tar.xz",
-                sha256 = null,
-                format = ArchiveFormat.TAR_XZ,
-                stripComponents = 1,
-            ),
-        )
+            )
+        }
     }
 
     suspend fun bootstrapRootfs(
@@ -62,7 +66,7 @@ class RootfsBootstrapper(
         onProgress: suspend (Float, String) -> Unit = { _, _ -> },
     ) = withContext(Dispatchers.IO) {
         val environmentId = environment.id
-        log.info("Starting rootfs bootstrap for $environmentId (${environment.distribution})")
+        log.info("Starting rootfs bootstrap for $environmentId (${environment.distribution} / ${environment.architecture})")
 
         // Never recreate existing rootfs if already valid
         if (storage.verifyRootfs(environmentId)) {
@@ -71,11 +75,7 @@ class RootfsBootstrapper(
             return@withContext
         }
 
-        val source = DISTRIBUTION_SOURCES[environment.distribution]
-            ?: throw RuntimeError(
-                environmentId = environmentId,
-                message = "No rootfs source for distribution: ${environment.distribution}",
-            )
+        val source = getRootfsSource(environment.distribution, environment.architecture)
 
         storage.initializeEnvironmentDirs(environmentId)
         val finalRootfsDir = storage.rootfsDir(environmentId)
@@ -218,11 +218,10 @@ class RootfsBootstrapper(
                     } else if (entry.isSymbolicLink) {
                         targetFile.parentFile?.mkdirs()
                         try {
-                            if (targetFile.exists()) targetFile.delete()
+                            Files.deleteIfExists(targetFile.toPath())
                             Files.createSymbolicLink(targetFile.toPath(), Paths.get(entry.linkName))
                         } catch (e: Exception) {
-                            // Fallback: write text pointer or ignore if symlink cannot be created
-                            log.debug("Symlink creation notice for ${targetFile.name} -> ${entry.linkName}")
+                            log.debug("Symlink creation fallback for ${targetFile.name} -> ${entry.linkName}: ${e.message}")
                         }
                     } else {
                         targetFile.parentFile?.mkdirs()
@@ -233,9 +232,13 @@ class RootfsBootstrapper(
                             }
                         }
 
-                        // Apply executable permissions if marked in tar entry mode
+                        // Apply executable permissions if marked in tar entry mode or binary directory
                         val mode = entry.mode
-                        if ((mode and 0b001001001) != 0) { // Executable by user, group, or others
+                        val isExec = (mode and 0b001001001) != 0 ||
+                            entryName.contains("bin/") ||
+                            entryName.contains("sbin/") ||
+                            (entryName.contains("lib/") && entryName.endsWith(".so"))
+                        if (isExec) {
                             targetFile.setExecutable(true, false)
                             NativeBridge.setExecutable(targetFile.absolutePath)
                         }
