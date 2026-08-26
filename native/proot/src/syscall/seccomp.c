@@ -343,6 +343,7 @@ static FilteredSysnum proot_sysnums[] = {
 	{ PR_connect,		0 },
 	{ PR_creat,		0 },
 	{ PR_execve,		FILTER_SYSEXIT },
+	{ PR_execveat,		FILTER_SYSEXIT },
 	{ PR_faccessat,		0 },
 	{ PR_fchdir,		FILTER_SYSEXIT },
 	{ PR_fchmodat,		0 },
