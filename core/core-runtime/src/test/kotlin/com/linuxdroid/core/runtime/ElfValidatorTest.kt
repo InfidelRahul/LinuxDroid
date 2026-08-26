@@ -4,7 +4,6 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 import java.io.FileOutputStream
 
 class ElfValidatorTest {
@@ -29,15 +28,27 @@ class ElfValidatorTest {
             header[5] = 0x01
             // Version
             header[6] = 0x01
+            // e_type: ET_DYN (3) at offset 16
+            header[16] = 0x03
+            header[17] = 0x00
             // e_machine: EM_AARCH64 (0xB7 = 183) at offset 18
             header[18] = 0xB7.toByte()
             header[19] = 0x00
+            // Entry point at offset 24 (e.g. 0x1000)
+            header[24] = 0x00
+            header[25] = 0x10
             fos.write(header)
         }
 
+        val elfInfo = ElfValidator.readElfInfo(elfFile, "arm64-v8a")
+        assertThat(elfInfo.isValid).isTrue()
+        assertThat(elfInfo.is64Bit).isTrue()
+        assertThat(elfInfo.isLittleEndian).isTrue()
+        assertThat(elfInfo.typeName).contains("PIE EXECUTABLE")
+
         val (valid, detail) = ElfValidator.validateElf(elfFile, "arm64-v8a")
         assertThat(valid).isTrue()
-        assertThat(detail).contains("Valid 64-bit ELF")
+        assertThat(detail).contains("Valid 64-bit")
     }
 
     @Test
@@ -61,7 +72,7 @@ class ElfValidatorTest {
         // Test with arm64-v8a target
         val (valid, detail) = ElfValidator.validateElf(elfFile, "arm64-v8a")
         assertThat(valid).isFalse()
-        assertThat(detail).contains("does not match ABI arm64-v8a")
+        assertThat(detail).contains("does not match target ABI arm64-v8a")
     }
 
     @Test
@@ -75,4 +86,3 @@ class ElfValidatorTest {
         assertThat(detail).contains("Invalid ELF magic")
     }
 }
-
