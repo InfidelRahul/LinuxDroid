@@ -86,6 +86,7 @@ dependencies {
     implementation(project(":core:core-network"))
     implementation(project(":core:core-package"))
     implementation(project(":core:core-diagnostics"))
+    implementation(project(":core:core-host"))
 
     // Native bridge
     implementation(project(":native:bridge"))

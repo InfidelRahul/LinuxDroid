@@ -41,6 +41,7 @@ include(":core:core-audio")
 include(":core:core-network")
 include(":core:core-package")
 include(":core:core-diagnostics")
+include(":core:core-host")
 
 // Linux modules
 include(":linux:bootstrap")

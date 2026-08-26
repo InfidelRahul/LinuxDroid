@@ -25,14 +25,20 @@ add_library(
     linuxdroid_bridge.cpp
     process_manager.cpp
     filesystem_utils.cpp
+    gpu_detector.cpp
+    display_bridge.cpp
+    input_bridge.cpp
+    audio_bridge.cpp
 )
 
-# Link Android system libraries
+# Link Android system and graphics/audio libraries
 target_link_libraries(
     linuxdroid_bridge
     android
     log
     jnigraphics
+    EGL
+    GLESv2
 )
 
 target_include_directories(

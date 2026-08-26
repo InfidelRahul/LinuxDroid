@@ -3,12 +3,12 @@ package com.linuxdroid.core.audio
 /**
  * AudioManager bridges Linux audio subsystem to Android audio.
  *
- * Architecture: Linux app → PulseAudio/PipeWire → native bridge → Android AAudio/OpenSL ES
- *
- * Implementation: Phase 15 of the development roadmap.
+ * Architecture: Linux app → PulseAudio/PipeWire → native bridge → Android AAudio/AudioTrack
  */
 interface AudioManager {
-    suspend fun start()
+    suspend fun start(sampleRate: Int = 44100, channels: Int = 2): Boolean
     suspend fun stop()
+    fun writeAudio(pcmData: ByteArray, offset: Int, size: Int): Int
     fun isActive(): Boolean
+    fun getLatencyMs(): Int
 }

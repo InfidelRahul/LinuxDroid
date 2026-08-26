@@ -1,26 +1,43 @@
 package com.linuxdroid.app.di
 
 import android.content.Context
+import com.linuxdroid.core.audio.AudioManager
+import com.linuxdroid.core.audio.DefaultAudioManager
 import com.linuxdroid.core.database.LinuxDroidDatabase
 import com.linuxdroid.core.database.dao.EnvironmentDao
+import com.linuxdroid.core.diagnostics.DefaultResourceManager
 import com.linuxdroid.core.diagnostics.DiagnosticsManager
+import com.linuxdroid.core.diagnostics.ResourceManager
+import com.linuxdroid.core.display.DefaultDisplayManager
+import com.linuxdroid.core.display.DisplayManager
 import com.linuxdroid.core.filesystem.EnvironmentStorage
+import com.linuxdroid.core.gpu.DefaultGpuManager
+import com.linuxdroid.core.gpu.GpuManager
+import com.linuxdroid.core.host.*
+import com.linuxdroid.core.input.DefaultInputManager
+import com.linuxdroid.core.input.InputManager
+import com.linuxdroid.core.network.DefaultNetworkManager
+import com.linuxdroid.core.network.NetworkManager
+import com.linuxdroid.core.package_mgr.ApplicationManager
+import com.linuxdroid.core.package_mgr.DefaultApplicationManager
+import com.linuxdroid.core.package_mgr.DefaultPackageManager
+import com.linuxdroid.core.package_mgr.PackageManager
+import com.linuxdroid.core.process.DefaultProcessManager
+import com.linuxdroid.core.process.ProcessManager
 import com.linuxdroid.core.runtime.ProotRuntimeBackend
 import com.linuxdroid.core.runtime.RuntimeBackend
+import com.linuxdroid.core.session.DefaultSessionManager
+import com.linuxdroid.core.session.SessionManager
 import com.linuxdroid.core.storage.AndroidStorageManager
+import com.linuxdroid.linux.bootstrap.RootfsBootstrapper
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.io.File
 import javax.inject.Singleton
 
-/**
- * Application-level Hilt dependency injection module.
- *
- * Provides singletons for the entire application lifetime.
- * All subsystems are lazily initialized on first injection.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
@@ -30,7 +47,7 @@ object AppModule {
     fun provideEnvironmentStorage(
         @ApplicationContext context: Context,
     ): EnvironmentStorage = EnvironmentStorage(
-        baseDir = java.io.File(context.filesDir, "environments").also { it.mkdirs() }
+        baseDir = File(context.filesDir, "environments").also { it.mkdirs() }
     )
 
     @Provides
@@ -60,29 +77,121 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideDisplayManager(): DisplayManager = DefaultDisplayManager()
+
+    @Provides
+    @Singleton
+    fun provideGpuManager(): GpuManager = DefaultGpuManager()
+
+    @Provides
+    @Singleton
+    fun provideInputManager(): InputManager = DefaultInputManager()
+
+    @Provides
+    @Singleton
+    fun provideAudioManager(): AudioManager = DefaultAudioManager()
+
+    @Provides
+    @Singleton
+    fun provideNetworkManager(
+        @ApplicationContext context: Context,
+    ): NetworkManager = DefaultNetworkManager(context)
+
+    @Provides
+    @Singleton
+    fun providePackageManager(
+        runtime: RuntimeBackend,
+    ): PackageManager = DefaultPackageManager(runtime)
+
+    @Provides
+    @Singleton
+    fun provideApplicationManager(
+        storage: EnvironmentStorage,
+    ): ApplicationManager = DefaultApplicationManager(storage)
+
+    @Provides
+    @Singleton
+    fun provideResourceManager(
+        @ApplicationContext context: Context,
+        storage: EnvironmentStorage,
+    ): ResourceManager = DefaultResourceManager(context, storage)
+
+    @Provides
+    @Singleton
     fun provideDiagnosticsManager(
         storage: EnvironmentStorage,
         runtime: RuntimeBackend,
         storageManager: AndroidStorageManager,
-    ): DiagnosticsManager = DiagnosticsManager(storage, runtime, storageManager)
+        gpuManager: GpuManager,
+        audioManager: AudioManager,
+        networkManager: NetworkManager,
+        resourceManager: ResourceManager,
+    ): DiagnosticsManager = DiagnosticsManager(
+        storage = storage,
+        runtimeBackend = runtime,
+        storageManager = storageManager,
+        gpuManager = gpuManager,
+        audioManager = audioManager,
+        networkManager = networkManager,
+        resourceManager = resourceManager,
+    )
 
     @Provides
     @Singleton
     fun provideRootfsBootstrapper(
         @ApplicationContext context: Context,
         storage: EnvironmentStorage,
-    ): com.linuxdroid.linux.bootstrap.RootfsBootstrapper =
-        com.linuxdroid.linux.bootstrap.RootfsBootstrapper(context, storage)
+    ): RootfsBootstrapper = RootfsBootstrapper(context, storage)
 
     @Provides
     @Singleton
-    fun provideProcessManager(): com.linuxdroid.core.process.ProcessManager =
-        com.linuxdroid.core.process.DefaultProcessManager()
+    fun provideProcessManager(): ProcessManager = DefaultProcessManager()
 
     @Provides
     @Singleton
     fun provideSessionManager(
         runtime: RuntimeBackend,
-    ): com.linuxdroid.core.session.SessionManager =
-        com.linuxdroid.core.session.DefaultSessionManager(runtime)
+        storage: EnvironmentStorage,
+        displayManager: DisplayManager,
+        gpuManager: GpuManager,
+        inputManager: InputManager,
+        audioManager: AudioManager,
+        networkManager: NetworkManager,
+    ): SessionManager = DefaultSessionManager(
+        runtimeBackend = runtime,
+        storage = storage,
+        displayManager = displayManager,
+        gpuManager = gpuManager,
+        inputManager = inputManager,
+        audioManager = audioManager,
+        networkManager = networkManager,
+    )
+
+    @Provides
+    @Singleton
+    fun provideHostGraphics(): HostGraphics = AndroidHostGraphics()
+
+    @Provides
+    @Singleton
+    fun provideHostGpu(): HostGpu = AndroidHostGpu()
+
+    @Provides
+    @Singleton
+    fun provideHostAudio(): HostAudio = AndroidHostAudio()
+
+    @Provides
+    @Singleton
+    fun provideHostInput(): HostInput = AndroidHostInput()
+
+    @Provides
+    @Singleton
+    fun provideHostNetwork(
+        @ApplicationContext context: Context,
+    ): HostNetwork = AndroidHostNetwork(context)
+
+    @Provides
+    @Singleton
+    fun provideHostStorage(
+        storageManager: AndroidStorageManager,
+    ): HostStorage = AndroidHostStorage(storageManager.sharedDirectory)
 }

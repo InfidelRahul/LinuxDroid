@@ -22,8 +22,13 @@ dependencies {
     implementation(project(":core:core-runtime"))
     implementation(project(":core:core-filesystem"))
     implementation(project(":core:core-storage"))
+    implementation(project(":core:core-gpu"))
+    implementation(project(":core:core-audio"))
+    implementation(project(":core:core-network"))
+    implementation(project(":native:bridge"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
 }
