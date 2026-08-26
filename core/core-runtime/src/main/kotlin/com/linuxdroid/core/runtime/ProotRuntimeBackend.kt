@@ -133,6 +133,11 @@ class ProotRuntimeBackend(
             .directory(rootfs)
             .redirectErrorStream(false)
 
+        val prootDir = File(context.filesDir, "proot").absolutePath
+        val nativeLibDir = context.applicationInfo.nativeLibraryDir
+        processBuilder.environment()["LD_LIBRARY_PATH"] = "$prootDir:$nativeLibDir"
+        processBuilder.environment()["PROOT_TMP_DIR"] = storage.tmpDir(environment.id).absolutePath
+
         buildEnvironmentVariables(extraEnv).forEach { (k, v) ->
             processBuilder.environment()[k] = v
         }
@@ -245,10 +250,10 @@ class ProotRuntimeBackend(
     // ─── Private helpers ────────────────────────────────────────────────────────────
 
     /**
-     * Extracts the proot binary from assets to app's files directory.
+     * Extracts the proot binary and supporting shared libraries from assets to app's files directory.
      * Returns the path to the executable binary.
      *
-     * The proot binary is bundled in assets/proot/<abi>/proot
+     * The proot binary is bundled in assets/proot/<abi>/
      */
     private fun extractProotBinary(): File {
         val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "x86_64") }
@@ -258,17 +263,22 @@ class ProotRuntimeBackend(
         destDir.mkdirs()
         val destFile = File(destDir, "proot")
 
-        if (!destFile.exists()) {
-            log.info("Extracting proot binary for ABI: $abi")
-            try {
-                context.assets.open("proot/$abi/proot").use { input ->
-                    destFile.outputStream().use { output -> input.copyTo(output) }
+        try {
+            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot")
+            for (filename in assetFiles) {
+                val target = File(destDir, filename)
+                if (!target.exists() || target.length() == 0L) {
+                    log.info("Extracting proot asset: $filename for ABI: $abi")
+                    context.assets.open("proot/$abi/$filename").use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    target.setExecutable(true, false)
+                    target.setReadable(true, false)
                 }
-                destFile.setExecutable(true, false)
-            } catch (e: Exception) {
-                log.warn("proot binary not found in assets for $abi - runtime will be limited", e)
-                // Return path anyway; will be checked in healthCheck
             }
+            destFile.setExecutable(true, false)
+        } catch (e: Exception) {
+            log.warn("Error extracting proot assets for $abi", e)
         }
         return destFile
     }

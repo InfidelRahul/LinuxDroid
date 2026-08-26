@@ -2,14 +2,12 @@ package com.linuxdroid.app.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.linuxdroid.app.ui.screens.AboutScreen
-import com.linuxdroid.app.ui.screens.DiagnosticsScreen
-import com.linuxdroid.app.ui.screens.EnvironmentListScreen
-import com.linuxdroid.app.ui.screens.HomeScreen
-import com.linuxdroid.app.ui.screens.SettingsScreen
+import androidx.navigation.navArgument
+import com.linuxdroid.app.ui.screens.*
 
 /**
  * Top-level navigation destinations.
@@ -17,8 +15,8 @@ import com.linuxdroid.app.ui.screens.SettingsScreen
 sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Environments : Screen("environments")
-    object EnvironmentDetail : Screen("environment/{environmentId}") {
-        fun route(environmentId: String) = "environment/$environmentId"
+    object Terminal : Screen("terminal/{environmentId}") {
+        fun route(environmentId: String) = "terminal/$environmentId"
     }
     object Settings : Screen("settings")
     object Diagnostics : Screen("diagnostics")
@@ -41,6 +39,12 @@ fun LinuxDroidNavGraph(
         }
         composable(Screen.Environments.route) {
             EnvironmentListScreen(navController = navController)
+        }
+        composable(
+            route = Screen.Terminal.route,
+            arguments = listOf(navArgument("environmentId") { type = NavType.StringType })
+        ) {
+            TerminalScreen(navController = navController)
         }
         composable(Screen.Settings.route) {
             SettingsScreen()

@@ -73,4 +73,16 @@ object AppModule {
         storage: EnvironmentStorage,
     ): com.linuxdroid.linux.bootstrap.RootfsBootstrapper =
         com.linuxdroid.linux.bootstrap.RootfsBootstrapper(context, storage)
+
+    @Provides
+    @Singleton
+    fun provideProcessManager(): com.linuxdroid.core.process.ProcessManager =
+        com.linuxdroid.core.process.DefaultProcessManager()
+
+    @Provides
+    @Singleton
+    fun provideSessionManager(
+        runtime: RuntimeBackend,
+    ): com.linuxdroid.core.session.SessionManager =
+        com.linuxdroid.core.session.DefaultSessionManager(runtime)
 }
