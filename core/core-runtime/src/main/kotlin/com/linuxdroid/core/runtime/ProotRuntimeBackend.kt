@@ -154,17 +154,29 @@ class ProotRuntimeBackend(
             workingDirectory = workingDirectory,
             config = environment.configuration,
             tmpDir = tmpDir,
-            extraEnv = extraEnv,
         )
 
         val processBuilder = ProcessBuilder(prootCmd)
             .directory(rootfs)
             .redirectErrorStream(false)
 
-        // Set host environment variables for PRoot process
+        // Set host & guest environment variables for PRoot process
         processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
         if (loader?.exists() == true) {
             processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
+        }
+        processBuilder.environment()["HOME"] = "/root"
+        processBuilder.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        processBuilder.environment()["TERM"] = "xterm-256color"
+        processBuilder.environment()["LANG"] = "C.UTF-8"
+        processBuilder.environment()["USER"] = "root"
+        processBuilder.environment()["LOGNAME"] = "root"
+        processBuilder.environment()["TMPDIR"] = "/tmp"
+        environment.configuration.runtime.extraEnv.forEach { (k, v) ->
+            processBuilder.environment()[k] = v
+        }
+        extraEnv.forEach { (k, v) ->
+            processBuilder.environment()[k] = v
         }
 
         val process: Process
@@ -256,32 +268,20 @@ class ProotRuntimeBackend(
         val rootfs = storage.rootfsDir(environment.id)
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
 
-        val prootCmd = buildList {
-            add(proot.absolutePath)
-            add("-0")
-            add("--kill-on-exit")
-            add("--link2symlink")
-            add("-r")
-            add(rootfs.absolutePath)
-            add("-b")
-            add("/dev")
-            add("-b")
-            add("/proc")
-            add("-b")
-            add("/sys")
-            add("-b")
-            add("${tmpDir.absolutePath}:/tmp")
-            if (environment.configuration.runtime.sharedStorageEnabled) {
-                val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
-                if (sharedDir.exists() && sharedDir.canRead()) {
-                    add("-b")
-                    add("${sharedDir.absolutePath}:/home/user/Android")
-                }
+        val prootCmd = buildProotCommand(
+            prootBinary = proot,
+            rootfs = rootfs,
+            userCommand = command,
+            workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
+            config = environment.configuration,
+            tmpDir = tmpDir,
+        )
+
+        val envVars = buildList {
+            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
+            if (loader?.exists() == true) {
+                add("PROOT_LOADER=${loader.absolutePath}")
             }
-            add("-w")
-            add(environment.configuration.homeDir.ifBlank { "/root" })
-            add("/usr/bin/env")
-            add("-i")
             add("HOME=/root")
             add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
             add("TERM=xterm-256color")
@@ -289,13 +289,8 @@ class ProotRuntimeBackend(
             add("USER=root")
             add("LOGNAME=root")
             add("TMPDIR=/tmp")
-            addAll(command)
-        }
-
-        val envVars = buildList {
-            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
-            if (loader?.exists() == true) {
-                add("PROOT_LOADER=${loader.absolutePath}")
+            environment.configuration.runtime.extraEnv.forEach { (k, v) ->
+                add("$k=$v")
             }
         }
 
@@ -634,21 +629,7 @@ class ProotRuntimeBackend(
                 }
             }
             add("-w")
-            add(workingDirectory)
-
-            // Pristine guest environment via /usr/bin/env -i
-            add("/usr/bin/env")
-            add("-i")
-            add("HOME=/root")
-            add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-            add("TERM=xterm-256color")
-            add("LANG=C.UTF-8")
-            add("USER=root")
-            add("LOGNAME=root")
-            add("TMPDIR=/tmp")
-            extraEnv.forEach { (k, v) ->
-                add("$k=$v")
-            }
+            add(workingDirectory.ifBlank { "/" })
             addAll(userCommand)
         }
     }
