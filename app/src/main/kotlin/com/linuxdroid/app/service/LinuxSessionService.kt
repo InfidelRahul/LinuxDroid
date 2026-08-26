@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -31,6 +32,22 @@ class LinuxSessionService : Service() {
     companion object {
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.linuxdroid.app.ACTION_STOP_SESSION"
+
+        fun start(context: Context, sessionName: String = "Linux Session") {
+            val intent = Intent(context, LinuxSessionService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun stop(context: Context) {
+            val intent = Intent(context, LinuxSessionService::class.java).apply {
+                action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
     }
 
     override fun onCreate() {
