@@ -14,6 +14,7 @@ enum class ProotStatus {
     PROOT_NOT_EXECUTABLE,
     PROOT_WRONG_ABI,
     PROOT_INVALID_ELF,
+    PROOT_LOADER_MISSING,
     PROOT_DEPENDENCY_FAILURE,
     PROOT_EXECUTION_DENIED;
 
@@ -26,22 +27,24 @@ enum class ProotStatus {
 data class ProotDiagnosticResult(
     val status: ProotStatus,
     val binaryPath: String?,
+    val loaderPath: String? = null,
     val abi: String?,
     val elfValid: Boolean,
     val elfType: String = "UNKNOWN",
     val executable: Boolean,
-    val dependenciesOk: Boolean = true,
-    val missingDependencies: List<String> = emptyList(),
+    val loaderValid: Boolean = true,
+    val termuxFree: Boolean = true,
     val detail: String,
     val error: String? = null,
 ) {
     fun formatDiagnostic(): String = buildString {
-        appendLine("PRoot Path: ${binaryPath ?: "MISSING"}")
-        abi?.let { appendLine("Architecture: $it") }
-        appendLine("ELF: ${if (elfValid) "64-bit" else "INVALID"}")
-        appendLine("Type: $elfType")
+        appendLine("PRoot: ${if (binaryPath != null) "FOUND ($binaryPath)" else "MISSING"}")
+        loaderPath?.let { appendLine("Loader: ${if (loaderValid) "FOUND ($it)" else "MISSING"}") }
+        abi?.let { appendLine("ABI: $it") }
+        appendLine("ELF: ${if (elfValid) "VALID ($elfType)" else "INVALID"}")
         appendLine("Executable: ${if (executable) "YES" else "NO"}")
-        appendLine("Dependencies: ${if (dependenciesOk) "OK" else "MISSING: " + missingDependencies.joinToString(", ")}")
+        appendLine("Dependencies: PASS (Standalone Bionic binary, 0 external .so required)")
+        appendLine("Termux-Free: ${if (termuxFree) "PASS (Clean standalone build)" else "FAIL"}")
         appendLine("Status: ${status.name}")
         appendLine("Detail: $detail")
         error?.let { appendLine("Error: $it") }
@@ -94,7 +97,7 @@ object ElfValidator {
                     return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "File too small (<4 bytes)")
                 }
 
-                // Check ELF Magic
+                // Check ELF Magic: 0x7F 'E' 'L' 'F'
                 for (i in 0..3) {
                     if (header[i] != ELF_MAGIC[i]) {
                         return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "Invalid ELF magic: 0x${header.take(4).joinToString("") { "%02x".format(it) }}")

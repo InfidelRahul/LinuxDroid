@@ -91,8 +91,9 @@ dependencies {
     implementation(project(":core:core-diagnostics"))
     implementation(project(":core:core-host"))
 
-    // Native bridge
+    // Native modules
     implementation(project(":native:bridge"))
+    implementation(project(":native:proot"))
 
     // Linux modules
     implementation(project(":linux:bootstrap"))
