@@ -22,6 +22,8 @@ interface PackageManager {
     suspend fun remove(environment: Environment, packageName: String): Boolean
     suspend fun update(environment: Environment): Boolean
     suspend fun search(environment: Environment, query: String): List<PackageInfo>
+    suspend fun isPackageInstalled(environment: Environment, packageName: String): Boolean
+    suspend fun installMinimalGui(environment: Environment, onProgress: (String) -> Unit = {}): Boolean
 }
 
 data class PackageInfo(

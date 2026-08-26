@@ -146,12 +146,24 @@ class DiagnosticsManager(
     }
 
     private suspend fun checkLinuxUserspace(environment: Environment): DiagnosticCheck {
+        val rootfsDir = storage.rootfsDir(environment.id)
+        val shFile = java.io.File(rootfsDir, "bin/sh")
+        val hasSh = shFile.exists() || java.io.File(rootfsDir, "usr/bin/sh").exists()
+
         if (environment.state != EnvironmentState.RUNNING) {
-            return DiagnosticCheck(
-                name = "Linux Userspace",
-                status = DiagnosticStatus.NOT_APPLICABLE,
-                detail = "Environment not running (state: ${environment.state})",
-            )
+            return if (hasSh) {
+                DiagnosticCheck(
+                    name = "Linux Userspace",
+                    status = DiagnosticStatus.OK,
+                    detail = "Userspace binaries verified (/bin/sh present in rootfs)",
+                )
+            } else {
+                DiagnosticCheck(
+                    name = "Linux Userspace",
+                    status = DiagnosticStatus.WARNING,
+                    detail = "Environment not running (state: ${environment.state})",
+                )
+            }
         }
         return try {
             val result = runtimeBackend.executeAndWait(
@@ -169,7 +181,7 @@ class DiagnosticsManager(
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.ERROR,
-                    detail = "Shell test failed: exit=${result.exitCode} stdout='${result.stdout}'",
+                    detail = "Shell test failed: exit=${result.exitCode} ${result.stderr.ifBlank { result.stdout }}",
                 )
             }
         } catch (e: Exception) {

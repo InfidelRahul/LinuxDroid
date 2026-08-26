@@ -96,5 +96,47 @@ class DefaultPackageManager(
             } else null
         }
     }
+
+    override suspend fun isPackageInstalled(environment: Environment, packageName: String): Boolean = withContext(Dispatchers.IO) {
+        val sanitizedPkg = packageName.trim()
+        if (sanitizedPkg.isEmpty() || !sanitizedPkg.matches(Regex("^[a-zA-Z0-9.+_-]+$"))) {
+            return@withContext false
+        }
+        val cmd = when (environment.distribution) {
+            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("dpkg", "-s", sanitizedPkg)
+            Distribution.ARCH_LINUX -> listOf("pacman", "-Q", sanitizedPkg)
+            Distribution.ALPINE -> listOf("apk", "info", "-e", sanitizedPkg)
+        }
+        val result = runtimeBackend.executeAndWait(environment, cmd, workingDirectory = "/root")
+        result.exitCode == 0
+    }
+
+    override suspend fun installMinimalGui(environment: Environment, onProgress: (String) -> Unit): Boolean = withContext(Dispatchers.IO) {
+        log.info("Installing minimal Wayland GUI packages for ${environment.id}")
+        onProgress("Updating package sources…")
+        update(environment)
+
+        onProgress("Installing lightweight Wayland compositor & terminal…")
+        // Minimal GUI package set: cage/weston, xwayland, foot/xterm, dbus, libwayland-client0
+        val packages = when (environment.distribution) {
+            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "libwayland-client0")
+            Distribution.ARCH_LINUX -> listOf("cage", "xorg-xwayland", "foot", "xterm", "dbus", "wayland")
+            Distribution.ALPINE -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "wayland")
+        }
+        val cmd = when (environment.distribution) {
+            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-get", "install", "-y", "--no-install-recommends") + packages
+            Distribution.ARCH_LINUX -> listOf("pacman", "-S", "--noconfirm") + packages
+            Distribution.ALPINE -> listOf("apk", "add") + packages
+        }
+        val extraEnv = mapOf("DEBIAN_FRONTEND" to "noninteractive")
+        val result = runtimeBackend.executeAndWait(environment, cmd, workingDirectory = "/root", extraEnv = extraEnv, timeoutMs = 120_000)
+        val success = result.exitCode == 0
+        if (success) {
+            log.info("Minimal Wayland GUI installed successfully for ${environment.id}")
+        } else {
+            log.warn("Minimal GUI install notice (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}")
+        }
+        success
+    }
 }
 
