@@ -12,6 +12,10 @@
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
+#include <sys/wait.h>
+#include <pty.h>
+#include <termios.h>
 #include <unistd.h>
 #include <csignal>
 
@@ -119,6 +123,165 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
         }
     }
     return -1L;
+}
+
+// ─── PTY Subprocess ────────────────────────────────────────────────────────────
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCreatePtyProcess(
+    JNIEnv* env, jclass clazz,
+    jobjectArray cmdArray,
+    jstring cwdStr,
+    jobjectArray envArray,
+    jint rows, jint cols,
+    jintArray outPidAndFd
+) {
+    if (cmdArray == nullptr || outPidAndFd == nullptr) return EINVAL;
+
+    int cmdLen = env->GetArrayLength(cmdArray);
+    if (cmdLen == 0) return EINVAL;
+
+    std::vector<std::string> cmdStrings(cmdLen);
+    std::vector<char*> argv(cmdLen + 1, nullptr);
+    for (int i = 0; i < cmdLen; ++i) {
+        jstring jstr = (jstring)env->GetObjectArrayElement(cmdArray, i);
+        cmdStrings[i] = jstringToString(env, jstr);
+        argv[i] = const_cast<char*>(cmdStrings[i].c_str());
+        env->DeleteLocalRef(jstr);
+    }
+    argv[cmdLen] = nullptr;
+
+    std::string cwd = jstringToString(env, cwdStr);
+
+    int envLen = (envArray != nullptr) ? env->GetArrayLength(envArray) : 0;
+    std::vector<std::string> envStrings(envLen);
+    std::vector<char*> envp(envLen + 1, nullptr);
+    for (int i = 0; i < envLen; ++i) {
+        jstring jstr = (jstring)env->GetObjectArrayElement(envArray, i);
+        envStrings[i] = jstringToString(env, jstr);
+        envp[i] = const_cast<char*>(envStrings[i].c_str());
+        env->DeleteLocalRef(jstr);
+    }
+    envp[envLen] = nullptr;
+
+    struct winsize ws{};
+    ws.ws_row = (unsigned short)(rows > 0 ? rows : 24);
+    ws.ws_col = (unsigned short)(cols > 0 ? cols : 80);
+
+    int master_fd = -1;
+    int slave_fd = -1;
+    if (openpty(&master_fd, &slave_fd, nullptr, nullptr, &ws) < 0) {
+        int err = errno;
+        LOGE("openpty failed: %s", strerror(err));
+        return err;
+    }
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        int err = errno;
+        close(master_fd);
+        close(slave_fd);
+        LOGE("fork failed: %s", strerror(err));
+        return err;
+    }
+
+    if (pid == 0) {
+        // Child process
+        setsid();
+        ioctl(slave_fd, TIOCSCTTY, 0);
+
+        dup2(slave_fd, STDIN_FILENO);
+        dup2(slave_fd, STDOUT_FILENO);
+        dup2(slave_fd, STDERR_FILENO);
+
+        close(master_fd);
+        close(slave_fd);
+
+        if (!cwd.empty()) {
+            chdir(cwd.c_str());
+        }
+
+        if (envLen > 0) {
+            execve(argv[0], argv.data(), envp.data());
+        } else {
+            execv(argv[0], argv.data());
+        }
+        _exit(127);
+    }
+
+    // Parent process
+    close(slave_fd);
+
+    jint pidAndFd[2] = { (jint)pid, (jint)master_fd };
+    env->SetIntArrayRegion(outPidAndFd, 0, 2, pidAndFd);
+    LOGI("Created PTY process: pid=%d, master_fd=%d (rows=%d, cols=%d)", pid, master_fd, rows, cols);
+    return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetPtyWindowSize(
+    JNIEnv* env, jclass clazz, jint fd, jint rows, jint cols
+) {
+    if (fd < 0) return EINVAL;
+    struct winsize ws{};
+    ws.ws_row = (unsigned short)(rows > 0 ? rows : 24);
+    ws.ws_col = (unsigned short)(cols > 0 ? cols : 80);
+    if (ioctl((int)fd, TIOCSWINSZ, &ws) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWriteFd(
+    JNIEnv* env, jclass clazz, jint fd, jbyteArray data, jint offset, jint length
+) {
+    if (fd < 0 || length <= 0 || data == nullptr) return 0;
+    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+    if (!bytes) return -1;
+    ssize_t written = write((int)fd, bytes + offset, (size_t)length);
+    env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+    return (jint)written;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeReadFd(
+    JNIEnv* env, jclass clazz, jint fd, jbyteArray buffer, jint offset, jint length
+) {
+    if (fd < 0 || length <= 0 || buffer == nullptr) return 0;
+    jbyte* bytes = env->GetByteArrayElements(buffer, nullptr);
+    if (!bytes) return -1;
+    ssize_t bytesRead = read((int)fd, bytes + offset, (size_t)length);
+    env->ReleaseByteArrayElements(buffer, bytes, 0);
+    return (jint)bytesRead;
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCloseFd(
+    JNIEnv* env, jclass clazz, jint fd
+) {
+    if (fd >= 0) {
+        close((int)fd);
+    }
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWaitpid(
+    JNIEnv* env, jclass clazz, jint pid, jboolean block
+) {
+    if (pid <= 0) return -1;
+    int status = 0;
+    pid_t res = waitpid((pid_t)pid, &status, block ? 0 : WNOHANG);
+    if (res == (pid_t)pid) {
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        }
+        if (WIFSIGNALED(status)) {
+            return 128 + WTERMSIG(status);
+        }
+        return 0;
+    }
+    return -1; // still running or error
 }
 
 // ─── Display & Surface ──────────────────────────────────────────────────────────

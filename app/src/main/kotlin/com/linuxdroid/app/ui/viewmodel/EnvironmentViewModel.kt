@@ -201,6 +201,56 @@ class EnvironmentViewModel @Inject constructor(
         }
     }
 
+    fun restartEnvironment(environment: Environment) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val envId = environment.id.value
+            try {
+                log.info("Restarting environment $envId")
+                dao.updateState(
+                    id = envId,
+                    state = EnvironmentState.STARTING.name,
+                    timestamp = System.currentTimeMillis(),
+                    failureMessage = null,
+                )
+
+                runtimeBackend.stop(environment)
+                runtimeBackend.initialize(environment)
+                runtimeBackend.start(environment)
+
+                dao.updateState(
+                    id = envId,
+                    state = EnvironmentState.RUNNING.name,
+                    timestamp = System.currentTimeMillis(),
+                    failureMessage = null,
+                )
+                LinuxSessionService.start(context, environment.name)
+                log.info("Environment $envId restarted and is RUNNING")
+            } catch (e: Exception) {
+                log.error("Failed to restart environment $envId", e)
+                dao.updateState(
+                    id = envId,
+                    state = EnvironmentState.FAILED.name,
+                    timestamp = System.currentTimeMillis(),
+                    failureMessage = e.message ?: "Restart failed",
+                )
+                _errorMessage.tryEmit("Failed to restart: ${e.message}")
+            }
+        }
+    }
+
+    fun updateConfiguration(environment: Environment, config: EnvironmentConfiguration) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val updated = environment.copy(configuration = config)
+                dao.update(EnvironmentMapper.toEntity(updated))
+                log.info("Updated configuration for environment ${environment.id}")
+            } catch (e: Exception) {
+                log.error("Failed to update environment configuration", e)
+                _errorMessage.tryEmit("Failed to save settings: ${e.message}")
+            }
+        }
+    }
+
     fun deleteEnvironment(environment: Environment) {
         viewModelScope.launch(Dispatchers.IO) {
             try {

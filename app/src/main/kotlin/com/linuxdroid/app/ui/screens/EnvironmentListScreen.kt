@@ -1,8 +1,11 @@
 package com.linuxdroid.app.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -12,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.linuxdroid.app.ui.navigation.Screen
@@ -19,6 +23,7 @@ import com.linuxdroid.app.ui.viewmodel.EnvironmentViewModel
 import com.linuxdroid.core.model.Architecture
 import com.linuxdroid.core.model.Distribution
 import com.linuxdroid.core.model.Environment
+import com.linuxdroid.core.model.EnvironmentConfiguration
 import com.linuxdroid.core.model.EnvironmentState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,8 +35,13 @@ fun EnvironmentListScreen(
     val environments by viewModel.environments.collectAsState()
     val installProgress by viewModel.installProgress.collectAsState()
     val installStatusText by viewModel.installStatusText.collectAsState()
+
     var showCreateDialog by remember { mutableStateOf(false) }
     var envToDelete by remember { mutableStateOf<Environment?>(null) }
+    var envForDesktop by remember { mutableStateOf<Environment?>(null) }
+    var envForSettings by remember { mutableStateOf<Environment?>(null) }
+    var envForStorage by remember { mutableStateOf<Environment?>(null) }
+
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) {
@@ -48,6 +58,11 @@ fun EnvironmentListScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate(Screen.Diagnostics.route) }) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostics")
                     }
                 }
             )
@@ -75,7 +90,7 @@ fun EnvironmentListScreen(
                     .fillMaxSize()
                     .padding(padding),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 items(environments, key = { it.id.value }) { env ->
                     val progress = installProgress[env.id.value]
@@ -87,10 +102,15 @@ fun EnvironmentListScreen(
                         statusText = statusText,
                         onStartClick = { viewModel.startEnvironment(env) },
                         onStopClick = { viewModel.stopEnvironment(env) },
+                        onRestartClick = { viewModel.restartEnvironment(env) },
                         onInstallClick = { viewModel.installRootfs(env) },
-                        onTerminalClick = {
+                        onShellClick = {
                             navController.navigate(Screen.Terminal.route(env.id.value))
                         },
+                        onDesktopClick = { envForDesktop = env },
+                        onSettingsClick = { envForSettings = env },
+                        onStorageClick = { envForStorage = env },
+                        onDiagnosticsClick = { navController.navigate(Screen.Diagnostics.route) },
                         onDeleteClick = { envToDelete = env },
                     )
                 }
@@ -112,7 +132,7 @@ fun EnvironmentListScreen(
         AlertDialog(
             onDismissRequest = { envToDelete = null },
             title = { Text("Delete Environment") },
-            text = { Text("Are you sure you want to remove '${env.name}'? (The rootfs files will be safely unlinked from app storage).") },
+            text = { Text("Are you sure you want to delete '${env.name}'?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -129,6 +149,66 @@ fun EnvironmentListScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    envForDesktop?.let { env ->
+        AlertDialog(
+            onDismissRequest = { envForDesktop = null },
+            title = { Text("Linux Desktop GUI") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("The rootless Linux environment is running.")
+                    Text(
+                        "To start a graphical desktop (e.g. XFCE / Wayland), open the interactive shell and install a desktop environment:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Surface(
+                        color = Color(0xFF1E1E1E),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "apt update && apt install -y xfce4",
+                            color = Color(0xFF81C784),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val id = env.id.value
+                    envForDesktop = null
+                    navController.navigate(Screen.Terminal.route(id))
+                }) {
+                    Text("Open Shell")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { envForDesktop = null }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    envForSettings?.let { env ->
+        EnvironmentSettingsDialog(
+            environment = env,
+            onDismiss = { envForSettings = null },
+            onSave = { updatedConfig ->
+                viewModel.updateConfiguration(env, updatedConfig)
+                envForSettings = null
+            }
+        )
+    }
+
+    envForStorage?.let { env ->
+        EnvironmentStorageDialog(
+            environment = env,
+            onDismiss = { envForStorage = null }
         )
     }
 }
@@ -176,14 +256,20 @@ private fun EnvironmentCard(
     statusText: String?,
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
+    onRestartClick: () -> Unit,
     onInstallClick: () -> Unit,
-    onTerminalClick: () -> Unit,
+    onShellClick: () -> Unit,
+    onDesktopClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onStorageClick: () -> Unit,
+    onDiagnosticsClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -249,8 +335,11 @@ private fun EnvironmentCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Primary State Action Buttons
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -268,20 +357,33 @@ private fun EnvironmentCard(
                             Spacer(Modifier.width(6.dp))
                             Text("START")
                         }
-                        OutlinedButton(onClick = onTerminalClick) {
+                        OutlinedButton(onClick = onShellClick) {
                             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("SHELL")
+                            Text("OPEN SHELL")
                         }
                     }
                     EnvironmentState.RUNNING -> {
                         Button(
-                            onClick = onTerminalClick,
+                            onClick = onShellClick,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                         ) {
                             Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("OPEN SHELL")
+                        }
+                        Button(
+                            onClick = onDesktopClick,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                        ) {
+                            Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("OPEN DESKTOP")
+                        }
+                        OutlinedButton(onClick = onRestartClick) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("RESTART")
                         }
                         OutlinedButton(
                             onClick = onStopClick,
@@ -301,13 +403,42 @@ private fun EnvironmentCard(
                         )
                     }
                     EnvironmentState.FAILED -> {
-                        Button(onClick = onInstallClick) {
+                        Button(onClick = onRestartClick) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("RETRY INSTALL")
+                            Text("RETRY")
                         }
                     }
                     else -> {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Subsystem actions: Settings, Storage, Logs/Diagnostics
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onSettingsClick) {
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Settings", fontSize = 12.sp)
+                }
+
+                TextButton(onClick = onStorageClick) {
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Storage", fontSize = 12.sp)
+                }
+
+                TextButton(onClick = onDiagnosticsClick) {
+                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Logs / Diagnostics", fontSize = 12.sp)
                 }
             }
         }
@@ -454,6 +585,132 @@ private fun CreateEnvironmentDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EnvironmentSettingsDialog(
+    environment: Environment,
+    onDismiss: () -> Unit,
+    onSave: (EnvironmentConfiguration) -> Unit,
+) {
+    var linuxUser by remember { mutableStateOf(environment.configuration.linuxUser) }
+    var homeDir by remember { mutableStateOf(environment.configuration.homeDir) }
+    var sharedStorage by remember { mutableStateOf(environment.configuration.runtime.sharedStorageEnabled) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Environment Settings") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = linuxUser,
+                    onValueChange = { linuxUser = it },
+                    label = { Text("Linux User") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = homeDir,
+                    onValueChange = { homeDir = it },
+                    label = { Text("Home Directory") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Enable Shared Storage", style = MaterialTheme.typography.bodyMedium)
+                    Switch(
+                        checked = sharedStorage,
+                        onCheckedChange = { sharedStorage = it }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val newConfig = environment.configuration.copy(
+                    linuxUser = linuxUser.trim().ifEmpty { "root" },
+                    homeDir = homeDir.trim().ifEmpty { "/root" },
+                    runtime = environment.configuration.runtime.copy(
+                        sharedStorageEnabled = sharedStorage
+                    )
+                )
+                onSave(newConfig)
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun EnvironmentStorageDialog(
+    environment: Environment,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Storage & Shared Directory") },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Rootfs Location:", style = MaterialTheme.typography.labelMedium)
+                Surface(
+                    color = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = environment.rootfsPath,
+                        color = Color(0xFFE0E0E0),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Text("Shared Android Directory:", style = MaterialTheme.typography.labelMedium)
+                Surface(
+                    color = Color(0xFF1E1E1E),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "/sdcard/LinuxDroid -> /home/user/Android",
+                        color = Color(0xFF81C784),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+                Text(
+                    text = "Files placed in /sdcard/LinuxDroid on your device are safely accessible inside the Linux environment.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("OK")
             }
         }
     )

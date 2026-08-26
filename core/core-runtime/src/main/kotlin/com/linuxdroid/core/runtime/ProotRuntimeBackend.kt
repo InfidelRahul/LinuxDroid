@@ -245,6 +245,88 @@ class ProotRuntimeBackend(
         )
     }
 
+    override suspend fun startInteractiveShell(
+        environment: Environment,
+        rows: Int,
+        cols: Int,
+        command: List<String>,
+    ): PtySession = withContext(Dispatchers.IO) {
+        val proot = ensureProotBinary()
+        val loader = ensureLoaderBinary()
+        val rootfs = storage.rootfsDir(environment.id)
+        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+
+        val prootCmd = buildList {
+            add(proot.absolutePath)
+            add("-0")
+            add("--kill-on-exit")
+            add("--link2symlink")
+            add("-r")
+            add(rootfs.absolutePath)
+            add("-b")
+            add("/dev")
+            add("-b")
+            add("/proc")
+            add("-b")
+            add("/sys")
+            add("-b")
+            add("${tmpDir.absolutePath}:/tmp")
+            if (environment.configuration.runtime.sharedStorageEnabled) {
+                val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
+                if (sharedDir.exists() && sharedDir.canRead()) {
+                    add("-b")
+                    add("${sharedDir.absolutePath}:/home/user/Android")
+                }
+            }
+            add("-w")
+            add(environment.configuration.homeDir.ifBlank { "/root" })
+            add("/usr/bin/env")
+            add("-i")
+            add("HOME=/root")
+            add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+            add("TERM=xterm-256color")
+            add("LANG=C.UTF-8")
+            add("USER=root")
+            add("LOGNAME=root")
+            add("TMPDIR=/tmp")
+            addAll(command)
+        }
+
+        val envVars = buildList {
+            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
+            if (loader?.exists() == true) {
+                add("PROOT_LOADER=${loader.absolutePath}")
+            }
+        }
+
+        val outPidAndFd = IntArray(2)
+        val res = NativeBridge.createPtyProcess(
+            cmd = prootCmd.toTypedArray(),
+            cwd = rootfs.absolutePath,
+            env = envVars.toTypedArray(),
+            rows = rows,
+            cols = cols,
+            outPidAndFd = outPidAndFd
+        )
+
+        if (res != 0) {
+            log.error("Failed to create PTY process: errno $res")
+            throw RuntimeError(
+                environmentId = environment.id,
+                message = "Failed to create PTY process: errno $res",
+            )
+        }
+
+        val session = PtySession(
+            sessionId = UUID.randomUUID().toString(),
+            environmentId = environment.id,
+            pid = outPidAndFd[0],
+            masterFd = outPidAndFd[1],
+        )
+        log.info("Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
+        session
+    }
+
     override suspend fun inspect(handleId: String): ProcessHandle? {
         val prootProcess = activeProcesses[handleId] ?: return null
         val process = prootProcess.process

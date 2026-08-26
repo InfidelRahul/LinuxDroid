@@ -24,6 +24,30 @@ object NativeBridge {
     fun sendSignal(pid: Int, signal: Int): Int = nativeSendSignal(pid, signal)
     fun getAvailableMemoryBytes(): Long = nativeGetAvailableMemoryBytes()
 
+    // ─── PTY Subprocess ────────────────────────────────────────────────────────────
+
+    fun createPtyProcess(
+        cmd: Array<String>,
+        cwd: String,
+        env: Array<String>?,
+        rows: Int,
+        cols: Int,
+        outPidAndFd: IntArray
+    ): Int = nativeCreatePtyProcess(cmd, cwd, env, rows, cols, outPidAndFd)
+
+    fun setPtyWindowSize(fd: Int, rows: Int, cols: Int): Int =
+        nativeSetPtyWindowSize(fd, rows, cols)
+
+    fun writeFd(fd: Int, data: ByteArray, offset: Int = 0, length: Int = data.size): Int =
+        nativeWriteFd(fd, data, offset, length)
+
+    fun readFd(fd: Int, buffer: ByteArray, offset: Int = 0, length: Int = buffer.size): Int =
+        nativeReadFd(fd, buffer, offset, length)
+
+    fun closeFd(fd: Int) = nativeCloseFd(fd)
+
+    fun waitpid(pid: Int, block: Boolean = false): Int = nativeWaitpid(pid, block)
+
     // ─── Display & Surface ─────────────────────────────────────────────────────────
 
     fun onSurfaceCreated(surface: Surface, width: Int, height: Int) =
@@ -73,6 +97,12 @@ object NativeBridge {
     @JvmStatic external fun nativeGetAbi(): String
     @JvmStatic external fun nativeSendSignal(pid: Int, signal: Int): Int
     @JvmStatic external fun nativeGetAvailableMemoryBytes(): Long
+    @JvmStatic external fun nativeCreatePtyProcess(cmd: Array<String>, cwd: String, env: Array<String>?, rows: Int, cols: Int, outPidAndFd: IntArray): Int
+    @JvmStatic external fun nativeSetPtyWindowSize(fd: Int, rows: Int, cols: Int): Int
+    @JvmStatic external fun nativeWriteFd(fd: Int, data: ByteArray, offset: Int, length: Int): Int
+    @JvmStatic external fun nativeReadFd(fd: Int, buffer: ByteArray, offset: Int, length: Int): Int
+    @JvmStatic external fun nativeCloseFd(fd: Int)
+    @JvmStatic external fun nativeWaitpid(pid: Int, block: Boolean): Int
 
     @JvmStatic external fun nativeOnSurfaceCreated(surface: Surface, width: Int, height: Int)
     @JvmStatic external fun nativeOnSurfaceChanged(surface: Surface, width: Int, height: Int, format: Int)

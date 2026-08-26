@@ -106,6 +106,16 @@ interface RuntimeBackend {
     suspend fun cleanup(environment: Environment)
 
     /**
+     * Spawns an interactive shell inside a pseudo-terminal (PTY).
+     */
+    suspend fun startInteractiveShell(
+        environment: Environment,
+        rows: Int = 24,
+        cols: Int = 80,
+        command: List<String> = listOf("/bin/sh")
+    ): PtySession
+
+    /**
      * A Flow that emits events when a managed process changes state.
      */
     val processEvents: Flow<ProcessStateEvent>
