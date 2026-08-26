@@ -8,3 +8,4 @@
 
 ## 2. Software Fallback
 If GPU hardware initialization is blocked by OEM driver constraints, `DefaultGpuManager` engages a software rasterizer fallback (`llvmpipe` / `swiftshader`), ensuring the session remains fully functional.
+

@@ -16,3 +16,4 @@ The native layer (`liblinuxdroid_bridge.so`) centralizes all platform and hardwa
 - RAII memory ownership for all native allocations.
 - No dangling `jobject` references across JNI boundaries.
 - Thread-safe mutex guards on all hardware adapters.
+

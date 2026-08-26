@@ -16,3 +16,4 @@ Hardware Speaker / Headphones
 ## 2. Metrics & Latency
 - Native PCM playback at 44.1 kHz / 48 kHz stereo 16-bit PCM.
 - Low-latency buffer tuning (~20ms latency).
+

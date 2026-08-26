@@ -16,3 +16,4 @@ Android Graphics Stack & Display
 - `onSurfaceCreated(surface, width, height)`: Attaches native window buffer.
 - `onSurfaceChanged(surface, width, height, format)`: Updates buffer geometry and DPI.
 - `onSurfaceDestroyed()`: Releases `ANativeWindow` safely to prevent crashes across Activity recreation.
+

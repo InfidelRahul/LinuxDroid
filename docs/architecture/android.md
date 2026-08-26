@@ -25,3 +25,4 @@ MainActivity
 - **Database (`LinuxDroidDatabase`):** Stores *environment metadata* ("What is this environment?").
 - **Filesystem (`EnvironmentStorage`):** Stores *Linux rootfs* ("What is inside this environment?").
 The database never serializes the Linux filesystem.
+

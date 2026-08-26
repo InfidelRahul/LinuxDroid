@@ -14,3 +14,4 @@ Inside the Linux userspace, this directory is bind-mounted at:
 
 ## 3. Path Traversal Guard
 All user-supplied paths are verified by `PathValidator.requireInsideBase(path, basePath)` to prevent directory traversal escapes (`../`).
+

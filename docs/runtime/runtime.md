@@ -28,3 +28,4 @@ interface RuntimeBackend {
 ```
 
 This ensures that while PRoot is the initial rootless backend, future backends (e.g. specialized kernel tracing or seccomp runners) can be plugged in without changing domain logic.
+

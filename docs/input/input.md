@@ -15,3 +15,4 @@ Linux Desktop Applications
 - **Touch:** Mapped to screen resolution with clamped bounds and pressure metrics.
 - **Mouse:** Supports left, right, middle clicks, hover moves, and vertical/horizontal scrolling.
 - **Keyboard:** Converts Android keycodes to standard Linux `linux/input-event-codes.h` keysyms and unicode characters.
+

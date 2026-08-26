@@ -7,3 +7,4 @@ The Linux userspace shares the host Android network stack without requiring root
 - `NetworkManager` observes Android `ConnectivityManager` state changes.
 - Injects public DNS servers (`8.8.8.8`, `1.1.1.1`) into `/etc/resolv.conf` upon environment bootstrap.
 - Diagnostic ping and DNS resolution checks verify internet connectivity.
+
