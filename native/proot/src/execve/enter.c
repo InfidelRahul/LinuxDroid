@@ -137,20 +137,28 @@ int translate_and_check_exec(Tracee *tracee, char host_path[PATH_MAX], const cha
 		return -ENOEXEC;
 
 	status = translate_path(tracee, host_path, AT_FDCWD, user_path, true);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "translate_path('%s') failed: %s", user_path, strerror(-status));
 		return status;
+	}
 
 	status = access(host_path, F_OK);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "access(F_OK, '%s' [user: '%s']) failed: %s", host_path, user_path, strerror(errno));
 		return -ENOENT;
+	}
 
 	status = access(host_path, X_OK);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "access(X_OK, '%s' [user: '%s']) failed: %s", host_path, user_path, strerror(errno));
 		return -EACCES;
+	}
 
 	status = lstat(host_path, &statl);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "lstat('%s' [user: '%s']) failed: %s", host_path, user_path, strerror(errno));
 		return -EPERM;
+	}
 
 	return 0;
 }
@@ -592,9 +600,14 @@ int translate_execve_enter(Tracee *tracee)
 		return 0;
 	}
 
-	status = get_sysarg_path(tracee, user_path, SYSARG_1);
-	if (status < 0)
+	Sysnum sysnum = get_sysnum(tracee, CURRENT);
+	Reg path_reg = (sysnum == PR_execveat) ? SYSARG_2 : SYSARG_1;
+
+	status = get_sysarg_path(tracee, user_path, path_reg);
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "get_sysarg_path failed: %s", strerror(-status));
 		return status;
+	}
 
 	/* Remember the user path before it is overwritten by
 	 * expand_shebang().  This "raw" path is useful to fix the
@@ -604,10 +617,12 @@ int translate_execve_enter(Tracee *tracee)
 		return -ENOMEM;
 
 	status = expand_shebang(tracee, host_path, user_path);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "expand_shebang('%s') failed: %s", user_path, strerror(-status));
 		/* The Linux kernel actually returns -EACCES when
 		 * trying to execute a directory.  */
 		return status == -EISDIR ? -EACCES : status;
+	}
 
 	/* user_path is modified only if there's an interpreter
 	 * (ie. for a script or with qemu).  */
@@ -653,13 +668,17 @@ int translate_execve_enter(Tracee *tracee)
 		return -ENOMEM;
 
 	status = extract_load_info(tracee, tracee->load_info);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "extract_load_info('%s') failed: %s", host_path, strerror(-status));
 		return status;
+	}
 
 	if (tracee->load_info->interp != NULL) {
 		status = extract_load_info(tracee, tracee->load_info->interp);
-		if (status < 0)
+		if (status < 0) {
+			note(tracee, ERROR, SYSTEM, "extract_load_info(interp '%s') failed: %s", tracee->load_info->interp->host_path, strerror(-status));
 			return status;
+		}
 
 		/* An ELF interpreter is supposed to be
 		 * standalone.  */
@@ -671,12 +690,16 @@ int translate_execve_enter(Tracee *tracee)
 
 	/* Execute the loader instead of the program.  */
 	loader_path = get_loader_path(tracee);
-	if (loader_path == NULL)
+	if (loader_path == NULL) {
+		note(tracee, ERROR, SYSTEM, "get_loader_path failed (loader not found)");
 		return -ENOENT;
+	}
 
-	status = set_sysarg_path(tracee, loader_path, SYSARG_1);
-	if (status < 0)
+	status = set_sysarg_path(tracee, loader_path, path_reg);
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "set_sysarg_path('%s') failed: %s", loader_path, strerror(-status));
 		return status;
+	}
 
 	/* Mask to its ptracer syscalls performed by the loader.  */
 	tracee->as_ptracee.ignore_loader_syscalls = true;

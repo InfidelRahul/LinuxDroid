@@ -117,7 +117,7 @@ int write_data(const Tracee *tracee, word_t dest_tracee, const void *src_tracer,
 	for (i = 0; i < nb_full_words; i++) {
 		status = ptrace(PTRACE_POKEDATA, tracee->pid, dest + i, load_word(&src[i]));
 		if (status < 0) {
-			note(tracee, WARNING, SYSTEM, "ptrace(POKEDATA)");
+			note(tracee, WARNING, SYSTEM, "write_data: ptrace(POKEDATA, pid=%d, addr=0x%lx) failed: %s", tracee->pid, (word_t)(dest + i), strerror(errno));
 			return -EFAULT;
 		}
 	}
@@ -130,7 +130,7 @@ int write_data(const Tracee *tracee, word_t dest_tracee, const void *src_tracer,
 
 	word = ptrace(PTRACE_PEEKDATA, tracee->pid, dest + i, NULL);
 	if (errno != 0) {
-		note(tracee, WARNING, SYSTEM, "ptrace(PEEKDATA)");
+		note(tracee, WARNING, SYSTEM, "write_data: ptrace(PEEKDATA, pid=%d, addr=0x%lx) failed: %s", tracee->pid, (word_t)(dest + i), strerror(errno));
 		return -EFAULT;
 	}
 
@@ -142,7 +142,7 @@ int write_data(const Tracee *tracee, word_t dest_tracee, const void *src_tracer,
 
 	status = ptrace(PTRACE_POKEDATA, tracee->pid, dest + i, word);
 	if (status < 0) {
-		note(tracee, WARNING, SYSTEM, "ptrace(POKEDATA)");
+		note(tracee, WARNING, SYSTEM, "write_data: ptrace(POKEDATA last, pid=%d, addr=0x%lx) failed: %s", tracee->pid, (word_t)(dest + i), strerror(errno));
 		return -EFAULT;
 	}
 
@@ -357,8 +357,10 @@ fallback:
 	/* Copy one word by one word, except for the last one. */
 	for (i = 0; i < nb_full_words; i++) {
 		word = ptrace(PTRACE_PEEKDATA, tracee->pid, src + i, NULL);
-		if (errno != 0)
+		if (errno != 0) {
+			note(tracee, WARNING, SYSTEM, "read_path: ptrace(PEEKDATA, pid=%d, addr=0x%lx) failed: %s", tracee->pid, (word_t)(src + i), strerror(errno));
 			return -EFAULT;
+		}
 
 		store_word(&dest[i], word);
 
@@ -373,8 +375,10 @@ fallback:
 	 * to not overwrite the bytes lying beyond @dest_tracer. */
 
 	word = ptrace(PTRACE_PEEKDATA, tracee->pid, src + i, NULL);
-	if (errno != 0)
+	if (errno != 0) {
+		note(tracee, WARNING, SYSTEM, "read_path: ptrace(PEEKDATA last, pid=%d, addr=0x%lx) failed: %s", tracee->pid, (word_t)(src + i), strerror(errno));
 		return -EFAULT;
+	}
 
 	dest_word = (uint8_t *)&dest[i];
 	src_word  = (uint8_t *)&word;

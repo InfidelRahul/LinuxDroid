@@ -118,7 +118,7 @@ class TerminalViewModel @Inject constructor(
                     }
 
                     _isShellActive.value = false
-                    val exitCode = session.getExitCode() ?: 0
+                    val exitCode = session.getExitCode() ?: 1
                     _shellExitCode.value = exitCode
                     val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
                     terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)

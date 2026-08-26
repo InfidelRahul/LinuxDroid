@@ -17,6 +17,9 @@ data class PtySession(
     @Volatile
     private var isClosed = false
 
+    @Volatile
+    private var cachedExitCode: Int? = null
+
     /**
      * Writes raw bytes to the PTY master descriptor (sent to tracee shell stdin).
      */
@@ -54,17 +57,28 @@ data class PtySession(
      */
     fun isAlive(): Boolean {
         if (isClosed || pid <= 0 || masterFd < 0) return false
+        if (cachedExitCode != null) return false
         val status = NativeBridge.waitpid(pid, false)
-        return status == -1 // -1 means still running
+        return if (status >= 0) {
+            cachedExitCode = status
+            false
+        } else {
+            true // -1 means still running
+        }
     }
 
     /**
      * Gets exit status if process terminated.
      */
     fun getExitCode(): Int? {
+        if (cachedExitCode != null) return cachedExitCode
         if (pid <= 0) return null
         val status = NativeBridge.waitpid(pid, false)
-        return if (status >= 0) status else null
+        if (status >= 0) {
+            cachedExitCode = status
+            return status
+        }
+        return null
     }
 
     /**

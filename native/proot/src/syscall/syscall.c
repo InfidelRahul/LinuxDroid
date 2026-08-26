@@ -31,6 +31,7 @@
 #include "tracee/tracee.h"
 #include "tracee/reg.h"
 #include "tracee/mem.h"
+#include "cli/note.h"
 
 /**
  * Copy in @path a C string (PATH_MAX bytes max.) from the @tracee's
@@ -75,13 +76,17 @@ static int set_sysarg_data(Tracee *tracee, const void *tracer_ptr, word_t size, 
 
 	/* Allocate space into the tracee's memory to host the new data. */
 	tracee_ptr = alloc_mem(tracee, size);
-	if (tracee_ptr == 0)
+	if (tracee_ptr == 0) {
+		note(tracee, ERROR, INTERNAL, "set_sysarg_data: alloc_mem(%zd) failed (stack underflow)", (size_t) size);
 		return -EFAULT;
+	}
 
 	/* Copy the new data into the previously allocated space. */
 	status = write_data(tracee, tracee_ptr, tracer_ptr, size);
-	if (status < 0)
+	if (status < 0) {
+		note(tracee, ERROR, SYSTEM, "set_sysarg_data: write_data(0x%lx, %zd) failed: %s", tracee_ptr, (size_t) size, strerror(-status));
 		return status;
+	}
 
 	/* Make this argument point to the new data. */
 	poke_reg(tracee, reg, tracee_ptr);
