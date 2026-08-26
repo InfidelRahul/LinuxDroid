@@ -9,19 +9,18 @@ import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.EnvironmentState
+import com.linuxdroid.core.runtime.PtySession
 import com.linuxdroid.core.runtime.RuntimeBackend
+import com.linuxdroid.core.runtime.TerminalBuffer
+import com.linuxdroid.core.runtime.TerminalLineData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
-
-data class TerminalLine(
-    val text: String,
-    val isError: Boolean = false,
-    val isCommand: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis(),
-)
 
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
@@ -37,73 +36,217 @@ class TerminalViewModel @Inject constructor(
         .map { entity -> entity?.let { EnvironmentMapper.toDomain(it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _lines = MutableStateFlow<List<TerminalLine>>(listOf(
-        TerminalLine("LinuxDroid Terminal initialized.", isCommand = false),
-        TerminalLine("Type a command below or tap a quick action.", isCommand = false),
-    ))
-    val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
+    private val terminalBuffer = TerminalBuffer(maxScrollbackLines = 2000)
+    val lines: StateFlow<List<TerminalLineData>> = terminalBuffer.lines
 
-    private val _isRunning = MutableStateFlow(false)
-    val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
+    private val _isShellActive = MutableStateFlow(false)
+    val isShellActive: StateFlow<Boolean> = _isShellActive.asStateFlow()
 
-    fun runCommand(rawCommand: String) {
-        val cmd = rawCommand.trim()
-        if (cmd.isEmpty()) return
+    private val _isStarting = MutableStateFlow(false)
+    val isStarting: StateFlow<Boolean> = _isStarting.asStateFlow()
 
-        val currentEnv = environment.value ?: run {
-            _lines.update { it + TerminalLine("Error: Environment not found ($environmentId)", isError = true) }
-            return
+    private val _shellExitCode = MutableStateFlow<Int?>(null)
+    val shellExitCode: StateFlow<Int?> = _shellExitCode.asStateFlow()
+
+    private var ptySession: PtySession? = null
+    private var readJob: Job? = null
+    private var isCtrlActive = false
+    private var isAltActive = false
+
+    private var currentRows = 24
+    private var currentCols = 80
+
+    init {
+        viewModelScope.launch {
+            environment.filterNotNull().first { env ->
+                startInteractiveShellSession(env)
+                true
+            }
         }
+    }
+
+    /**
+     * Initializes and starts the persistent interactive shell in PTY.
+     */
+    fun startInteractiveShellSession(env: Environment) {
+        if (ptySession?.isAlive() == true) return
 
         viewModelScope.launch(Dispatchers.IO) {
-            _isRunning.value = true
-            _lines.update { it + TerminalLine("$ $cmd", isCommand = true) }
+            _isStarting.value = true
+            _shellExitCode.value = null
 
             try {
-                // Ensure runtime is ready
-                if (currentEnv.state != EnvironmentState.RUNNING) {
-                    _lines.update { it + TerminalLine("Initializing proot runtime…", isError = false) }
-                    runtimeBackend.prepare(currentEnv)
-                    runtimeBackend.initialize(currentEnv)
-                    runtimeBackend.start(currentEnv)
+                // Ensure runtime backend is prepared and started
+                if (env.state != EnvironmentState.RUNNING) {
+                    terminalBuffer.append("Starting Linux runtime…\r\n".toByteArray(), "Starting Linux runtime…\r\n".length)
+                    runtimeBackend.prepare(env)
+                    runtimeBackend.initialize(env)
+                    runtimeBackend.start(env)
                     dao.updateState(
-                        id = currentEnv.id.value,
+                        id = env.id.value,
                         state = EnvironmentState.RUNNING.name,
                         timestamp = System.currentTimeMillis(),
                         failureMessage = null,
                     )
                 }
 
-                val tokens = cmd.split("\\s+".toRegex()).filter { it.isNotBlank() }
-                log.info("Running terminal command: $tokens in ${currentEnv.id}")
+                // Close existing session if any
+                closeSession()
 
-                val result = runtimeBackend.executeAndWait(
-                    environment = currentEnv,
-                    command = tokens,
-                    workingDirectory = currentEnv.configuration.homeDir.ifBlank { "/root" },
-                    timeoutMs = 60_000,
+                val session = runtimeBackend.startInteractiveShell(
+                    environment = env,
+                    rows = currentRows,
+                    cols = currentCols,
+                    command = listOf("/bin/sh")
                 )
+                ptySession = session
+                _isShellActive.value = true
+                _isStarting.value = false
 
-                if (result.stdout.isNotBlank()) {
-                    _lines.update { it + TerminalLine(result.stdout.trimEnd(), isError = false) }
-                }
-                if (result.stderr.isNotBlank()) {
-                    _lines.update { it + TerminalLine(result.stderr.trimEnd(), isError = true) }
-                }
-                if (result.exitCode != 0) {
-                    _lines.update { it + TerminalLine("[Process exited with code ${result.exitCode}]", isError = true) }
+                log.info("Interactive shell session connected for ${env.id} (pid=${session.pid})")
+
+                // Start continuous IO reader job
+                readJob = launch(Dispatchers.IO) {
+                    val buffer = ByteArray(4096)
+                    while (isActive && session.isAlive()) {
+                        val bytesRead = session.read(buffer)
+                        if (bytesRead > 0) {
+                            terminalBuffer.append(buffer, bytesRead)
+                        } else if (bytesRead < 0) {
+                            break
+                        }
+                    }
+
+                    _isShellActive.value = false
+                    val exitCode = session.getExitCode() ?: 0
+                    _shellExitCode.value = exitCode
+                    val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
+                    terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)
+                    log.info("Shell process exited with code $exitCode")
                 }
             } catch (e: Exception) {
-                log.error("Command execution error", e)
-                _lines.update { it + TerminalLine("Execution error: ${e.message}", isError = true) }
-            } finally {
-                _isRunning.value = false
+                log.error("Failed to spawn interactive shell", e)
+                _isStarting.value = false
+                _isShellActive.value = false
+                val errorMsg = "\r\n[Error launching shell: ${e.message}]\r\n"
+                terminalBuffer.append(errorMsg.toByteArray(), errorMsg.length)
             }
         }
     }
 
+    /**
+     * Sends keyboard input string directly to the active shell stdin.
+     */
+    fun sendInput(text: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = ptySession
+            if (session?.isAlive() == true) {
+                session.write(text)
+            }
+        }
+    }
+
+    /**
+     * Sends raw bytes to the active shell stdin.
+     */
+    fun sendBytes(bytes: ByteArray) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = ptySession
+            if (session?.isAlive() == true) {
+                session.write(bytes)
+            }
+        }
+    }
+
+    /**
+     * Sends predefined shortcut command to the current shell session.
+     */
+    fun runCommand(cmd: String) {
+        sendInput("$cmd\n")
+    }
+
+    // ─── Control key helpers ────────────────────────────────────────────────────────
+
+    fun sendCtrlC() = sendBytes(byteArrayOf(0x03)) // SIGINT (ETX)
+    fun sendCtrlD() = sendBytes(byteArrayOf(0x04)) // EOF (EOT)
+    fun sendCtrlL() = sendBytes(byteArrayOf(0x0C)) // Clear (FF)
+    fun sendCtrlZ() = sendBytes(byteArrayOf(0x1A)) // Suspend (SUB)
+    fun sendCtrlA() = sendBytes(byteArrayOf(0x01)) // Start of line
+    fun sendCtrlE() = sendBytes(byteArrayOf(0x05)) // End of line
+    fun sendCtrlU() = sendBytes(byteArrayOf(0x15)) // Kill line
+    fun sendCtrlW() = sendBytes(byteArrayOf(0x17)) // Word rubout
+
+    fun sendTab() = sendBytes(byteArrayOf(0x09)) // Tab
+    fun sendEscape() = sendBytes(byteArrayOf(0x1B)) // ESC
+    fun sendBackspace() = sendBytes(byteArrayOf(0x7F)) // DEL / Backspace
+    fun sendEnter() = sendBytes(byteArrayOf(0x0D)) // CR / Enter
+
+    fun sendArrowUp() = sendInput("\u001B[A")
+    fun sendArrowDown() = sendInput("\u001B[B")
+    fun sendArrowRight() = sendInput("\u001B[C")
+    fun sendArrowLeft() = sendInput("\u001B[D")
+
+    fun sendHome() = sendInput("\u001B[H")
+    fun sendEnd() = sendInput("\u001B[F")
+    fun sendPageUp() = sendInput("\u001B[5~")
+    fun sendPageDown() = sendInput("\u001B[6~")
+    fun sendInsert() = sendInput("\u001B[2~")
+    fun sendDelete() = sendInput("\u001B[3~")
+
+    fun sendFunctionKey(num: Int) {
+        val seq = when (num) {
+            1 -> "\u001BOP"
+            2 -> "\u001BOQ"
+            3 -> "\u001BOR"
+            4 -> "\u001BOS"
+            5 -> "\u001B[15~"
+            6 -> "\u001B[17~"
+            7 -> "\u001B[18~"
+            8 -> "\u001B[19~"
+            9 -> "\u001B[20~"
+            10 -> "\u001B[21~"
+            11 -> "\u001B[23~"
+            12 -> "\u001B[24~"
+            else -> return
+        }
+        sendInput(seq)
+    }
+
+    /**
+     * Resizes the terminal PTY window.
+     */
+    fun resize(rows: Int, cols: Int) {
+        if (rows <= 0 || cols <= 0) return
+        currentRows = rows
+        currentCols = cols
+        viewModelScope.launch(Dispatchers.IO) {
+            ptySession?.resize(rows, cols)
+        }
+    }
+
+    /**
+     * Restarts the interactive shell session.
+     */
+    fun restartShell() {
+        val env = environment.value ?: return
+        startInteractiveShellSession(env)
+    }
+
     fun clear() {
-        _lines.value = listOf(TerminalLine("Terminal cleared.", isCommand = false))
+        terminalBuffer.clear()
+        sendCtrlL()
+    }
+
+    private fun closeSession() {
+        readJob?.cancel()
+        readJob = null
+        ptySession?.close()
+        ptySession = null
+        _isShellActive.value = false
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        closeSession()
     }
 }
-

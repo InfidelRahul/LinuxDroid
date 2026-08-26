@@ -33,6 +33,36 @@ JNIEXPORT jlong JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
     JNIEnv* env, jclass clazz);
 
+// PTY Subprocess
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCreatePtyProcess(
+    JNIEnv* env, jclass clazz,
+    jobjectArray cmdArray,
+    jstring cwdStr,
+    jobjectArray envArray,
+    jint rows, jint cols,
+    jintArray outPidAndFd);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetPtyWindowSize(
+    JNIEnv* env, jclass clazz, jint fd, jint rows, jint cols);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWriteFd(
+    JNIEnv* env, jclass clazz, jint fd, jbyteArray data, jint offset, jint length);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeReadFd(
+    JNIEnv* env, jclass clazz, jint fd, jbyteArray buffer, jint offset, jint length);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCloseFd(
+    JNIEnv* env, jclass clazz, jint fd);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWaitpid(
+    JNIEnv* env, jclass clazz, jint pid, jboolean block);
+
 // Display & Surface
 JNIEXPORT void JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceCreated(
