@@ -4,70 +4,97 @@
 #include <string>
 #include <vector>
 
-/**
- * LinuxDroid Native Bridge — C++ header
- *
- * This header defines the C++ side of the JNI interface.
- * All JNI entry points are declared here.
- *
- * Ownership rules:
- * - JNI parameters (jobject, jstring, etc.) are owned by the JVM.
- * - Native resources created here are tracked in NativeBridgeState.
- * - All native resources MUST be released before the JVM frees them.
- */
+#define LINUXDROID_BRIDGE_VERSION 2
 
-// Version of the native bridge API
-#define LINUXDROID_BRIDGE_VERSION 1
-
-/**
- * JNI function declarations for the bridge.
- * These match the Kotlin native declarations in NativeBridge.kt.
- */
 extern "C" {
 
-/**
- * Returns the native bridge version.
- */
+// Base System Info & Process
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetBridgeVersion(
     JNIEnv* env, jclass clazz);
 
-/**
- * Checks if a file path is executable.
- * Returns JNI_TRUE if the file exists and is executable.
- */
 JNIEXPORT jboolean JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsExecutable(
     JNIEnv* env, jclass clazz, jstring path);
 
-/**
- * Sets a file as executable (chmod +x).
- * Returns 0 on success, errno on failure.
- */
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetExecutable(
     JNIEnv* env, jclass clazz, jstring path);
 
-/**
- * Returns the Android ABI string (e.g. "arm64-v8a").
- */
 JNIEXPORT jstring JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAbi(
     JNIEnv* env, jclass clazz);
 
-/**
- * Sends a signal to a process by PID.
- * Returns 0 on success, errno on failure.
- */
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendSignal(
     JNIEnv* env, jclass clazz, jint pid, jint signal);
 
-/**
- * Returns the available memory in bytes from /proc/meminfo.
- */
 JNIEXPORT jlong JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
+    JNIEnv* env, jclass clazz);
+
+// Display & Surface
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceCreated(
+    JNIEnv* env, jclass clazz, jobject surface, jint width, jint height);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceChanged(
+    JNIEnv* env, jclass clazz, jobject surface, jint width, jint height, jint format);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceDestroyed(
+    JNIEnv* env, jclass clazz);
+
+// GPU Detection
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuVendor(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuRenderer(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuVersion(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsVulkanSupported(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsHardwareAccelerated(
+    JNIEnv* env, jclass clazz);
+
+// Input Routing
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendTouchEvent(
+    JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y, jfloat pressure);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendMouseEvent(
+    JNIEnv* env, jclass clazz, jint action, jint buttonState, jfloat x, jfloat y, jfloat scrollX, jfloat scrollY);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendKeyEvent(
+    JNIEnv* env, jclass clazz, jint keyCode, jboolean isDown, jint metaState, jint unicodeChar);
+
+// Audio
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioStart(
+    JNIEnv* env, jclass clazz, jint sampleRate, jint channels, jint bufferSizeFrames);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioStop(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioWritePcm(
+    JNIEnv* env, jclass clazz, jbyteArray data, jint offset, jint length);
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioGetLatencyMs(
     JNIEnv* env, jclass clazz);
 
 } // extern "C"

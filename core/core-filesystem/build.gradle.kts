@@ -21,6 +21,7 @@ dependencies {
     implementation(project(":core:core-logging"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
 }

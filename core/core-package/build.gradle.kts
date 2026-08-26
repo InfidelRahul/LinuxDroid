@@ -19,9 +19,12 @@ android {
 dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-logging"))
+    implementation(project(":core:core-runtime"))
+    implementation(project(":core:core-filesystem"))
     implementation(project(":core:core-process"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlin.test)
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
 }

@@ -1,17 +1,8 @@
-/**
- * LinuxDroid Native Bridge — Implementation
- *
- * JNI implementations for the LinuxDroid native bridge.
- *
- * Thread safety: Each JNI function is independent.
- * Stateful operations use synchronized Kotlin-side management.
- *
- * Resource ownership:
- * - jstring parameters are converted to std::string immediately.
- * - No JNI local references are stored beyond function scope.
- */
-
 #include "linuxdroid_bridge.h"
+#include "display_bridge.h"
+#include "gpu_detector.h"
+#include "input_bridge.h"
+#include "audio_bridge.h"
 
 #include <android/log.h>
 #include <cerrno>
@@ -31,10 +22,6 @@
 
 namespace {
 
-/**
- * Converts a jstring to a std::string.
- * Caller must NOT release the returned string through JNI.
- */
 std::string jstringToString(JNIEnv* env, jstring jstr) {
     if (jstr == nullptr) return "";
     const char* chars = env->GetStringUTFChars(jstr, nullptr);
@@ -44,9 +31,6 @@ std::string jstringToString(JNIEnv* env, jstring jstr) {
     return result;
 }
 
-/**
- * Returns the ABI string for the current device.
- */
 const char* getCurrentAbi() {
 #if defined(__aarch64__)
     return "arm64-v8a";
@@ -68,7 +52,6 @@ extern "C" {
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetBridgeVersion(
     JNIEnv* env, jclass clazz) {
-    LOGI("nativeGetBridgeVersion() -> %d", LINUXDROID_BRIDGE_VERSION);
     return LINUXDROID_BRIDGE_VERSION;
 }
 
@@ -80,12 +63,9 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsExecutable(
 
     struct stat st{};
     if (stat(pathStr.c_str(), &st) != 0) {
-        LOGD("nativeIsExecutable: stat failed for %s: %s", pathStr.c_str(), strerror(errno));
         return JNI_FALSE;
     }
-
     const bool isExec = (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
-    LOGD("nativeIsExecutable: %s -> %s", pathStr.c_str(), isExec ? "true" : "false");
     return isExec ? JNI_TRUE : JNI_FALSE;
 }
 
@@ -97,43 +77,27 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetExecutable(
 
     struct stat st{};
     if (stat(pathStr.c_str(), &st) != 0) {
-        const int err = errno;
-        LOGE("nativeSetExecutable: stat failed for %s: %s", pathStr.c_str(), strerror(err));
-        return err;
+        return errno;
     }
-
     const mode_t newMode = st.st_mode | S_IXUSR | S_IXGRP | S_IXOTH;
     if (chmod(pathStr.c_str(), newMode) != 0) {
-        const int err = errno;
-        LOGE("nativeSetExecutable: chmod failed for %s: %s", pathStr.c_str(), strerror(err));
-        return err;
+        return errno;
     }
-
-    LOGD("nativeSetExecutable: %s -> ok", pathStr.c_str());
     return 0;
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAbi(
     JNIEnv* env, jclass clazz) {
-    const char* abi = getCurrentAbi();
-    LOGD("nativeGetAbi() -> %s", abi);
-    return env->NewStringUTF(abi);
+    return env->NewStringUTF(getCurrentAbi());
 }
 
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendSignal(
     JNIEnv* env, jclass clazz, jint pid, jint signal) {
-    if (pid <= 0) {
-        LOGE("nativeSendSignal: invalid PID %d", (int)pid);
-        return EINVAL;
-    }
-
-    LOGD("nativeSendSignal: kill(%d, %d)", (int)pid, (int)signal);
+    if (pid <= 0) return EINVAL;
     if (kill((pid_t)pid, (int)signal) != 0) {
-        const int err = errno;
-        LOGE("nativeSendSignal: kill(%d, %d) failed: %s", (int)pid, (int)signal, strerror(err));
-        return err;
+        return errno;
     }
     return 0;
 }
@@ -142,10 +106,7 @@ JNIEXPORT jlong JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
     JNIEnv* env, jclass clazz) {
     std::ifstream meminfo("/proc/meminfo");
-    if (!meminfo.is_open()) {
-        LOGE("nativeGetAvailableMemoryBytes: cannot open /proc/meminfo");
-        return -1L;
-    }
+    if (!meminfo.is_open()) return -1L;
 
     std::string line;
     while (std::getline(meminfo, line)) {
@@ -154,12 +115,119 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
             std::string label;
             long kbytes = 0;
             iss >> label >> kbytes;
-            const long bytes = kbytes * 1024L;
-            LOGD("nativeGetAvailableMemoryBytes -> %ld bytes", bytes);
-            return (jlong)bytes;
+            return (jlong)(kbytes * 1024L);
         }
     }
     return -1L;
+}
+
+// ─── Display & Surface ──────────────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceCreated(
+    JNIEnv* env, jclass clazz, jobject surface, jint width, jint height) {
+    linuxdroid::DisplayBridge::getInstance().onSurfaceCreated(env, surface, width, height);
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceChanged(
+    JNIEnv* env, jclass clazz, jobject surface, jint width, jint height, jint format) {
+    linuxdroid::DisplayBridge::getInstance().onSurfaceChanged(env, surface, width, height, format);
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceDestroyed(
+    JNIEnv* env, jclass clazz) {
+    linuxdroid::DisplayBridge::getInstance().onSurfaceDestroyed();
+}
+
+// ─── GPU ──────────────────────────────────────────────────────────────────────
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuVendor(
+    JNIEnv* env, jclass clazz) {
+    auto info = linuxdroid::GpuDetector::detect();
+    return env->NewStringUTF(info.vendor.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuRenderer(
+    JNIEnv* env, jclass clazz) {
+    auto info = linuxdroid::GpuDetector::detect();
+    return env->NewStringUTF(info.renderer.c_str());
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetGpuVersion(
+    JNIEnv* env, jclass clazz) {
+    auto info = linuxdroid::GpuDetector::detect();
+    return env->NewStringUTF(info.version.c_str());
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsVulkanSupported(
+    JNIEnv* env, jclass clazz) {
+    auto info = linuxdroid::GpuDetector::detect();
+    return info.vulkanSupported ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsHardwareAccelerated(
+    JNIEnv* env, jclass clazz) {
+    auto info = linuxdroid::GpuDetector::detect();
+    return info.hardwareAccelerated ? JNI_TRUE : JNI_FALSE;
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendTouchEvent(
+    JNIEnv* env, jclass clazz, jint action, jint pointerId, jfloat x, jfloat y, jfloat pressure) {
+    linuxdroid::InputBridge::getInstance().sendTouchEvent(action, pointerId, x, y, pressure);
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendMouseEvent(
+    JNIEnv* env, jclass clazz, jint action, jint buttonState, jfloat x, jfloat y, jfloat scrollX, jfloat scrollY) {
+    linuxdroid::InputBridge::getInstance().sendMouseEvent(action, buttonState, x, y, scrollX, scrollY);
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSendKeyEvent(
+    JNIEnv* env, jclass clazz, jint keyCode, jboolean isDown, jint metaState, jint unicodeChar) {
+    linuxdroid::InputBridge::getInstance().sendKeyEvent(keyCode, isDown, metaState, unicodeChar);
+}
+
+// ─── Audio ────────────────────────────────────────────────────────────────────
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioStart(
+    JNIEnv* env, jclass clazz, jint sampleRate, jint channels, jint bufferSizeFrames) {
+    return linuxdroid::AudioBridge::getInstance().start(sampleRate, channels, bufferSizeFrames) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioStop(
+    JNIEnv* env, jclass clazz) {
+    linuxdroid::AudioBridge::getInstance().stop();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioWritePcm(
+    JNIEnv* env, jclass clazz, jbyteArray data, jint offset, jint length) {
+    if (data == nullptr || length <= 0) return 0;
+    jbyte* bytes = env->GetByteArrayElements(data, nullptr);
+    if (bytes == nullptr) return -1;
+    int written = linuxdroid::AudioBridge::getInstance().writePcm(
+        reinterpret_cast<const uint8_t*>(bytes + offset), length);
+    env->ReleaseByteArrayElements(data, bytes, JNI_ABORT);
+    return written;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioGetLatencyMs(
+    JNIEnv* env, jclass clazz) {
+    return linuxdroid::AudioBridge::getInstance().getLatencyMs();
 }
 
 } // extern "C"
