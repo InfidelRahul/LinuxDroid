@@ -604,7 +604,6 @@ class ProotRuntimeBackend(
         workingDirectory: String,
         config: EnvironmentConfiguration,
         tmpDir: File,
-        extraEnv: Map<String, String>,
     ): List<String> {
         return buildList {
             add(prootBinary.absolutePath)
