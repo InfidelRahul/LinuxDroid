@@ -138,13 +138,17 @@ target_link_libraries(proot PRIVATE
     dl
 )
 
-# Copy output binaries to application assets
+# Copy output binaries to application assets and jniLibs for nativeLibraryDir execution
 set(ASSETS_TARGET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/assets/proot/${ANDROID_ABI}")
+set(JNILIBS_TARGET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/jniLibs/${ANDROID_ABI}")
 
 add_custom_command(TARGET proot POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${ASSETS_TARGET_DIR}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${JNILIBS_TARGET_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:proot> ${ASSETS_TARGET_DIR}/proot
     COMMAND ${CMAKE_COMMAND} -E copy ${LOADER_ELF} ${ASSETS_TARGET_DIR}/loader
-    COMMENT "Copying compiled proot and loader binaries to ${ASSETS_TARGET_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:proot> ${JNILIBS_TARGET_DIR}/libproot.so
+    COMMAND ${CMAKE_COMMAND} -E copy ${LOADER_ELF} ${JNILIBS_TARGET_DIR}/libproot_loader.so
+    COMMENT "Copying compiled proot and loader binaries to assets and jniLibs"
 )
 
