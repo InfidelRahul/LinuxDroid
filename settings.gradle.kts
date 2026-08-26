@@ -46,5 +46,6 @@ include(":core:core-host")
 // Linux modules
 include(":linux:bootstrap")
 
-// Native bridge module
+// Native modules
 include(":native:bridge")
+include(":native:proot")

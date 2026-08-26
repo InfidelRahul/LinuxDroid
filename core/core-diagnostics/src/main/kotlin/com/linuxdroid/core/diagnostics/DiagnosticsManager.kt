@@ -83,14 +83,20 @@ class DiagnosticsManager(
                     com.linuxdroid.core.runtime.ProotStatus.PROOT_DEPENDENCY_FAILURE -> DiagnosticCheck(
                         name = "Runtime (proot)",
                         status = DiagnosticStatus.ERROR,
-                        detail = "PRoot dynamic linker dependency missing: ${diag.error ?: diag.detail}",
-                        recommendation = "Ensure libtalloc.so and libandroid-shmem.so are present in LD_LIBRARY_PATH",
+                        detail = "PRoot dependency missing: ${diag.error ?: diag.detail}",
+                        recommendation = "Ensure all runtime assets are extracted",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_LOADER_MISSING -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot companion loader missing: ${diag.detail}",
+                        recommendation = "Verify companion loader binary is bundled in assets",
                     )
                     com.linuxdroid.core.runtime.ProotStatus.PROOT_EXECUTION_DENIED -> DiagnosticCheck(
                         name = "Runtime (proot)",
                         status = DiagnosticStatus.ERROR,
                         detail = "PRoot execution denied by platform (error=13 EACCES) at ${diag.binaryPath}",
-                        recommendation = "Native binaries must reside in context.applicationInfo.nativeLibraryDir",
+                        recommendation = "Set executable permissions on runtime binary",
                     )
                 }
             } else {

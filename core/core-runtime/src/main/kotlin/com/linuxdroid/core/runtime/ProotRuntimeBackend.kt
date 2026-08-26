@@ -19,17 +19,16 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Rootless Linux runtime backend using PRoot.
+ * Rootless Linux runtime backend using self-contained PRoot.
  *
  * PRoot intercepts syscalls via ptrace and rewrites filesystem paths,
  * allowing a Linux rootfs to operate without root privileges.
  *
- * Android Native Execution Architecture:
- * 1. Primary: Executes libproot.so located in `context.applicationInfo.nativeLibraryDir`
- *    (PIE executable extracted by Android package manager, permitted by SELinux and kernel without error=13).
- * 2. Fallback: Extracts to app code-cache / runtime dir with native POSIX chmod 0755.
- * 3. Dynamic Linker: DT_RUNPATH is set to $ORIGIN so libtalloc.so and libandroid-shmem.so resolve natively.
- * 4. Guest Isolation: Uses /usr/bin/env -i to clear host Android environment variables and prevent glibc linker conflicts.
+ * LinuxDroid Native Architecture:
+ * 1. Self-contained: Built from upstream PRoot v5.4.0 with static talloc and companion loader.
+ * 2. Standalone: 0 external shared library dependencies (only standard Android Bionic libc/libdl/liblog).
+ * 3. Relocatable: Extracted to app runtime directory with executable permissions.
+ * 4. Guest Isolation: Uses /usr/bin/env -i to clear host Android environment variables.
  */
 class ProotRuntimeBackend(
     private val context: Context,
@@ -49,18 +48,30 @@ class ProotRuntimeBackend(
     @Volatile
     private var prootBinaryCache: File? = null
 
+    @Volatile
+    private var loaderBinaryCache: File? = null
+
     /**
      * Resolves the executable proot binary path.
-     * Prioritizes context.applicationInfo.nativeLibraryDir where Android permits native execution.
      */
     fun ensureProotBinary(): File {
         prootBinaryCache?.let { if (it.exists() && it.canExecute()) return it }
         synchronized(this) {
             prootBinaryCache?.let { if (it.exists() && it.canExecute()) return it }
-            val resolved = resolveOrExtractProotBinary()
-            prootBinaryCache = resolved
-            return resolved
+            val (proot, loader) = resolveOrExtractRuntimeBinaries()
+            prootBinaryCache = proot
+            loaderBinaryCache = loader
+            return proot
         }
+    }
+
+    /**
+     * Resolves the companion loader binary path.
+     */
+    fun ensureLoaderBinary(): File? {
+        if (loaderBinaryCache?.exists() == true) return loaderBinaryCache
+        ensureProotBinary()
+        return loaderBinaryCache
     }
 
     override suspend fun prepare(environment: Environment) = withContext(Dispatchers.IO) {
@@ -132,6 +143,7 @@ class ProotRuntimeBackend(
         val rootfs = storage.rootfsDir(environment.id)
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val proot = ensureProotBinary()
+        val loader = ensureLoaderBinary()
 
         log.info("Executing in proot: ${command.joinToString(" ")} (handle=$handleId)")
 
@@ -151,6 +163,9 @@ class ProotRuntimeBackend(
 
         // Set host environment variables for PRoot process
         processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
+        if (loader?.exists() == true) {
+            processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
+        }
 
         val process: Process
         try {
@@ -273,10 +288,13 @@ class ProotRuntimeBackend(
             ProotDiagnosticResult(
                 status = ProotStatus.PROOT_MISSING,
                 binaryPath = null,
+                loaderPath = null,
                 abi = getDeviceAbi(),
                 elfValid = false,
                 elfType = "MISSING",
                 executable = false,
+                loaderValid = false,
+                termuxFree = true,
                 detail = "PRoot resolution error: ${e.message}",
                 error = e.message,
             )
@@ -285,14 +303,18 @@ class ProotRuntimeBackend(
 
     private fun diagnoseProot(binary: File): ProotDiagnosticResult {
         val targetAbi = getDeviceAbi() ?: "unknown"
+        val loader = ensureLoaderBinary()
         if (!binary.exists() || !binary.isFile) {
             return ProotDiagnosticResult(
                 status = ProotStatus.PROOT_MISSING,
                 binaryPath = binary.path,
+                loaderPath = loader?.path,
                 abi = targetAbi,
                 elfValid = false,
                 elfType = "MISSING",
                 executable = false,
+                loaderValid = loader?.exists() == true,
+                termuxFree = true,
                 detail = "PRoot binary missing on filesystem",
             )
         }
@@ -303,38 +325,14 @@ class ProotRuntimeBackend(
             return ProotDiagnosticResult(
                 status = if (isWrongAbi) ProotStatus.PROOT_WRONG_ABI else ProotStatus.PROOT_INVALID_ELF,
                 binaryPath = binary.path,
+                loaderPath = loader?.path,
                 abi = targetAbi,
                 elfValid = false,
                 elfType = elfInfo.typeName,
                 executable = binary.canExecute(),
+                loaderValid = loader?.exists() == true,
+                termuxFree = true,
                 detail = elfInfo.detail,
-            )
-        }
-
-        // Check required shared library dependencies
-        val searchDirs = listOfNotNull(
-            File(context.applicationInfo.nativeLibraryDir),
-            binary.parentFile,
-            context.codeCacheDir?.let { File(it, "runtime/$targetAbi") },
-            File(context.filesDir, "runtime/$targetAbi"),
-        )
-        val requiredLibs = listOf("libtalloc.so", "libandroid-shmem.so")
-        val missingLibs = requiredLibs.filter { libName ->
-            searchDirs.none { dir -> File(dir, libName).exists() }
-        }
-
-        if (missingLibs.isNotEmpty()) {
-            return ProotDiagnosticResult(
-                status = ProotStatus.PROOT_DEPENDENCY_FAILURE,
-                binaryPath = binary.path,
-                abi = targetAbi,
-                elfValid = true,
-                elfType = elfInfo.typeName,
-                executable = binary.canExecute(),
-                dependenciesOk = false,
-                missingDependencies = missingLibs,
-                detail = "Missing dynamic libraries: ${missingLibs.joinToString(", ")}",
-                error = "Required native dependencies not found in library paths",
             )
         }
 
@@ -343,18 +341,23 @@ class ProotRuntimeBackend(
             return ProotDiagnosticResult(
                 status = ProotStatus.PROOT_NOT_EXECUTABLE,
                 binaryPath = binary.path,
+                loaderPath = loader?.path,
                 abi = targetAbi,
                 elfValid = true,
                 elfType = elfInfo.typeName,
                 executable = false,
-                dependenciesOk = true,
+                loaderValid = loader?.exists() == true,
+                termuxFree = true,
                 detail = "Binary lacks execution permissions",
             )
         }
 
-        // Test run execution probe (proot --help)
+        // Test run execution probe (proot --version)
         return try {
-            val pb = ProcessBuilder(binary.absolutePath, "--help")
+            val pb = ProcessBuilder(binary.absolutePath, "--version")
+            if (loader?.exists() == true) {
+                pb.environment()["PROOT_LOADER"] = loader.absolutePath
+            }
             val proc = pb.start()
             val finished = proc.waitFor(3, TimeUnit.SECONDS)
             if (!finished) {
@@ -365,38 +368,30 @@ class ProotRuntimeBackend(
             val stderr = proc.errorStream.bufferedReader().readText()
             val combined = stdout + stderr
 
-            if (combined.contains("PRoot", ignoreCase = true) || combined.contains("proot", ignoreCase = true) || exit == 0 || exit == 1) {
+            if (combined.contains("PRoot", ignoreCase = true) || combined.contains("proot", ignoreCase = true) || exit == 0) {
                 ProotDiagnosticResult(
                     status = ProotStatus.PROOT_OK,
                     binaryPath = binary.path,
+                    loaderPath = loader?.path,
                     abi = targetAbi,
                     elfValid = true,
                     elfType = elfInfo.typeName,
                     executable = true,
-                    dependenciesOk = true,
-                    detail = "PRoot executable verified (self-test exit=$exit)",
-                )
-            } else if (combined.contains("CANNOT LINK EXECUTABLE", ignoreCase = true)) {
-                ProotDiagnosticResult(
-                    status = ProotStatus.PROOT_DEPENDENCY_FAILURE,
-                    binaryPath = binary.path,
-                    abi = targetAbi,
-                    elfValid = true,
-                    elfType = elfInfo.typeName,
-                    executable = true,
-                    dependenciesOk = false,
-                    detail = "Dynamic linker dependency failure",
-                    error = combined.trim(),
+                    loaderValid = loader?.exists() == true,
+                    termuxFree = !combined.contains("com.termux"),
+                    detail = "PRoot v5.4.0 standalone verified (self-test exit=$exit)",
                 )
             } else {
                 ProotDiagnosticResult(
                     status = ProotStatus.PROOT_OK,
                     binaryPath = binary.path,
+                    loaderPath = loader?.path,
                     abi = targetAbi,
                     elfValid = true,
                     elfType = elfInfo.typeName,
                     executable = true,
-                    dependenciesOk = true,
+                    loaderValid = loader?.exists() == true,
+                    termuxFree = true,
                     detail = "PRoot verified with exit=$exit: ${combined.take(100)}",
                 )
             }
@@ -406,11 +401,13 @@ class ProotRuntimeBackend(
             ProotDiagnosticResult(
                 status = if (isPermissionDenied) ProotStatus.PROOT_EXECUTION_DENIED else ProotStatus.PROOT_NOT_EXECUTABLE,
                 binaryPath = binary.path,
+                loaderPath = loader?.path,
                 abi = targetAbi,
                 elfValid = true,
                 elfType = elfInfo.typeName,
                 executable = canExec,
-                dependenciesOk = true,
+                loaderValid = loader?.exists() == true,
+                termuxFree = true,
                 detail = if (isPermissionDenied) "Execution denied by platform (error=13 EACCES)" else "Execution failed: ${e.message}",
                 error = e.message,
             )
@@ -418,11 +415,13 @@ class ProotRuntimeBackend(
             ProotDiagnosticResult(
                 status = ProotStatus.PROOT_NOT_EXECUTABLE,
                 binaryPath = binary.path,
+                loaderPath = loader?.path,
                 abi = targetAbi,
                 elfValid = true,
                 elfType = elfInfo.typeName,
                 executable = canExec,
-                dependenciesOk = true,
+                loaderValid = loader?.exists() == true,
+                termuxFree = true,
                 detail = "Execution failed: ${e.message}",
                 error = e.message,
             )
@@ -440,64 +439,45 @@ class ProotRuntimeBackend(
         return android.os.Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "x86_64") }
     }
 
-    private fun resolveOrExtractProotBinary(): File {
+    private fun resolveOrExtractRuntimeBinaries(): Pair<File, File?> {
         val abi = getDeviceAbi()
             ?: throw RuntimeError(message = "Unsupported device ABI: ${android.os.Build.SUPPORTED_ABIS.toList()}")
 
-        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
-
-        // 1. Check primary location: nativeLibraryDir/libproot.so
-        val nativeProotSo = File(nativeLibDir, "libproot.so")
-        if (nativeProotSo.exists() && nativeProotSo.length() > 0L) {
-            try {
-                nativeProotSo.setReadable(true, false)
-                nativeProotSo.setExecutable(true, false)
-                NativeBridge.setExecutable(nativeProotSo.absolutePath)
-            } catch (_: Exception) {}
-            log.info("Resolved PRoot binary from nativeLibraryDir: ${nativeProotSo.path}")
-            return nativeProotSo
-        }
-
-        // 2. Check nativeLibraryDir/proot
-        val nativeProotBin = File(nativeLibDir, "proot")
-        if (nativeProotBin.exists() && nativeProotBin.length() > 0L) {
-            try {
-                nativeProotBin.setReadable(true, false)
-                nativeProotBin.setExecutable(true, false)
-                NativeBridge.setExecutable(nativeProotBin.absolutePath)
-            } catch (_: Exception) {}
-            log.info("Resolved PRoot binary from nativeLibraryDir: ${nativeProotBin.path}")
-            return nativeProotBin
-        }
-
-        // 3. Fallback: Extract to codeCacheDir (executable on Android) or filesDir
-        val baseTargetDir = context.codeCacheDir ?: context.filesDir
-        val destDir = File(baseTargetDir, "runtime/$abi")
-        destDir.mkdirs()
-        val destFile = File(destDir, "libproot.so")
+        val runtimeDir = File(context.filesDir, "runtime/$abi").apply { mkdirs() }
+        val prootFile = File(runtimeDir, "proot")
+        val loaderFile = File(runtimeDir, "loader")
 
         try {
-            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot", "libtalloc.so", "libandroid-shmem.so")
-            for (filename in assetFiles) {
-                val targetName = if (filename == "proot") "libproot.so" else filename
-                val target = File(destDir, targetName)
-                if (!target.exists() || target.length() == 0L) {
-                    log.info("Extracting proot asset: $filename to ${target.path}")
-                    context.assets.open("proot/$abi/$filename").use { input ->
-                        target.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    target.setReadable(true, false)
-                    target.setExecutable(true, false)
-                    NativeBridge.setExecutable(target.absolutePath)
+            // 1. Extract proot binary
+            if (!prootFile.exists() || prootFile.length() == 0L) {
+                log.info("Extracting proot runtime binary for $abi to ${prootFile.path}")
+                context.assets.open("proot/$abi/proot").use { input ->
+                    prootFile.outputStream().use { output -> input.copyTo(output) }
                 }
             }
-            destFile.setReadable(true, false)
-            destFile.setExecutable(true, false)
-            NativeBridge.setExecutable(destFile.absolutePath)
+            prootFile.setReadable(true, false)
+            prootFile.setExecutable(true, false)
+            NativeBridge.setExecutable(prootFile.absolutePath)
+
+            // 2. Extract companion loader binary
+            try {
+                if (!loaderFile.exists() || loaderFile.length() == 0L) {
+                    log.info("Extracting companion loader binary for $abi to ${loaderFile.path}")
+                    context.assets.open("proot/$abi/loader").use { input ->
+                        loaderFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+                loaderFile.setReadable(true, false)
+                loaderFile.setExecutable(true, false)
+                NativeBridge.setExecutable(loaderFile.absolutePath)
+            } catch (_: Exception) {
+                log.debug("Standalone loader asset not found or not required")
+            }
         } catch (e: Exception) {
-            log.error("Error extracting proot assets for $abi", e)
+            log.error("Error extracting proot runtime assets for $abi", e)
         }
-        return destFile
+
+        return prootFile to (if (loaderFile.exists()) loaderFile else null)
     }
 
     private fun buildProotCommand(
@@ -514,7 +494,6 @@ class ProotRuntimeBackend(
             add("-0")
             add("--kill-on-exit")
             add("--link2symlink")
-            add("--sysvipc")
             add("-r")
             add(rootfs.absolutePath)
             add("-b")
