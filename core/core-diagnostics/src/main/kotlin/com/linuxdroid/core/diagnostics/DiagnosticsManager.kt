@@ -49,20 +49,65 @@ class DiagnosticsManager(
 
     private suspend fun checkRuntime(environment: Environment): DiagnosticCheck {
         return try {
-            val healthy = runtimeBackend.healthCheck(environment)
-            if (healthy) {
-                DiagnosticCheck(
-                    name = "Runtime (proot)",
-                    status = DiagnosticStatus.OK,
-                    detail = "proot runtime ready & executable",
-                )
+            if (runtimeBackend is com.linuxdroid.core.runtime.ProotRuntimeBackend) {
+                val diag = runtimeBackend.diagnose()
+                when (diag.status) {
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_OK -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.OK,
+                        detail = "PRoot executable verified (${diag.abi}, ELF valid, ${diag.detail})",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_MISSING -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot binary missing on filesystem",
+                        recommendation = "Reinstall application or check bundled native libraries in APK",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_NOT_EXECUTABLE -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot binary found at ${diag.binaryPath} but lacks executable permissions",
+                        recommendation = "Grant execution permissions to native library directory",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_WRONG_ABI -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot ABI mismatch: ${diag.detail}",
+                        recommendation = "Install the APK variant matching device ABI (${diag.abi})",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_INVALID_ELF -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot ELF header invalid: ${diag.detail}",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_DEPENDENCY_FAILURE -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot dynamic linker dependency missing: ${diag.error ?: diag.detail}",
+                        recommendation = "Ensure libtalloc.so and libandroid-shmem.so are present in LD_LIBRARY_PATH",
+                    )
+                    com.linuxdroid.core.runtime.ProotStatus.PROOT_EXECUTION_DENIED -> DiagnosticCheck(
+                        name = "Runtime (proot)",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "PRoot execution denied by platform (error=13 EACCES) at ${diag.binaryPath}",
+                        recommendation = "Native binaries must reside in context.applicationInfo.nativeLibraryDir",
+                    )
+                }
             } else {
-                DiagnosticCheck(
-                    name = "Runtime (proot)",
-                    status = DiagnosticStatus.ERROR,
-                    detail = "proot binary not available or not executable",
-                    recommendation = "Ensure proot binary is bundled in assets/proot/<abi>/proot",
-                )
+                val healthy = runtimeBackend.healthCheck(environment)
+                if (healthy) {
+                    DiagnosticCheck(
+                        name = "Runtime",
+                        status = DiagnosticStatus.OK,
+                        detail = "Runtime backend ready",
+                    )
+                } else {
+                    DiagnosticCheck(
+                        name = "Runtime",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "Runtime backend health check failed",
+                    )
+                }
             }
         } catch (e: Exception) {
             DiagnosticCheck(

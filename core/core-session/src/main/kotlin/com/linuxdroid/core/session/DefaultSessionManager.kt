@@ -13,6 +13,7 @@ import com.linuxdroid.core.runtime.RuntimeBackend
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -76,7 +77,7 @@ class DefaultSessionManager(
             if (shellResult.exitCode != 0 || !shellResult.stdout.contains("SHELL_ACTIVE")) {
                 throw RuntimeError(
                     environmentId = environment.id,
-                    message = "Linux /bin/sh verification failed: ${shellResult.stderr}",
+                    message = "Linux /bin/sh verification failed: ${shellResult.stderr.ifBlank { shellResult.stdout }}",
                 )
             }
             log.info("Linux /bin/sh verified successfully inside environment")
@@ -96,7 +97,7 @@ class DefaultSessionManager(
             // 7. Initialize Network
             networkManager?.applyConfig(environment.configuration.network)
 
-            // 8. Configure Wayland socket & display
+            // 8. Configure Wayland socket & launch Wayland compositor
             session = session.copy(state = SessionState.STARTING_COMPOSITOR)
             sessionMap[sessionId] = session
             _sessions.value = sessionMap.toMap()
@@ -104,11 +105,28 @@ class DefaultSessionManager(
             val waylandSocket = "wayland-0"
             displayManager?.applyConfig(environment.configuration.display)
 
+            val rootfsDir = storage.rootfsDir(environment.id)
+            ensureGuiSessionEnvironment(rootfsDir)
+
+            val sessionProcess = runtimeBackend.execute(
+                environment = environment,
+                command = listOf("/bin/sh", "/usr/local/bin/linuxdroid-session"),
+                workingDirectory = "/home/user",
+                extraEnv = mapOf(
+                    "WAYLAND_DISPLAY" to waylandSocket,
+                    "XDG_RUNTIME_DIR" to "/tmp",
+                    "DISPLAY" to ":0",
+                ),
+                sessionId = sessionId,
+            )
+
             // 9. Mark RUNNING
             val runningSession = session.copy(
                 state = SessionState.RUNNING,
                 waylandSocket = waylandSocket,
                 display = if (environment.configuration.desktop.xwaylandEnabled) ":0" else null,
+                compositorPid = sessionProcess.pid,
+                runtimePid = sessionProcess.pid,
             )
             sessionMap[sessionId] = runningSession
             _sessions.value = sessionMap.toMap()
@@ -163,6 +181,56 @@ class DefaultSessionManager(
     override suspend fun getSession(environmentId: EnvironmentId): Session? {
         return sessionMap.values.firstOrNull {
             it.environmentId == environmentId && it.state.isActive()
+        }
+    }
+
+    private fun ensureGuiSessionEnvironment(rootfsDir: File) {
+        // Ensure /etc/environment exists with Wayland defaults
+        val envFile = File(rootfsDir, "etc/environment")
+        if (!envFile.exists()) {
+            envFile.parentFile?.mkdirs()
+            envFile.writeText(
+                """
+                WAYLAND_DISPLAY=wayland-0
+                XDG_RUNTIME_DIR=/tmp
+                DISPLAY=:0
+                GDK_BACKEND=wayland,x11
+                QT_QPA_PLATFORM=wayland;xcb
+                CLUTTER_BACKEND=wayland
+                SDL_VIDEODRIVER=wayland
+                """.trimIndent() + "\n"
+            )
+        }
+
+        // Ensure session startup script exists
+        val sessionScript = File(rootfsDir, "usr/local/bin/linuxdroid-session")
+        if (!sessionScript.exists()) {
+            sessionScript.parentFile?.mkdirs()
+            sessionScript.writeText(
+                """
+                #!/bin/sh
+                export XDG_RUNTIME_DIR=/tmp
+                export WAYLAND_DISPLAY=wayland-0
+                export DISPLAY=:0
+                mkdir -p /tmp
+                chmod 0700 /tmp
+                if command -v cage >/dev/null 2>&1; then
+                    if command -v foot >/dev/null 2>&1; then
+                        exec cage -- foot
+                    elif command -v xterm >/dev/null 2>&1; then
+                        exec cage -- xterm
+                    else
+                        exec cage -- /bin/sh
+                    fi
+                elif command -v weston >/dev/null 2>&1; then
+                    exec weston --socket=wayland-0
+                else
+                    echo "Minimal Wayland GUI ready. Install cage/weston for graphical session."
+                    exec /bin/sh
+                fi
+                """.trimIndent() + "\n"
+            )
+            sessionScript.setExecutable(true, false)
         }
     }
 }

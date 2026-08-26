@@ -276,6 +276,86 @@ class RootfsBootstrapper(
             writeText("linuxdroid\n")
         }
 
+        // Write Wayland GUI environment configuration
+        File(rootfsDir, "etc/environment").apply {
+            parentFile?.mkdirs()
+            writeText(
+                """
+                WAYLAND_DISPLAY=wayland-0
+                XDG_RUNTIME_DIR=/tmp
+                DISPLAY=:0
+                GDK_BACKEND=wayland,x11
+                QT_QPA_PLATFORM=wayland;xcb
+                CLUTTER_BACKEND=wayland
+                SDL_VIDEODRIVER=wayland
+                """.trimIndent() + "\n"
+            )
+        }
+
+        // Write apt sources.list for Debian packages
+        File(rootfsDir, "etc/apt/sources.list").apply {
+            parentFile?.mkdirs()
+            writeText(
+                """
+                deb http://deb.debian.org/debian bookworm main contrib non-free
+                deb http://deb.debian.org/debian-security bookworm-security main contrib non-free
+                deb http://deb.debian.org/debian bookworm-updates main contrib non-free
+                """.trimIndent() + "\n"
+            )
+        }
+
+        // Create LinuxDroid Wayland Session Launcher script
+        val binDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
+        File(binDir, "linuxdroid-session").apply {
+            writeText(
+                """
+                #!/bin/sh
+                export XDG_RUNTIME_DIR=/tmp
+                export WAYLAND_DISPLAY=wayland-0
+                export DISPLAY=:0
+                mkdir -p /tmp
+                chmod 0700 /tmp
+                if command -v cage >/dev/null 2>&1; then
+                    if command -v foot >/dev/null 2>&1; then
+                        exec cage -- foot
+                    elif command -v xterm >/dev/null 2>&1; then
+                        exec cage -- xterm
+                    else
+                        exec cage -- /bin/sh
+                    fi
+                elif command -v weston >/dev/null 2>&1; then
+                    exec weston --socket=wayland-0
+                else
+                    echo "Minimal Wayland GUI ready. Install cage/weston for graphical session."
+                    exec /bin/sh
+                fi
+                """.trimIndent() + "\n"
+            )
+            setExecutable(true, false)
+            NativeBridge.setExecutable(absolutePath)
+        }
+
+        // Create LinuxDroid Terminal Launcher script
+        File(binDir, "linuxdroid-terminal").apply {
+            writeText(
+                """
+                #!/bin/sh
+                export XDG_RUNTIME_DIR=/tmp
+                export WAYLAND_DISPLAY=wayland-0
+                export DISPLAY=:0
+                if command -v foot >/dev/null 2>&1; then
+                    exec foot "$@"
+                elif command -v xterm >/dev/null 2>&1; then
+                    exec xterm "$@"
+                else
+                    exec /bin/sh "$@"
+                fi
+                """.trimIndent() + "\n"
+            )
+            setExecutable(true, false)
+            NativeBridge.setExecutable(absolutePath)
+        }
+
         // Create home directory for default linux user
         File(rootfsDir, "home/user").mkdirs()
 
