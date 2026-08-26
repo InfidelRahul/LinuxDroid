@@ -1,5 +1,6 @@
 package com.linuxdroid.app.ui.viewmodel
 
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linuxdroid.core.storage.AndroidStorageManager
@@ -27,5 +28,6 @@ class SettingsViewModel @Inject constructor(
             storageManager.verifyAccess()
         }
     }
-}
 
+    fun getPermissionIntent(): Intent? = storageManager.createPermissionIntent()
+}

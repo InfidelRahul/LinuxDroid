@@ -20,10 +20,12 @@ dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-logging"))
     implementation(project(":core:core-filesystem"))
+    implementation(project(":native:bridge"))
+    implementation("org.apache.commons:commons-compress:1.26.2")
+    implementation("org.tukaani:xz:1.9")
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.truth)
     testImplementation(libs.mockk)
 }
-
