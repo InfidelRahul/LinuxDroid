@@ -20,3 +20,4 @@ CREATED ───► INSTALLING ───► READY ───► STARTING ──�
 ```
 
 Transitions are strictly validated through `EnvironmentState.isValidTransitionFrom(from)`. Any illegal jump raises `IllegalStateTransitionException`.
+

@@ -14,3 +14,4 @@ X11 Linux Application (e.g. gedit, xterm)
   ANativeWindow
 ```
 XWayland is started as a child bridge process when `DesktopConfig.xwaylandEnabled = true`.
+

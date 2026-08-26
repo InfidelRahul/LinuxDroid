@@ -12,3 +12,4 @@
   - `-b ${sharedDir}:/home/user/Android` (Shared storage bridge)
 - **Flag Configuration:** `--link2symlink`, `--root-id`, `--kill-on-exit`.
 - **Dynamic Linker:** Sets `LD_LIBRARY_PATH` and `PROOT_TMP_DIR`.
+
