@@ -68,19 +68,19 @@ class DefaultSessionManager(
             runtimeBackend.initialize(environment)
             runtimeBackend.start(environment)
 
-            // 3. Verify shell executes inside Linux environment
+            // 3. Verify shell & uname execute inside Linux environment
             val shellResult = runtimeBackend.executeAndWait(
                 environment = environment,
-                command = listOf("/bin/sh", "-c", "echo 'SHELL_ACTIVE'"),
+                command = listOf("/bin/sh", "-c", "uname -a && echo 'SHELL_ACTIVE'"),
                 timeoutMs = 10_000
             )
             if (shellResult.exitCode != 0 || !shellResult.stdout.contains("SHELL_ACTIVE")) {
                 throw RuntimeError(
                     environmentId = environment.id,
-                    message = "Linux /bin/sh verification failed: ${shellResult.stderr.ifBlank { shellResult.stdout }}",
+                    message = "Linux /bin/sh (uname -a) verification failed (exit=${shellResult.exitCode}): ${shellResult.stderr.ifBlank { shellResult.stdout }}",
                 )
             }
-            log.info("Linux /bin/sh verified successfully inside environment")
+            log.info("Linux /bin/sh (uname -a) verified successfully: ${shellResult.stdout.trim()}")
 
             // 4. Initialize GPU
             gpuManager?.detect()

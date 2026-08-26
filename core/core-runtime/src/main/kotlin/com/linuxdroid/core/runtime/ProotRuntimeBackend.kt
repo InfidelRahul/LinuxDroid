@@ -26,9 +26,10 @@ import java.util.concurrent.TimeUnit
  *
  * Android Native Execution Architecture:
  * 1. Primary: Executes libproot.so located in `context.applicationInfo.nativeLibraryDir`
- *    (extracted by Android package manager, permitted by SELinux and kernel without error=13).
+ *    (PIE executable extracted by Android package manager, permitted by SELinux and kernel without error=13).
  * 2. Fallback: Extracts to app code-cache / runtime dir with native POSIX chmod 0755.
- * 3. Dynamic Linker: Sets LD_LIBRARY_PATH to nativeLibraryDir and runtime dir for libtalloc.so and libandroid-shmem.so.
+ * 3. Dynamic Linker: DT_RUNPATH is set to $ORIGIN; LD_LIBRARY_PATH includes nativeLibraryDir
+ *    so libtalloc.so and libandroid-shmem.so resolve natively.
  */
 class ProotRuntimeBackend(
     private val context: Context,
@@ -277,6 +278,7 @@ class ProotRuntimeBackend(
                 binaryPath = null,
                 abi = getDeviceAbi(),
                 elfValid = false,
+                elfType = "MISSING",
                 executable = false,
                 detail = "PRoot resolution error: ${e.message}",
                 error = e.message,
@@ -292,21 +294,50 @@ class ProotRuntimeBackend(
                 binaryPath = binary.path,
                 abi = targetAbi,
                 elfValid = false,
+                elfType = "MISSING",
                 executable = false,
                 detail = "PRoot binary missing on filesystem",
             )
         }
 
-        val (elfValid, elfDetail) = ElfValidator.validateElf(binary, targetAbi)
-        if (!elfValid) {
-            val isWrongAbi = elfDetail.contains("does not match ABI", ignoreCase = true)
+        val elfInfo = ElfValidator.readElfInfo(binary, targetAbi)
+        if (!elfInfo.isValid) {
+            val isWrongAbi = elfInfo.detail.contains("does not match target ABI", ignoreCase = true)
             return ProotDiagnosticResult(
                 status = if (isWrongAbi) ProotStatus.PROOT_WRONG_ABI else ProotStatus.PROOT_INVALID_ELF,
                 binaryPath = binary.path,
                 abi = targetAbi,
                 elfValid = false,
+                elfType = elfInfo.typeName,
                 executable = binary.canExecute(),
-                detail = elfDetail,
+                detail = elfInfo.detail,
+            )
+        }
+
+        // Check required shared library dependencies
+        val searchDirs = listOfNotNull(
+            File(context.applicationInfo.nativeLibraryDir),
+            binary.parentFile,
+            context.codeCacheDir?.let { File(it, "runtime/$targetAbi") },
+            File(context.filesDir, "runtime/$targetAbi"),
+        )
+        val requiredLibs = listOf("libtalloc.so", "libandroid-shmem.so")
+        val missingLibs = requiredLibs.filter { libName ->
+            searchDirs.none { dir -> File(dir, libName).exists() }
+        }
+
+        if (missingLibs.isNotEmpty()) {
+            return ProotDiagnosticResult(
+                status = ProotStatus.PROOT_DEPENDENCY_FAILURE,
+                binaryPath = binary.path,
+                abi = targetAbi,
+                elfValid = true,
+                elfType = elfInfo.typeName,
+                executable = binary.canExecute(),
+                dependenciesOk = false,
+                missingDependencies = missingLibs,
+                detail = "Missing dynamic libraries: ${missingLibs.joinToString(", ")}",
+                error = "Required native dependencies not found in library paths",
             )
         }
 
@@ -317,7 +348,9 @@ class ProotRuntimeBackend(
                 binaryPath = binary.path,
                 abi = targetAbi,
                 elfValid = true,
+                elfType = elfInfo.typeName,
                 executable = false,
+                dependenciesOk = true,
                 detail = "Binary lacks execution permissions",
             )
         }
@@ -346,7 +379,9 @@ class ProotRuntimeBackend(
                     binaryPath = binary.path,
                     abi = targetAbi,
                     elfValid = true,
+                    elfType = elfInfo.typeName,
                     executable = true,
+                    dependenciesOk = true,
                     detail = "PRoot executable verified (self-test exit=$exit)",
                 )
             } else if (combined.contains("CANNOT LINK EXECUTABLE", ignoreCase = true)) {
@@ -355,7 +390,9 @@ class ProotRuntimeBackend(
                     binaryPath = binary.path,
                     abi = targetAbi,
                     elfValid = true,
+                    elfType = elfInfo.typeName,
                     executable = true,
+                    dependenciesOk = false,
                     detail = "Dynamic linker dependency failure",
                     error = combined.trim(),
                 )
@@ -365,7 +402,9 @@ class ProotRuntimeBackend(
                     binaryPath = binary.path,
                     abi = targetAbi,
                     elfValid = true,
+                    elfType = elfInfo.typeName,
                     executable = true,
+                    dependenciesOk = true,
                     detail = "PRoot verified with exit=$exit: ${combined.take(100)}",
                 )
             }
@@ -377,7 +416,9 @@ class ProotRuntimeBackend(
                 binaryPath = binary.path,
                 abi = targetAbi,
                 elfValid = true,
+                elfType = elfInfo.typeName,
                 executable = canExec,
+                dependenciesOk = true,
                 detail = if (isPermissionDenied) "Execution denied by platform (error=13 EACCES)" else "Execution failed: ${e.message}",
                 error = e.message,
             )
@@ -387,7 +428,9 @@ class ProotRuntimeBackend(
                 binaryPath = binary.path,
                 abi = targetAbi,
                 elfValid = true,
+                elfType = elfInfo.typeName,
                 executable = canExec,
+                dependenciesOk = true,
                 detail = "Execution failed: ${e.message}",
                 error = e.message,
             )
@@ -414,9 +457,11 @@ class ProotRuntimeBackend(
         // 1. Check primary location: nativeLibraryDir/libproot.so
         val nativeProotSo = File(nativeLibDir, "libproot.so")
         if (nativeProotSo.exists() && nativeProotSo.length() > 0L) {
-            nativeProotSo.setReadable(true, false)
-            nativeProotSo.setExecutable(true, false)
-            NativeBridge.setExecutable(nativeProotSo.absolutePath)
+            try {
+                nativeProotSo.setReadable(true, false)
+                nativeProotSo.setExecutable(true, false)
+                NativeBridge.setExecutable(nativeProotSo.absolutePath)
+            } catch (_: Exception) {}
             log.info("Resolved PRoot binary from nativeLibraryDir: ${nativeProotSo.path}")
             return nativeProotSo
         }
@@ -424,9 +469,11 @@ class ProotRuntimeBackend(
         // 2. Check nativeLibraryDir/proot
         val nativeProotBin = File(nativeLibDir, "proot")
         if (nativeProotBin.exists() && nativeProotBin.length() > 0L) {
-            nativeProotBin.setReadable(true, false)
-            nativeProotBin.setExecutable(true, false)
-            NativeBridge.setExecutable(nativeProotBin.absolutePath)
+            try {
+                nativeProotBin.setReadable(true, false)
+                nativeProotBin.setExecutable(true, false)
+                NativeBridge.setExecutable(nativeProotBin.absolutePath)
+            } catch (_: Exception) {}
             log.info("Resolved PRoot binary from nativeLibraryDir: ${nativeProotBin.path}")
             return nativeProotBin
         }
@@ -438,7 +485,7 @@ class ProotRuntimeBackend(
         val destFile = File(destDir, "libproot.so")
 
         try {
-            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot", "libtalloc.so.2", "libandroid-shmem.so")
+            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot", "libtalloc.so", "libandroid-shmem.so")
             for (filename in assetFiles) {
                 val targetName = if (filename == "proot") "libproot.so" else filename
                 val target = File(destDir, targetName)

@@ -168,27 +168,27 @@ class DiagnosticsManager(
         return try {
             val result = runtimeBackend.executeAndWait(
                 environment = environment,
-                command = listOf("/bin/sh", "-c", "echo 'LINUXDROID_OK'"),
+                command = listOf("/bin/sh", "-c", "uname -a"),
                 timeoutMs = 10_000,
             )
-            if (result.exitCode == 0 && result.stdout.contains("LINUXDROID_OK")) {
+            if (result.exitCode == 0 && result.stdout.isNotBlank()) {
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.OK,
-                    detail = "/bin/sh native execution verified",
+                    detail = "/bin/sh (uname -a) OK: ${result.stdout.trim()}",
                 )
             } else {
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.ERROR,
-                    detail = "Shell test failed: exit=${result.exitCode} ${result.stderr.ifBlank { result.stdout }}",
+                    detail = "PRoot /bin/sh startup failed (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}",
                 )
             }
         } catch (e: Exception) {
             DiagnosticCheck(
                 name = "Linux Userspace",
                 status = DiagnosticStatus.ERROR,
-                detail = "Exception: ${e.message}",
+                detail = "PRoot /bin/sh startup exception: ${e.message}",
             )
         }
     }

@@ -2,6 +2,8 @@ package com.linuxdroid.core.runtime
 
 import java.io.File
 import java.io.FileInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Detailed status of the PRoot native binary.
@@ -26,20 +28,39 @@ data class ProotDiagnosticResult(
     val binaryPath: String?,
     val abi: String?,
     val elfValid: Boolean,
+    val elfType: String = "UNKNOWN",
     val executable: Boolean,
+    val dependenciesOk: Boolean = true,
+    val missingDependencies: List<String> = emptyList(),
     val detail: String,
     val error: String? = null,
 ) {
     fun formatDiagnostic(): String = buildString {
-        appendLine("PRoot: ${if (binaryPath != null) "FOUND ($binaryPath)" else "MISSING"}")
-        abi?.let { appendLine("ABI: $it") }
-        appendLine("ELF: ${if (elfValid) "VALID" else "INVALID"}")
-        appendLine("EXECUTABLE: ${if (executable) "YES" else "NO"}")
-        appendLine("STATUS: ${status.name}")
-        appendLine("DETAIL: $detail")
-        error?.let { appendLine("ERROR: $it") }
+        appendLine("PRoot Path: ${binaryPath ?: "MISSING"}")
+        abi?.let { appendLine("Architecture: $it") }
+        appendLine("ELF: ${if (elfValid) "64-bit" else "INVALID"}")
+        appendLine("Type: $elfType")
+        appendLine("Executable: ${if (executable) "YES" else "NO"}")
+        appendLine("Dependencies: ${if (dependenciesOk) "OK" else "MISSING: " + missingDependencies.joinToString(", ")}")
+        appendLine("Status: ${status.name}")
+        appendLine("Detail: $detail")
+        error?.let { appendLine("Error: $it") }
     }.trimEnd()
 }
+
+/**
+ * Detailed ELF metadata.
+ */
+data class ElfInfo(
+    val isValid: Boolean,
+    val is64Bit: Boolean,
+    val isLittleEndian: Boolean,
+    val machine: Int,
+    val type: Int, // 2 = ET_EXEC, 3 = ET_DYN (PIE)
+    val entryPoint: Long,
+    val typeName: String,
+    val detail: String,
+)
 
 /**
  * Helper to validate ELF headers for ARM64 and x86_64 binaries.
@@ -49,38 +70,50 @@ object ElfValidator {
     private val ELF_MAGIC = byteArrayOf(0x7F.toByte(), 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
 
     /**
-     * Validates ELF magic and matches machine architecture with target ABI.
+     * Reads ELF headers and determines validity, ABI compatibility, and execution entry point.
      */
-    fun validateElf(file: File, targetAbi: String): Pair<Boolean, String> {
-        if (!file.exists() || !file.isFile || file.length() < 20) {
-            return false to "File too small or does not exist"
+    fun readElfInfo(file: File, targetAbi: String): ElfInfo {
+        if (!file.exists() || !file.isFile || file.length() < 4) {
+            return ElfInfo(
+                isValid = false,
+                is64Bit = false,
+                isLittleEndian = false,
+                machine = 0,
+                type = 0,
+                entryPoint = 0L,
+                typeName = "INVALID",
+                detail = "File does not exist or is too small (<4 bytes)",
+            )
         }
 
-        try {
+        return try {
             FileInputStream(file).use { fis ->
-                val header = ByteArray(20)
+                val header = ByteArray(64)
                 val read = fis.read(header)
-                if (read < 20) return false to "Could not read ELF header"
+                if (read < 4) {
+                    return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "File too small (<4 bytes)")
+                }
 
-                // Check ELF Magic: 0x7F 'E' 'L' 'F'
+                // Check ELF Magic
                 for (i in 0..3) {
                     if (header[i] != ELF_MAGIC[i]) {
-                        return false to "Invalid ELF magic: 0x${header.take(4).joinToString("") { "%02x".format(it) }}"
+                        return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "Invalid ELF magic: 0x${header.take(4).joinToString("") { "%02x".format(it) }}")
                     }
                 }
 
-                // Check 64-bit: byte 4 == 0x02
-                if (header[4].toInt() != 0x02) {
-                    return false to "Not a 64-bit ELF binary (ei_class=${header[4]})"
+                if (read < 64) {
+                    return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "Incomplete ELF header (<64 bytes)")
                 }
 
-                // Check Little Endian: byte 5 == 0x01
-                if (header[5].toInt() != 0x01) {
-                    return false to "Not a little-endian ELF binary"
-                }
+                val is64Bit = header[4].toInt() == 0x02
+                val isLittleEndian = header[5].toInt() == 0x01
 
-                // Check Machine Architecture: e_machine at offset 18 (2 bytes little endian)
-                val eMachine = (header[18].toInt() and 0xFF) or ((header[19].toInt() and 0xFF) shl 8)
+                val byteBuffer = ByteBuffer.wrap(header).order(if (isLittleEndian) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN)
+
+                val elfType = byteBuffer.getShort(16).toInt() and 0xFFFF
+                val eMachine = byteBuffer.getShort(18).toInt() and 0xFFFF
+                val entryPoint = if (is64Bit) byteBuffer.getLong(24) else byteBuffer.getInt(24).toLong()
+
                 val expectedMachine = when (targetAbi) {
                     "arm64-v8a" -> 0xB7 // EM_AARCH64 (183)
                     "x86_64" -> 0x3E    // EM_X86_64 (62)
@@ -88,14 +121,45 @@ object ElfValidator {
                 }
 
                 if (expectedMachine != null && eMachine != expectedMachine) {
-                    return false to "ELF machine 0x${"%02x".format(eMachine)} does not match ABI $targetAbi (expected 0x${"%02x".format(expectedMachine)})"
+                    return ElfInfo(
+                        isValid = false,
+                        is64Bit = is64Bit,
+                        isLittleEndian = isLittleEndian,
+                        machine = eMachine,
+                        type = elfType,
+                        entryPoint = entryPoint,
+                        typeName = if (elfType == 3) "PIE EXECUTABLE / DYN" else "TYPE_$elfType",
+                        detail = "ELF machine 0x${"%02x".format(eMachine)} does not match target ABI $targetAbi (expected 0x${"%02x".format(expectedMachine)})",
+                    )
                 }
 
-                return true to "Valid 64-bit ELF for $targetAbi (e_machine=0x${"%02x".format(eMachine)})"
+                val typeName = when (elfType) {
+                    2 -> "STANDALONE EXECUTABLE (ET_EXEC)"
+                    3 -> if (entryPoint != 0L) "PIE EXECUTABLE (ET_DYN)" else "SHARED LIBRARY (ET_DYN)"
+                    else -> "ELF_TYPE_$elfType"
+                }
+
+                ElfInfo(
+                    isValid = true,
+                    is64Bit = is64Bit,
+                    isLittleEndian = isLittleEndian,
+                    machine = eMachine,
+                    type = elfType,
+                    entryPoint = entryPoint,
+                    typeName = typeName,
+                    detail = "Valid 64-bit $typeName for $targetAbi (entry=0x${java.lang.Long.toHexString(entryPoint)})",
+                )
             }
         } catch (e: Exception) {
-            return false to "Error reading ELF: ${e.message}"
+            ElfInfo(false, false, false, 0, 0, 0L, "ERROR", "ELF parse error: ${e.message}")
         }
     }
-}
 
+    /**
+     * Backward-compatible helper method.
+     */
+    fun validateElf(file: File, targetAbi: String): Pair<Boolean, String> {
+        val info = readElfInfo(file, targetAbi)
+        return info.isValid to info.detail
+    }
+}
