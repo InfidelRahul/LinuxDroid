@@ -5,6 +5,7 @@ import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
+import com.linuxdroid.native_bridge.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -14,6 +15,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * Rootless Linux runtime backend using proot.
@@ -22,21 +24,6 @@ import java.util.concurrent.ConcurrentHashMap
  * allowing a Linux rootfs to operate without root privileges.
  *
  * No root required. No kernel modules required.
- *
- * Architecture:
- * ```
- * Kotlin ProotRuntimeBackend
- *     ↓
- * Native bridge (JNI)
- *     ↓
- * proot binary (arm64 or x86_64)
- *     ↓
- * Linux rootfs (persistent)
- *     ↓
- * /bin/sh, Linux processes
- * ```
- *
- * IMPORTANT: This class does NOT delete the rootfs under any circumstances.
  */
 class ProotRuntimeBackend(
     private val context: Context,
@@ -45,30 +32,43 @@ class ProotRuntimeBackend(
 
     private val log = LinuxDroidLogger(LogSubsystem.RUNTIME)
 
+    val name: String = "PRoot"
+
     /** Tracks active proot processes by handleId. */
     private val activeProcesses = ConcurrentHashMap<String, ProotProcess>()
 
     private val _processEvents = MutableSharedFlow<ProcessStateEvent>(extraBufferCapacity = 64)
     override val processEvents: Flow<ProcessStateEvent> = _processEvents.asSharedFlow()
 
-    /** Path to the proot binary extracted to app files dir. */
-    private lateinit var prootBinary: File
+    @Volatile
+    private var prootBinaryCache: File? = null
+
+    /**
+     * Returns the validated executable proot binary, extracting it from assets if needed.
+     */
+    private fun ensureProotBinary(): File {
+        prootBinaryCache?.let { if (it.exists()) return it }
+        synchronized(this) {
+            prootBinaryCache?.let { if (it.exists()) return it }
+            val extracted = extractProotBinary()
+            prootBinaryCache = extracted
+            return extracted
+        }
+    }
 
     override suspend fun prepare(environment: Environment) = withContext(Dispatchers.IO) {
         log.info("Preparing proot runtime for ${environment.id}")
-        prootBinary = extractProotBinary()
-        log.info("proot binary: ${prootBinary.path} (exists=${prootBinary.exists()})")
+        val binary = ensureProotBinary()
+        log.info("proot binary ready: ${binary.path} (executable=${binary.canExecute()})")
     }
 
     override suspend fun initialize(environment: Environment): Unit = withContext(Dispatchers.IO) {
         log.info("Initializing proot runtime for ${environment.id}")
-        // Verify rootfs exists — never recreate it here
         val rootfs = storage.rootfsDir(environment.id)
         if (!rootfs.isDirectory) {
             throw RuntimeError(
                 environmentId = environment.id,
-                message = "Rootfs not found at ${rootfs.path}. " +
-                    "Environment must be installed before starting.",
+                message = "Rootfs not found at ${rootfs.path}. Environment must be installed before starting.",
             )
         }
         storage.cleanRuntimeState(environment.id)
@@ -76,22 +76,19 @@ class ProotRuntimeBackend(
 
     override suspend fun start(environment: Environment) = withContext(Dispatchers.IO) {
         log.info("Starting proot runtime for ${environment.id}")
-        // Validate environment is ready
         if (!environment.state.canStart()) {
             throw RuntimeNotReadyError(environment.id, environment.state)
         }
-        // proot does not require a persistent daemon — it is launched per-command.
-        // Individual processes are started via execute().
+        ensureProotBinary()
         log.info("proot runtime ready for ${environment.id}")
     }
 
     override suspend fun stop(environment: Environment) = withContext(Dispatchers.IO) {
         log.info("Stopping proot runtime for ${environment.id}")
-        // Terminate all active processes for this environment
         activeProcesses.entries
             .filter { it.value.environmentId == environment.id }
             .forEach { (handleId, process) ->
-                log.debug("Terminating process $handleId (PID ${getProcessPid(process.process)})")
+                log.debug("Terminating process $handleId")
                 try {
                     process.process?.destroyForcibly()
                 } catch (e: Exception) {
@@ -118,14 +115,15 @@ class ProotRuntimeBackend(
     ): ProcessHandle = withContext(Dispatchers.IO) {
         val handleId = UUID.randomUUID().toString()
         val rootfs = storage.rootfsDir(environment.id)
+        val proot = ensureProotBinary()
 
         log.info("Executing in proot: ${command.joinToString(" ")} (handle=$handleId)")
 
         val prootCmd = buildProotCommand(
+            prootBinary = proot,
             rootfs = rootfs,
             userCommand = command,
             workingDirectory = workingDirectory,
-            extraEnv = extraEnv,
             config = environment.configuration,
         )
 
@@ -133,7 +131,7 @@ class ProotRuntimeBackend(
             .directory(rootfs)
             .redirectErrorStream(false)
 
-        val prootDir = File(context.filesDir, "proot").absolutePath
+        val prootDir = proot.parentFile?.absolutePath ?: File(context.filesDir, "proot").absolutePath
         val nativeLibDir = context.applicationInfo.nativeLibraryDir
         processBuilder.environment()["LD_LIBRARY_PATH"] = "$prootDir:$nativeLibDir"
         processBuilder.environment()["PROOT_TMP_DIR"] = storage.tmpDir(environment.id).absolutePath
@@ -231,10 +229,30 @@ class ProotRuntimeBackend(
         )
     }
 
-    override suspend fun healthCheck(environment: Environment): Boolean {
-        return try {
-            val rootfs = storage.rootfsDir(environment.id)
-            rootfs.isDirectory && ::prootBinary.isInitialized && prootBinary.exists()
+    override suspend fun healthCheck(environment: Environment): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val binary = ensureProotBinary()
+            if (!binary.exists() || !binary.isFile) {
+                log.warn("Health check: proot binary missing at ${binary.path}")
+                return@withContext false
+            }
+
+            // Verify binary execution
+            val prootDir = binary.parentFile?.absolutePath ?: ""
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val pb = ProcessBuilder(binary.absolutePath, "--help")
+            pb.environment()["LD_LIBRARY_PATH"] = "$prootDir:$nativeLibDir"
+            val proc = pb.start()
+            val finished = proc.waitFor(3, TimeUnit.SECONDS)
+            if (!finished) {
+                proc.destroyForcibly()
+            }
+            val exit = proc.exitValue()
+            // proot --help exits with 0 or 1 depending on version
+            val output = proc.inputStream.bufferedReader().readText() + proc.errorStream.bufferedReader().readText()
+            val isProot = output.contains("PRoot", ignoreCase = true) || output.contains("proot", ignoreCase = true) || exit == 0 || exit == 1
+            log.info("Proot healthCheck verified: isProot=$isProot (exit=$exit)")
+            isProot
         } catch (e: Exception) {
             log.warn("Health check failed", e)
             false
@@ -243,28 +261,21 @@ class ProotRuntimeBackend(
 
     override suspend fun cleanup(environment: Environment) {
         stop(environment)
-        // Do NOT delete rootfs. Only clean transient state.
         storage.cleanRuntimeState(environment.id)
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────────
 
-    /**
-     * Extracts the proot binary and supporting shared libraries from assets to app's files directory.
-     * Returns the path to the executable binary.
-     *
-     * The proot binary is bundled in assets/proot/<abi>/
-     */
     private fun extractProotBinary(): File {
         val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "x86_64") }
-            ?: throw RuntimeError(message = "Unsupported ABI: ${android.os.Build.SUPPORTED_ABIS.toList()}")
+            ?: throw RuntimeError(message = "Unsupported device ABI: ${android.os.Build.SUPPORTED_ABIS.toList()}")
 
-        val destDir = File(context.filesDir, "proot")
+        val destDir = File(context.filesDir, "runtime/$abi")
         destDir.mkdirs()
         val destFile = File(destDir, "proot")
 
         try {
-            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot")
+            val assetFiles = context.assets.list("proot/$abi") ?: arrayOf("proot", "libtalloc.so.2", "libandroid-shmem.so")
             for (filename in assetFiles) {
                 val target = File(destDir, filename)
                 if (!target.exists() || target.length() == 0L) {
@@ -272,39 +283,29 @@ class ProotRuntimeBackend(
                     context.assets.open("proot/$abi/$filename").use { input ->
                         target.outputStream().use { output -> input.copyTo(output) }
                     }
-                    target.setExecutable(true, false)
                     target.setReadable(true, false)
+                    target.setExecutable(true, false)
+                    NativeBridge.setExecutable(target.absolutePath)
                 }
             }
+            destFile.setReadable(true, false)
             destFile.setExecutable(true, false)
+            NativeBridge.setExecutable(destFile.absolutePath)
         } catch (e: Exception) {
-            log.warn("Error extracting proot assets for $abi", e)
+            log.error("Error extracting proot assets for $abi", e)
         }
         return destFile
     }
 
-    /**
-     * Builds the proot command line for executing [userCommand] inside [rootfs].
-     *
-     * proot flags:
-     *   -r <rootfs>: set the root to rootfs
-     *   -0: fake root (uid 0) — allows installation without real root
-     *   -w <dir>: set working directory
-     *   -b /dev: bind /dev from host (required for most apps)
-     *   -b /proc: bind /proc from host
-     *   -b /sys: bind /sys from host (read-only where possible)
-     *   --link2symlink: emulate hard links with symlinks
-     */
     private fun buildProotCommand(
+        prootBinary: File,
         rootfs: File,
         userCommand: List<String>,
         workingDirectory: String,
-        extraEnv: Map<String, String>,
         config: EnvironmentConfiguration,
     ): List<String> {
-        val proot = prootBinary.absolutePath
         return buildList {
-            add(proot)
+            add(prootBinary.absolutePath)
             add("--rootfs=${rootfs.absolutePath}")
             add("--root-id")
             add("--cwd=$workingDirectory")
@@ -314,8 +315,10 @@ class ProotRuntimeBackend(
             add("--bind=/dev/urandom:/dev/random")
             add("--link2symlink")
             if (config.runtimeConfig.sharedStorageEnabled) {
-                // Shared storage bind will be set up by StorageBridge
-                // when available — not here, to keep separation of concerns
+                val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
+                if (sharedDir.exists() && sharedDir.canRead()) {
+                    add("--bind=${sharedDir.absolutePath}:/home/user/Android")
+                }
             }
             addAll(userCommand)
         }
@@ -328,12 +331,10 @@ class ProotRuntimeBackend(
         put("LANG", "C.UTF-8")
         put("USER", "root")
         put("LOGNAME", "root")
-        // User-provided overrides (can override defaults)
         putAll(extraEnv)
     }
 }
 
-/** Internal tracking of a running proot process. */
 private data class ProotProcess(
     val handleId: String,
     val environmentId: EnvironmentId,
@@ -342,26 +343,16 @@ private data class ProotProcess(
     val command: List<String>,
 )
 
-/** Extension to get EnvironmentConfiguration.runtimeConfig safely. */
 private val EnvironmentConfiguration.runtimeConfig: RuntimeConfig
     get() = this.runtime
 
-/**
- * Safely gets the PID of a Java Process using reflection.
- *
- * Uses reflection to access the PID field which is stored differently
- * on Android vs. JVM. Avoids `Process.pid()` which is API 26+/Java 9+
- * and may not be available in all build environments.
- */
 private fun getProcessPid(process: Process?): Int {
     if (process == null) return -1
     return try {
-        // Java 9+ / Android API 26+: use pid() method
         val method = process.javaClass.getMethod("pid")
         (method.invoke(process) as Long).toInt()
     } catch (_: Exception) {
         try {
-            // Android internal: UNIXProcess has a 'pid' field
             val field = process.javaClass.getDeclaredField("pid")
             field.isAccessible = true
             field.getInt(process)

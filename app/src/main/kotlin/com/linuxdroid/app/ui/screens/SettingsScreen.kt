@@ -1,10 +1,11 @@
 package com.linuxdroid.app.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.FolderShared
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -12,8 +13,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.linuxdroid.app.ui.viewmodel.SettingsViewModel
 import com.linuxdroid.core.model.Architecture
 import com.linuxdroid.core.storage.StorageAuthorizationState
@@ -23,7 +28,21 @@ import com.linuxdroid.core.storage.StorageAuthorizationState
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val authState by viewModel.authorizationState.collectAsState()
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.checkStorageAccess()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Settings") }) }
@@ -83,14 +102,45 @@ fun SettingsScreen(
                             Text(statusText, color = statusColor, style = MaterialTheme.typography.labelMedium)
                         }
 
-                        Button(
-                            onClick = { viewModel.checkStorageAccess() },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Verify Access")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (authState !is StorageAuthorizationState.Authorized) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.getPermissionIntent()?.let { intent ->
+                                            context.startActivity(intent)
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Grant Access")
+                                }
+                            }
+
+                            Button(
+                                onClick = { viewModel.checkStorageAccess() },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Verify")
+                            }
                         }
+                    }
+
+                    if (authState is StorageAuthorizationState.Unauthorized) {
+                        Text(
+                            text = (authState as StorageAuthorizationState.Unauthorized).reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    } else if (authState is StorageAuthorizationState.Error) {
+                        Text(
+                            text = (authState as StorageAuthorizationState.Error).message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
                 }
             }
@@ -103,7 +153,7 @@ fun SettingsScreen(
                     SettingInfoRow("Supported ABIs", android.os.Build.SUPPORTED_ABIS.joinToString(", "))
                     SettingInfoRow("Device Model", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                     SettingInfoRow("Android API", "${android.os.Build.VERSION.SDK_INT} (${android.os.Build.VERSION.RELEASE})")
-                    SettingInfoRow("Runtime Engine", "proot (user-space chroot via ptrace)")
+                    SettingInfoRow("Runtime Engine", "PRoot (Rootless syscall translation via ptrace)")
                 }
             }
         }

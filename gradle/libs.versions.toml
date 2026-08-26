@@ -29,6 +29,10 @@ hilt-navigation-compose = "1.2.0"
 # Logging
 timber = "5.0.1"
 
+# Compression / Archive
+commons-compress = "1.26.2"
+tukaani-xz = "1.9"
+
 # Testing
 junit = "4.13.2"
 junit5 = "5.11.3"
@@ -90,6 +94,10 @@ hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-com
 
 # Logging
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
+
+# Compression
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commons-compress" }
+tukaani-xz = { group = "org.tukaani", name = "xz", version.ref = "tukaani-xz" }
 
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
