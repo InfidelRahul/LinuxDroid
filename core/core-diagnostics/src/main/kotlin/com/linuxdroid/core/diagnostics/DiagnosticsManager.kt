@@ -179,42 +179,54 @@ class DiagnosticsManager(
                 timeoutMs = 5_000,
             )
             if (resTrue.exitCode != 0) {
-                val reason = when (resTrue.exitCode) {
-                    139 -> "PRoot / rootfs dynamic linker crashed with SIGSEGV (signal 11 / exit=139)"
-                    127 -> "/bin/true or dynamic library missing in rootfs (exit=127)"
-                    126 -> "/bin/true permission denied or not executable (exit=126)"
-                    else -> "PRoot binary test failed (exit=${resTrue.exitCode}): ${resTrue.stderr.ifBlank { resTrue.stdout }}"
-                }
+                val detail = buildString {
+                    appendLine("PRoot: STARTED")
+                    appendLine("RootFS: ${rootfsDir.path}")
+                    appendLine("Command: /bin/true")
+                    appendLine("Exit Code: ${resTrue.exitCode}")
+                    if (resTrue.stderr.isNotBlank()) {
+                        appendLine("Stderr: ${resTrue.stderr.trim()}")
+                    }
+                    if (resTrue.stdout.isNotBlank()) {
+                        appendLine("Stdout: ${resTrue.stdout.trim()}")
+                    }
+                }.trimEnd()
                 return DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.ERROR,
-                    detail = reason,
+                    detail = detail,
                 )
             }
 
-            // Stage 2: Full shell execution (/bin/sh -c "uname -a")
+            // Stage 2: Full shell execution (/bin/sh -c "echo hello")
             val result = runtimeBackend.executeAndWait(
                 environment = environment,
-                command = listOf("/bin/sh", "-c", "uname -a"),
+                command = listOf("/bin/sh", "-c", "echo hello"),
                 timeoutMs = 10_000,
             )
-            if (result.exitCode == 0 && result.stdout.isNotBlank()) {
+            if (result.exitCode == 0 && result.stdout.contains("hello")) {
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.OK,
-                    detail = "/bin/sh (uname -a) OK: ${result.stdout.trim()}",
+                    detail = "Linux userspace verified (/bin/true -> exit=0, /bin/sh -> echo hello)",
                 )
             } else {
-                val reason = when (result.exitCode) {
-                    139 -> "/bin/sh shell crashed with SIGSEGV (signal 11 / exit=139)"
-                    127 -> "/bin/sh executable not found in rootfs (exit=127)"
-                    126 -> "/bin/sh permission denied in rootfs (exit=126)"
-                    else -> "PRoot /bin/sh failed (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}"
-                }
+                val detail = buildString {
+                    appendLine("PRoot: STARTED")
+                    appendLine("RootFS: ${rootfsDir.path}")
+                    appendLine("Command: /bin/sh -c \"echo hello\"")
+                    appendLine("Exit Code: ${result.exitCode}")
+                    if (result.stderr.isNotBlank()) {
+                        appendLine("Stderr: ${result.stderr.trim()}")
+                    }
+                    if (result.stdout.isNotBlank()) {
+                        appendLine("Stdout: ${result.stdout.trim()}")
+                    }
+                }.trimEnd()
                 DiagnosticCheck(
                     name = "Linux Userspace",
                     status = DiagnosticStatus.ERROR,
-                    detail = reason,
+                    detail = detail,
                 )
             }
         } catch (e: Exception) {
