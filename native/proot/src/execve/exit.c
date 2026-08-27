@@ -385,6 +385,9 @@ static int transfer_load_script(Tracee *tracee)
 	save_current_regs(tracee, ORIGINAL);
 	tracee->_regs_were_changed = true;
 
+	VERBOSE(tracee, 2, "transfer_load_script: load script transferred to stack (sp=0x%lx, size=%zu)",
+		stack_pointer - buffer_size, buffer_size);
+
 	return 0;
 }
 

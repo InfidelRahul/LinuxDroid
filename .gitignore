@@ -6,6 +6,7 @@ build/
 local.properties
 *.keystore
 *.jks
+task.md
 
 # Android Studio
 .idea/
