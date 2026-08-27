@@ -493,6 +493,21 @@ private fun StateChip(state: EnvironmentState) {
             Color(0xFFE65100),
             "Recovering"
         )
+        EnvironmentState.DELETING -> Triple(
+            Color(0xFFFFEBEE),
+            Color(0xFFC62828),
+            "Deleting"
+        )
+        EnvironmentState.CLONING -> Triple(
+            Color(0xFFE0F7FA),
+            Color(0xFF00838F),
+            "Cloning"
+        )
+        EnvironmentState.RESETTING -> Triple(
+            Color(0xFFFFF8E1),
+            Color(0xFFF57F17),
+            "Resetting"
+        )
     }
     Surface(
         color = containerColor,

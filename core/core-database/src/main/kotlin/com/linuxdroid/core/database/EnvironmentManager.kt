@@ -44,6 +44,8 @@ interface EnvironmentManager {
     suspend fun deleteEnvironment(environmentId: EnvironmentId)
 
     suspend fun cloneEnvironment(sourceId: EnvironmentId, newName: String): Environment
+
+    suspend fun reconcileEnvironments(): List<Environment>
 }
 
 /**
@@ -102,6 +104,8 @@ class DefaultEnvironmentManager(
             env = env.withState(EnvironmentState.INSTALLING)
             dao.updateState(env.id.value, env.state.name, env.lastStateChangeAt, null)
 
+            storage.discardStaging(environmentId)
+
             try {
                 installerAction(env)
 
@@ -118,6 +122,7 @@ class DefaultEnvironmentManager(
                 env
             } catch (e: Exception) {
                 log.error("Installation failed for ${environmentId.value}", e)
+                storage.discardStaging(environmentId)
                 env = env.withState(EnvironmentState.FAILED, e.message)
                 dao.updateState(env.id.value, env.state.name, env.lastStateChangeAt, e.message)
                 throw e
@@ -144,14 +149,27 @@ class DefaultEnvironmentManager(
     override suspend fun resetEnvironment(environmentId: EnvironmentId): Environment = getLock(environmentId).withLock {
         withContext(Dispatchers.IO) {
             log.info("Resetting environment ${environmentId.value}")
-            storage.cleanRuntimeState(environmentId)
             val entity = dao.getById(environmentId.value)
                 ?: throw RuntimeError(environmentId, "Environment not found in database")
             var env = EnvironmentMapper.toDomain(entity)
+
             if (env.state.isActive()) {
                 env = env.withState(EnvironmentState.STOPPED)
                 dao.updateState(env.id.value, env.state.name, env.lastStateChangeAt, null)
             }
+
+            env = env.withState(EnvironmentState.RESETTING)
+            dao.updateState(env.id.value, env.state.name, env.lastStateChangeAt, null)
+
+            storage.cleanRuntimeState(environmentId)
+            storage.discardStaging(environmentId)
+
+            val isValid = storage.verifyRootfs(environmentId)
+            val finalState = if (isValid) EnvironmentState.READY else EnvironmentState.FAILED
+            val failureMsg = if (isValid) null else "Rootfs invalid after reset"
+
+            env = env.withState(finalState, failureMsg)
+            dao.updateState(env.id.value, env.state.name, env.lastStateChangeAt, failureMsg)
             env
         }
     }
@@ -159,10 +177,20 @@ class DefaultEnvironmentManager(
     override suspend fun deleteEnvironment(environmentId: EnvironmentId): Unit {
         getLock(environmentId).withLock {
             withContext(Dispatchers.IO) {
-                log.info("Deleting environment ${environmentId.value}")
-                dao.deleteById(environmentId.value)
+                log.info("Initiating transactional deletion for ${environmentId.value}")
+                val entity = dao.getById(environmentId.value)
+                if (entity != null) {
+                    val env = EnvironmentMapper.toDomain(entity)
+                    if (env.state.isActive()) {
+                        throw RuntimeError(environmentId, "Cannot delete active environment ${environmentId.value}. Stop it first.")
+                    }
+                    dao.updateState(environmentId.value, EnvironmentState.DELETING.name, System.currentTimeMillis(), null)
+                }
+
                 storage.deleteEnvironment(environmentId)
+                dao.deleteById(environmentId.value)
                 locks.remove(environmentId)
+                log.info("Deleted environment ${environmentId.value} cleanly from storage and database")
             }
         }
     }
@@ -179,17 +207,74 @@ class DefaultEnvironmentManager(
                 configuration = source.configuration,
             )
 
-            val sourceRootfs = storage.rootfsDir(sourceId)
-            val targetRootfs = storage.rootfsDir(newEnv.id)
+            getLock(newEnv.id).withLock {
+                var targetEnv = newEnv.withState(EnvironmentState.CLONING)
+                dao.updateState(targetEnv.id.value, targetEnv.state.name, targetEnv.lastStateChangeAt, null)
 
-            if (sourceRootfs.exists() && sourceRootfs.isDirectory) {
-                sourceRootfs.copyRecursively(targetRootfs, overwrite = true)
-                val readyEnv = newEnv.withState(EnvironmentState.READY)
-                dao.updateState(readyEnv.id.value, readyEnv.state.name, readyEnv.lastStateChangeAt, null)
-                readyEnv
-            } else {
-                newEnv
+                try {
+                    val sourceRootfs = storage.rootfsDir(sourceId)
+                    val targetStaging = storage.stagingRootfsDir(newEnv.id)
+
+                    if (sourceRootfs.exists() && sourceRootfs.isDirectory) {
+                        targetStaging.mkdirs()
+                        sourceRootfs.copyRecursively(targetStaging, overwrite = true)
+
+                        if (!storage.promoteStagedRootfs(newEnv.id)) {
+                            throw FilesystemError(
+                                path = targetStaging.absolutePath,
+                                message = "Failed to promote staged clone rootfs",
+                            )
+                        }
+
+                        targetEnv = targetEnv.withState(EnvironmentState.READY)
+                        dao.updateState(targetEnv.id.value, targetEnv.state.name, targetEnv.lastStateChangeAt, null)
+                        targetEnv
+                    } else {
+                        targetEnv = targetEnv.withState(EnvironmentState.READY)
+                        dao.updateState(targetEnv.id.value, targetEnv.state.name, targetEnv.lastStateChangeAt, null)
+                        targetEnv
+                    }
+                } catch (e: Exception) {
+                    log.error("Cloning failed for new environment ${newEnv.id.value}", e)
+                    storage.discardStaging(newEnv.id)
+                    targetEnv = targetEnv.withState(EnvironmentState.FAILED, e.message)
+                    dao.updateState(targetEnv.id.value, targetEnv.state.name, targetEnv.lastStateChangeAt, e.message)
+                    throw e
+                }
             }
         }
+    }
+
+    override suspend fun reconcileEnvironments(): List<Environment> = withContext(Dispatchers.IO) {
+        log.info("Reconciling interrupted environment states on startup")
+        val entities = dao.getAll()
+        val reconciled = mutableListOf<Environment>()
+
+        for (entity in entities) {
+            val env = EnvironmentMapper.toDomain(entity)
+            val id = env.id
+
+            when (env.state) {
+                EnvironmentState.DELETING -> {
+                    log.info("Resuming interrupted deletion for environment ${id.value}")
+                    storage.deleteEnvironment(id)
+                    dao.deleteById(id.value)
+                }
+                EnvironmentState.INSTALLING, EnvironmentState.CLONING, EnvironmentState.RESETTING -> {
+                    log.warn("Reconciling interrupted state ${env.state} for environment ${id.value}")
+                    storage.discardStaging(id)
+                    val isValid = storage.verifyRootfs(id)
+                    val nextState = if (isValid) EnvironmentState.READY else EnvironmentState.FAILED
+                    val failureMsg = if (isValid) null else "Interrupted during ${env.state.name}"
+                    val updated = env.withState(nextState, failureMsg)
+                    dao.updateState(id.value, updated.state.name, updated.lastStateChangeAt, failureMsg)
+                    reconciled.add(updated)
+                }
+                else -> {
+                    reconciled.add(env)
+                }
+            }
+        }
+        reconciled
     }
 }

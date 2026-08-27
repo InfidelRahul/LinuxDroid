@@ -94,6 +94,64 @@ class EnvironmentStorage(
         stateDir.listFiles()?.forEach { it.deleteRecursively() }
     }
 
+    /** Returns the staging rootfs directory. */
+    fun stagingRootfsDir(id: EnvironmentId): File = File(tmpDir(id), "rootfs-staging")
+
+    /** Returns the backup rootfs directory used during rootfs replacement/promotion. */
+    fun backupRootfsDir(id: EnvironmentId): File = File(tmpDir(id), "rootfs-backup")
+
+    /**
+     * Atomically promotes the staging rootfs to the active rootfs directory.
+     * Backs up the old rootfs and restores it if promotion fails.
+     */
+    suspend fun promoteStagedRootfs(id: EnvironmentId): Boolean = withContext(Dispatchers.IO) {
+        val staging = stagingRootfsDir(id)
+        if (!staging.exists() || !staging.isDirectory) {
+            log.warn("Staging rootfs does not exist for promotion: ${staging.path}")
+            return@withContext false
+        }
+
+        val target = rootfsDir(id)
+        val backup = backupRootfsDir(id)
+
+        // 1. If an existing rootfs exists, move it to backup
+        if (target.exists()) {
+            if (backup.exists()) backup.deleteRecursively()
+            if (!target.renameTo(backup)) {
+                log.error("Failed to move active rootfs to backup directory before promotion")
+                return@withContext false
+            }
+        }
+
+        // 2. Promote staging to active rootfs
+        if (staging.renameTo(target)) {
+            log.info("Successfully promoted staging rootfs to active rootfs for $id")
+            if (backup.exists()) backup.deleteRecursively()
+            true
+        } else {
+            log.error("Failed to rename staging to active rootfs. Restoring backup...")
+            if (backup.exists()) {
+                backup.renameTo(target)
+            }
+            false
+        }
+    }
+
+    /**
+     * Discards any residual staging rootfs directory.
+     */
+    suspend fun discardStaging(id: EnvironmentId) = withContext(Dispatchers.IO) {
+        val staging = stagingRootfsDir(id)
+        if (staging.exists()) {
+            log.debug("Discarding staging rootfs for $id")
+            staging.deleteRecursively()
+        }
+        val backup = backupRootfsDir(id)
+        if (backup.exists()) {
+            backup.deleteRecursively()
+        }
+    }
+
     /**
      * Deletes the entire environment directory on disk.
      * Called strictly on explicit user deletion request.
