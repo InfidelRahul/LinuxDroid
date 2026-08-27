@@ -349,8 +349,11 @@ int read_string(const Tracee *tracee, char *dest_tracer, word_t src_tracee, word
 		remote.iov_len  = size;
 
 		status = process_vm_readv(tracee->pid, &local, 1, &remote, 1, 0);
-		if ((size_t) status != size)
+		if ((size_t) status != size) {
+			VERBOSE(tracee, 3, "read_string: process_vm_readv(pid=%d, addr=0x%lx) fallback (%ld: %s)",
+				tracee->pid, (word_t)((uint8_t *)src + offset), status, strerror(errno));
 			goto fallback;
+		}
 
 		status = strnlen(local.iov_base, size);
 		if ((size_t) status < size) {
