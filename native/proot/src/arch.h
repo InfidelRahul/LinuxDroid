@@ -132,6 +132,8 @@ typedef unsigned char byte_t;
     #define EXEC_PIC_ADDRESS   0x3000000000
     #define INTERP_PIC_ADDRESS 0x3f00000000
 
+    #define UNTAG_ADDRESS(addr) ((word_t)(addr) & 0x00FFFFFFFFFFFFFFULL)
+
 #elif defined(ARCH_X86)
 
     #define SYSNUMS_HEADER1 "syscall/sysnums-i386.h"
@@ -174,6 +176,10 @@ typedef unsigned char byte_t;
 
     #error "Unsupported architecture"
 
+#endif
+
+#ifndef UNTAG_ADDRESS
+#define UNTAG_ADDRESS(addr) ((word_t)(addr))
 #endif
 
 #endif /* ARCH_H */
