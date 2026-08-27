@@ -109,10 +109,15 @@ class ProotRuntimeBackend(
         log.info("proot runtime ready for ${environment.id}")
     }
 
-    override suspend fun stop(environment: Environment) = withContext(Dispatchers.IO) {
-        log.info("Stopping proot runtime for ${environment.id}")
+    private val commandBuilder: RuntimeCommandBuilder = ProotCommandBuilder()
+    private val validator: RuntimeValidator = RuntimeValidator()
+
+    override suspend fun stop(environment: Environment) = stopForEnvironment(environment.id)
+
+    suspend fun stopForEnvironment(environmentId: EnvironmentId) = withContext(Dispatchers.IO) {
+        log.info("Stopping proot runtime for $environmentId")
         activeProcesses.entries
-            .filter { it.value.environmentId == environment.id }
+            .filter { it.value.environmentId == environmentId }
             .forEach { (handleId, process) ->
                 log.debug("Terminating process $handleId")
                 try {
@@ -123,7 +128,7 @@ class ProotRuntimeBackend(
                 activeProcesses.remove(handleId)
                 _processEvents.tryEmit(ProcessStateEvent.Signaled(handleId, 15)) // SIGTERM
             }
-        log.info("proot runtime stopped for ${environment.id}")
+        log.info("proot runtime stopped for $environmentId")
     }
 
     override suspend fun restart(environment: Environment) {
@@ -132,29 +137,19 @@ class ProotRuntimeBackend(
         start(environment)
     }
 
-    override suspend fun execute(
-        environment: Environment,
-        command: List<String>,
-        workingDirectory: String,
-        extraEnv: Map<String, String>,
-        sessionId: SessionId?,
+    suspend fun executeWithSpec(
+        spec: RuntimeSpec,
+        sessionId: SessionId? = null,
     ): ProcessHandle = withContext(Dispatchers.IO) {
         val handleId = UUID.randomUUID().toString()
-        val rootfs = storage.rootfsDir(environment.id)
-        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val rootfs = File(spec.rootfsPath)
+        val tmpDir = File(spec.tmpDirPath ?: storage.tmpDir(spec.environmentId).absolutePath).apply { mkdirs() }
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
 
-        log.info("Executing in proot: ${command.joinToString(" ")} (handle=$handleId)")
+        log.info("Executing in proot: ${spec.command.joinToString(" ")} (handle=$handleId)")
 
-        val prootCmd = buildProotCommand(
-            prootBinary = proot,
-            rootfs = rootfs,
-            userCommand = command,
-            workingDirectory = workingDirectory,
-            config = environment.configuration,
-            tmpDir = tmpDir,
-        )
+        val prootCmd = commandBuilder.build(spec, proot)
 
         val processBuilder = ProcessBuilder(prootCmd)
             .directory(rootfs)
@@ -165,17 +160,7 @@ class ProotRuntimeBackend(
         if (loader?.exists() == true) {
             processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
         }
-        processBuilder.environment()["HOME"] = "/root"
-        processBuilder.environment()["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        processBuilder.environment()["TERM"] = "xterm-256color"
-        processBuilder.environment()["LANG"] = "C.UTF-8"
-        processBuilder.environment()["USER"] = "root"
-        processBuilder.environment()["LOGNAME"] = "root"
-        processBuilder.environment()["TMPDIR"] = "/tmp"
-        environment.configuration.runtime.extraEnv.forEach { (k, v) ->
-            processBuilder.environment()[k] = v
-        }
-        extraEnv.forEach { (k, v) ->
+        spec.environmentVariables.forEach { (k, v) ->
             processBuilder.environment()[k] = v
         }
 
@@ -185,7 +170,7 @@ class ProotRuntimeBackend(
         } catch (e: IOException) {
             log.error("Failed to execute PRoot process: ${e.message}", e)
             throw RuntimeError(
-                environmentId = environment.id,
+                environmentId = spec.environmentId,
                 message = "Failed to launch PRoot executable '${proot.path}': ${e.message}",
                 cause = e,
             )
@@ -195,10 +180,10 @@ class ProotRuntimeBackend(
 
         val prootProcess = ProotProcess(
             handleId = handleId,
-            environmentId = environment.id,
+            environmentId = spec.environmentId,
             sessionId = sessionId,
             process = process,
-            command = command,
+            command = spec.command,
         )
         activeProcesses[handleId] = prootProcess
 
@@ -206,23 +191,38 @@ class ProotRuntimeBackend(
 
         ProcessHandle(
             handleId = handleId,
-            environmentId = environment.id,
+            environmentId = spec.environmentId,
             sessionId = sessionId,
-            command = command,
-            workingDirectory = workingDirectory,
+            command = spec.command,
+            workingDirectory = spec.workingDirectory,
             pid = pid,
             state = ProcessState.RUNNING,
         )
     }
 
-    override suspend fun executeAndWait(
+    override suspend fun execute(
         environment: Environment,
         command: List<String>,
         workingDirectory: String,
         extraEnv: Map<String, String>,
-        timeoutMs: Long,
+        sessionId: SessionId?,
+    ): ProcessHandle {
+        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val spec = RuntimeSpec.fromEnvironment(
+            environment = environment,
+            command = command,
+            workingDirectory = workingDirectory,
+            extraEnv = extraEnv,
+            tmpDirPath = tmpDir.absolutePath,
+        )
+        return executeWithSpec(spec, sessionId)
+    }
+
+    suspend fun executeAndWaitWithSpec(
+        spec: RuntimeSpec,
+        timeoutMs: Long = 30_000,
     ): ProcessResult = withContext(Dispatchers.IO) {
-        val handle = execute(environment, command, workingDirectory, extraEnv)
+        val handle = executeWithSpec(spec)
         val prootProcess = activeProcesses[handle.handleId]
             ?: throw ProcessError(handle.handleId, "Process not found after execute")
 
@@ -257,39 +257,42 @@ class ProotRuntimeBackend(
         )
     }
 
-    override suspend fun startInteractiveShell(
+    override suspend fun executeAndWait(
         environment: Environment,
-        rows: Int,
-        cols: Int,
         command: List<String>,
+        workingDirectory: String,
+        extraEnv: Map<String, String>,
+        timeoutMs: Long,
+    ): ProcessResult {
+        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val spec = RuntimeSpec.fromEnvironment(
+            environment = environment,
+            command = command,
+            workingDirectory = workingDirectory,
+            extraEnv = extraEnv,
+            tmpDirPath = tmpDir.absolutePath,
+        )
+        return executeAndWaitWithSpec(spec, timeoutMs)
+    }
+
+    suspend fun startInteractiveShellWithSpec(
+        spec: RuntimeSpec,
+        rows: Int = 24,
+        cols: Int = 80,
     ): PtySession = withContext(Dispatchers.IO) {
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
-        val rootfs = storage.rootfsDir(environment.id)
-        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val rootfs = File(spec.rootfsPath)
+        val tmpDir = File(spec.tmpDirPath ?: storage.tmpDir(spec.environmentId).absolutePath).apply { mkdirs() }
 
-        val prootCmd = buildProotCommand(
-            prootBinary = proot,
-            rootfs = rootfs,
-            userCommand = command,
-            workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
-            config = environment.configuration,
-            tmpDir = tmpDir,
-        )
+        val prootCmd = commandBuilder.build(spec, proot)
 
         val envVars = buildList {
             add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
             if (loader?.exists() == true) {
                 add("PROOT_LOADER=${loader.absolutePath}")
             }
-            add("HOME=/root")
-            add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-            add("TERM=xterm-256color")
-            add("LANG=C.UTF-8")
-            add("USER=root")
-            add("LOGNAME=root")
-            add("TMPDIR=/tmp")
-            environment.configuration.runtime.extraEnv.forEach { (k, v) ->
+            spec.environmentVariables.forEach { (k, v) ->
                 add("$k=$v")
             }
         }
@@ -307,19 +310,35 @@ class ProotRuntimeBackend(
         if (res != 0) {
             log.error("Failed to create PTY process: errno $res")
             throw RuntimeError(
-                environmentId = environment.id,
+                environmentId = spec.environmentId,
                 message = "Failed to create PTY process: errno $res",
             )
         }
 
         val session = PtySession(
             sessionId = UUID.randomUUID().toString(),
-            environmentId = environment.id,
+            environmentId = spec.environmentId,
             pid = outPidAndFd[0],
             masterFd = outPidAndFd[1],
         )
         log.info("Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
         session
+    }
+
+    override suspend fun startInteractiveShell(
+        environment: Environment,
+        rows: Int,
+        cols: Int,
+        command: List<String>,
+    ): PtySession {
+        val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val spec = RuntimeSpec.fromEnvironment(
+            environment = environment,
+            command = command,
+            workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
+            tmpDirPath = tmpDir.absolutePath,
+        )
+        return startInteractiveShellWithSpec(spec, rows, cols)
     }
 
     override suspend fun inspect(handleId: String): ProcessHandle? {
@@ -595,42 +614,6 @@ class ProotRuntimeBackend(
         }
 
         return extractedProot to (if (extractedLoader.exists()) extractedLoader else null)
-    }
-
-    private fun buildProotCommand(
-        prootBinary: File,
-        rootfs: File,
-        userCommand: List<String>,
-        workingDirectory: String,
-        config: EnvironmentConfiguration,
-        tmpDir: File,
-    ): List<String> {
-        return buildList {
-            add(prootBinary.absolutePath)
-            add("-0")
-            add("--kill-on-exit")
-            add("--link2symlink")
-            add("-r")
-            add(rootfs.absolutePath)
-            add("-b")
-            add("/dev")
-            add("-b")
-            add("/proc")
-            add("-b")
-            add("/sys")
-            add("-b")
-            add("${tmpDir.absolutePath}:/tmp")
-            if (config.runtime.sharedStorageEnabled) {
-                val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
-                if (sharedDir.exists() && sharedDir.canRead()) {
-                    add("-b")
-                    add("${sharedDir.absolutePath}:/home/user/Android")
-                }
-            }
-            add("-w")
-            add(workingDirectory.ifBlank { "/" })
-            addAll(userCommand)
-        }
     }
 }
 

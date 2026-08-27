@@ -27,13 +27,17 @@ data class ProcessHandle(
     /** The environment this process belongs to. */
     val environmentId: EnvironmentId,
     /** The session this process belongs to (null if not part of a session). */
-    val sessionId: SessionId?,
+    val sessionId: SessionId? = null,
     /** The command and arguments. */
     val command: List<String>,
     /** Working directory inside Linux. */
-    val workingDirectory: String,
-    /** OS process ID. -1 if not yet started. */
+    val workingDirectory: String = "/",
+    /** OS host process ID. -1 if not yet started. */
     val pid: Int = -1,
+    /** Guest virtual PID if tracked. */
+    val guestPid: Int? = null,
+    /** Logical role of the process (e.g. "terminal", "desktop", "daemon", "exec"). */
+    val processRole: String = "exec",
     /** Current state. */
     val state: ProcessState = ProcessState.PENDING,
     /** When the process was started (epoch ms). */
@@ -44,6 +48,8 @@ data class ProcessHandle(
     val exitCode: Int? = null,
     /** Signal number (valid only when state == SIGNALED). */
     val signal: Int? = null,
+    /** Reason for process termination if known. */
+    val terminationReason: String? = null,
 ) {
     init {
         require(command.isNotEmpty()) { "Command must not be empty" }

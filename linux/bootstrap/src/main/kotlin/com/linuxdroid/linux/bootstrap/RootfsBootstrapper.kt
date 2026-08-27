@@ -420,5 +420,3 @@ data class RootfsSource(
     val format: ArchiveFormat,
     val stripComponents: Int,
 )
-
-enum class ArchiveFormat { TAR_XZ, TAR_GZ, TAR_BZ2 }

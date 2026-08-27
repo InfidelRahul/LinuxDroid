@@ -95,6 +95,15 @@ class EnvironmentStorage(
     }
 
     /**
+     * Deletes the entire environment directory on disk.
+     * Called strictly on explicit user deletion request.
+     */
+    suspend fun deleteEnvironment(id: EnvironmentId) = withContext(Dispatchers.IO) {
+        log.info("Deleting environment storage for $id")
+        environmentDir(id).deleteRecursively()
+    }
+
+    /**
      * Returns true if an environment directory exists.
      */
     fun environmentExists(id: EnvironmentId): Boolean = environmentDir(id).isDirectory
