@@ -64,6 +64,12 @@ enum class EnvironmentState {
     STOPPING,
     /** Linux session stopped cleanly. */
     STOPPED,
+    /** Environment deletion in progress. */
+    DELETING,
+    /** Environment clone in progress. */
+    CLONING,
+    /** Environment reset in progress. */
+    RESETTING,
     /** A subsystem failure occurred. */
     FAILED,
     /** Attempting recovery after a failure. */
@@ -81,13 +87,16 @@ enum class EnvironmentState {
     /** Returns true if transitions INTO this state are permitted from the given state. */
     fun isValidTransitionFrom(from: EnvironmentState): Boolean = when (this) {
         CREATED -> false // CREATED is only the initial state, never transitioned into
-        INSTALLING -> from == CREATED
-        READY -> from in setOf(INSTALLING, RECOVERING)
+        INSTALLING -> from in setOf(CREATED, FAILED)
+        READY -> from in setOf(INSTALLING, RECOVERING, RESETTING, CLONING, CREATED)
         STARTING -> from in setOf(READY, STOPPED)
         RUNNING -> from == STARTING
         STOPPING -> from in setOf(RUNNING, STARTING)
-        STOPPED -> from == STOPPING
-        FAILED -> from in setOf(INSTALLING, STARTING, RUNNING, STOPPING, RECOVERING)
+        STOPPED -> from in setOf(STOPPING, RUNNING, RESETTING)
+        DELETING -> from in setOf(READY, STOPPED, FAILED, CREATED, INSTALLING, RESETTING, CLONING)
+        CLONING -> from in setOf(CREATED, READY, STOPPED)
+        RESETTING -> from in setOf(READY, STOPPED, FAILED)
+        FAILED -> from in setOf(INSTALLING, STARTING, RUNNING, STOPPING, RECOVERING, RESETTING, CLONING, DELETING)
         RECOVERING -> from == FAILED
     }
 }
