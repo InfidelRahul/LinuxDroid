@@ -33,10 +33,6 @@ JNIEXPORT jlong JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
     JNIEnv* env, jclass clazz);
 
-JNIEXPORT jstring JNICALL
-Java_com_linuxdroid_native_1bridge_NativeBridge_nativeRunPtraceSelfTest(
-    JNIEnv* env, jclass clazz);
-
 // PTY Subprocess
 JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCreatePtyProcess(

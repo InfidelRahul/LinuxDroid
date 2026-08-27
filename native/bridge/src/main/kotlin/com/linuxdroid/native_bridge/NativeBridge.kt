@@ -23,7 +23,6 @@ object NativeBridge {
     fun getAbi(): String = nativeGetAbi()
     fun sendSignal(pid: Int, signal: Int): Int = nativeSendSignal(pid, signal)
     fun getAvailableMemoryBytes(): Long = nativeGetAvailableMemoryBytes()
-    fun runPtraceSelfTest(): String = nativeRunPtraceSelfTest()
 
     // ─── PTY Subprocess ────────────────────────────────────────────────────────────
 
@@ -98,7 +97,6 @@ object NativeBridge {
     @JvmStatic external fun nativeGetAbi(): String
     @JvmStatic external fun nativeSendSignal(pid: Int, signal: Int): Int
     @JvmStatic external fun nativeGetAvailableMemoryBytes(): Long
-    @JvmStatic external fun nativeRunPtraceSelfTest(): String
     @JvmStatic external fun nativeCreatePtyProcess(cmd: Array<String>, cwd: String, env: Array<String>?, rows: Int, cols: Int, outPidAndFd: IntArray): Int
     @JvmStatic external fun nativeSetPtyWindowSize(fd: Int, rows: Int, cols: Int): Int
     @JvmStatic external fun nativeWriteFd(fd: Int, data: ByteArray, offset: Int, length: Int): Int
