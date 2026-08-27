@@ -3,7 +3,6 @@ package com.linuxdroid.core.runtime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 
 /**
  * A styled text fragment within a terminal line.
@@ -30,6 +29,13 @@ data class TerminalLineData(
     }
 }
 
+private class TerminalChar(
+    var char: Char,
+    var color: Long,
+    var isBold: Boolean,
+    var isUnderline: Boolean,
+)
+
 /**
  * High-performance, thread-safe ANSI terminal screen buffer.
  *
@@ -46,8 +52,7 @@ class TerminalBuffer(
     private val _lines = MutableStateFlow<List<TerminalLineData>>(emptyList())
     val lines: StateFlow<List<TerminalLineData>> = _lines.asStateFlow()
 
-    private val linesList = ArrayList<StringBuilder>()
-    private val lineColors = ArrayList<ArrayList<Pair<Int, Long>>>() // (startOffset, color)
+    private val linesList = ArrayList<ArrayList<TerminalChar>>()
 
     private var cursorCol = 0
     private var currentColor: Long = 0xFFE0E0E0
@@ -83,9 +88,7 @@ class TerminalBuffer(
     @Synchronized
     fun clear() {
         linesList.clear()
-        lineColors.clear()
-        linesList.add(StringBuilder())
-        lineColors.add(ArrayList())
+        linesList.add(ArrayList())
         cursorCol = 0
         publishLines()
     }
@@ -166,43 +169,31 @@ class TerminalBuffer(
 
     private fun insertChar(c: Char) {
         val currentLine = getCurrentLine()
-        val colors = getCurrentColors()
+        val tChar = TerminalChar(c, currentColor, currentBold, currentUnderline)
 
-        if (cursorCol < currentLine.length) {
-            currentLine.setCharAt(cursorCol, c)
+        if (cursorCol < currentLine.size) {
+            currentLine[cursorCol] = tChar
         } else {
-            while (currentLine.length < cursorCol) {
-                currentLine.append(' ')
+            while (currentLine.size < cursorCol) {
+                currentLine.add(TerminalChar(' ', 0xFFE0E0E0, isBold = false, isUnderline = false))
             }
-            currentLine.append(c)
+            currentLine.add(tChar)
         }
-        colors.add(cursorCol to currentColor)
         cursorCol++
     }
 
     private fun addNewLine() {
         if (linesList.size >= maxScrollbackLines) {
             linesList.removeAt(0)
-            lineColors.removeAt(0)
         }
-        linesList.add(StringBuilder())
-        lineColors.add(ArrayList())
+        linesList.add(ArrayList())
     }
 
-    private fun getCurrentLine(): StringBuilder {
+    private fun getCurrentLine(): ArrayList<TerminalChar> {
         if (linesList.isEmpty()) {
-            linesList.add(StringBuilder())
-            lineColors.add(ArrayList())
+            linesList.add(ArrayList())
         }
         return linesList.last()
-    }
-
-    private fun getCurrentColors(): ArrayList<Pair<Int, Long>> {
-        if (lineColors.isEmpty()) {
-            linesList.add(StringBuilder())
-            lineColors.add(ArrayList())
-        }
-        return lineColors.last()
     }
 
     private fun handleCsiSequence(cmd: Char, params: String) {
@@ -233,23 +224,22 @@ class TerminalBuffer(
                 val line = getCurrentLine()
                 when (params) {
                     "", "0" -> { // Clear from cursor to end
-                        if (cursorCol < line.length) {
-                            line.setLength(cursorCol)
+                        while (line.size > cursorCol) {
+                            line.removeAt(line.size - 1)
                         }
                     }
                     "1" -> { // Clear from start to cursor
-                        for (idx in 0 until minOf(cursorCol, line.length)) {
-                            line.setCharAt(idx, ' ')
+                        for (idx in 0 until minOf(cursorCol, line.size)) {
+                            line[idx] = TerminalChar(' ', 0xFFE0E0E0, isBold = false, isUnderline = false)
                         }
                     }
                     "2" -> { // Clear entire line
-                        line.setLength(0)
+                        line.clear()
                         cursorCol = 0
                     }
                 }
             }
             'H', 'f' -> { // Cursor Position
-                // Simple support for reset to home
                 if (params.isEmpty() || params == "1;1" || params == ";") {
                     cursorCol = 0
                 }
@@ -259,15 +249,37 @@ class TerminalBuffer(
 
     private fun publishLines() {
         val result = ArrayList<TerminalLineData>(linesList.size)
-        for (i in linesList.indices) {
-            val text = linesList[i].toString()
-            if (text.isEmpty()) {
-                result.add(TerminalLineData(listOf(StyledSpan(" ", 0xFFE0E0E0))))
-            } else {
-                result.add(TerminalLineData(listOf(StyledSpan(text, currentColor, isBold = currentBold))))
+        for (lineChars in linesList) {
+            if (lineChars.isEmpty()) {
+                result.add(TerminalLineData(emptyList()))
+                continue
             }
+
+            val spans = ArrayList<StyledSpan>()
+            var currentSpanText = StringBuilder()
+            var spanColor = lineChars[0].color
+            var spanBold = lineChars[0].isBold
+            var spanUnderline = lineChars[0].isUnderline
+
+            for (tc in lineChars) {
+                if (tc.color != spanColor || tc.isBold != spanBold || tc.isUnderline != spanUnderline) {
+                    if (currentSpanText.isNotEmpty()) {
+                        spans.add(StyledSpan(currentSpanText.toString(), spanColor, spanBold, spanUnderline))
+                        currentSpanText = StringBuilder()
+                    }
+                    spanColor = tc.color
+                    spanBold = tc.isBold
+                    spanUnderline = tc.isUnderline
+                }
+                currentSpanText.append(tc.char)
+            }
+
+            if (currentSpanText.isNotEmpty()) {
+                spans.add(StyledSpan(currentSpanText.toString(), spanColor, spanBold, spanUnderline))
+            }
+
+            result.add(TerminalLineData(spans))
         }
         _lines.value = result
     }
 }
-
