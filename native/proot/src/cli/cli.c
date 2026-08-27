@@ -449,10 +449,25 @@ static int parse_config(Tracee *tracee, size_t argc, char *const argv[])
 	return argc_offset;
 }
 
+#if defined(__ANDROID__)
+#include <malloc.h>
+#ifndef M_BIONIC_SET_HEAP_TAGGING_LEVEL
+#define M_BIONIC_SET_HEAP_TAGGING_LEVEL -204
+#endif
+#ifndef M_HEAP_TAGGING_LEVEL_NONE
+#define M_HEAP_TAGGING_LEVEL_NONE 0
+#endif
+#endif
+
 bool exit_failure = true;
 
 int main(int argc, char *const argv[])
 {
+#if defined(__ANDROID__) && defined(__aarch64__)
+	/* On Android 11-16 (API 30-36), configure Bionic heap allocator to return untagged pointers */
+	mallopt(M_BIONIC_SET_HEAP_TAGGING_LEVEL, M_HEAP_TAGGING_LEVEL_NONE);
+#endif
+
 	Tracee *tracee;
 	int status;
 

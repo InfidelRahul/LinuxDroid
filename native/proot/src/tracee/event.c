@@ -33,6 +33,9 @@
 #include <stdbool.h>    /* bool, true, false, */
 #include <assert.h>     /* assert(3), */
 #include <stdlib.h>     /* atexit(3), getenv(3), */
+#if defined(__ANDROID__)
+#include <malloc.h>
+#endif
 #include <talloc.h>     /* talloc_*, */
 #include <inttypes.h>   /* PRI*, */
 #include <linux/version.h> /* KERNEL_VERSION, */
@@ -91,6 +94,17 @@ int launch_process(Tracee *tracee, char *const argv[])
 		 * this support is explicitly disabled.  */
 		if (getenv("PROOT_NO_SECCOMP") == NULL)
 			(void) enable_syscall_filtering(tracee);
+
+#if defined(__ANDROID__) && defined(__aarch64__)
+# ifndef M_BIONIC_SET_HEAP_TAGGING_LEVEL
+#  define M_BIONIC_SET_HEAP_TAGGING_LEVEL -204
+# endif
+# ifndef M_HEAP_TAGGING_LEVEL_NONE
+#  define M_HEAP_TAGGING_LEVEL_NONE 0
+# endif
+		/* Ensure child heap allocations are untagged prior to execvp */
+		mallopt(M_BIONIC_SET_HEAP_TAGGING_LEVEL, M_HEAP_TAGGING_LEVEL_NONE);
+#endif
 
 		/* Now process is ptraced, so the current rootfs is already the
 		 * guest rootfs.  Note: Valgrind can't handle execve(2) on
