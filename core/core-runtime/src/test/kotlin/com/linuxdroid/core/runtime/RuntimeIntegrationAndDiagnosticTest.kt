@@ -27,7 +27,7 @@ class RuntimeIntegrationAndDiagnosticTest {
     @Before
     fun setup() {
         runtimeManager = DefaultRuntimeManager(backend, validator, commandBuilder)
-        every { backend.ensureProotBinary() } returns File("/data/app/libproot.so")
+        every { backend.getProotBinaryPath() } returns "/data/app/libproot.so"
         coEvery { validator.validate(any()) } returns Unit
     }
 
@@ -41,7 +41,8 @@ class RuntimeIntegrationAndDiagnosticTest {
         assertThat(cmdString).contains("-w /root")
         assertThat(cmdString).contains("/bin/sh -c echo hello")
 
-        // Verify no backend or process execution occurred
+        // Verify strictly side-effect free: no ensureProotBinary, no start, no execute
+        verify(exactly = 0) { backend.ensureProotBinary() }
         coVerify(exactly = 0) { backend.start(any()) }
         coVerify(exactly = 0) { backend.execute(any(), any(), any(), any(), any()) }
     }

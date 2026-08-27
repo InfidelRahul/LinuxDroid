@@ -138,7 +138,41 @@ class EnvironmentStorage(
     }
 
     /**
+     * Attempts to recover an interrupted promotion.
+     * If rootfs is missing or invalid but backup exists, restores backup to rootfs.
+     * If rootfs is valid, cleans up backup.
+     */
+    suspend fun recoverInterruptedPromotion(id: EnvironmentId): Boolean = withContext(Dispatchers.IO) {
+        val target = rootfsDir(id)
+        val backup = backupRootfsDir(id)
+        val staging = stagingRootfsDir(id)
+
+        // If target rootfs is missing or corrupt, but backup exists, restore backup!
+        if ((!target.exists() || !verifyRootfs(id)) && backup.exists()) {
+            log.warn("Recovering rootfs for $id from backup directory")
+            if (target.exists()) target.deleteRecursively()
+            if (backup.renameTo(target)) {
+                if (staging.exists()) staging.deleteRecursively()
+                return@withContext true
+            }
+        }
+
+        // If target rootfs is valid and backup exists, safely remove backup
+        if (target.exists() && verifyRootfs(id) && backup.exists()) {
+            backup.deleteRecursively()
+        }
+
+        // Discard any residual staging
+        if (staging.exists()) {
+            staging.deleteRecursively()
+        }
+
+        verifyRootfs(id)
+    }
+
+    /**
      * Discards any residual staging rootfs directory.
+     * Preserves backup if target rootfs is invalid.
      */
     suspend fun discardStaging(id: EnvironmentId) = withContext(Dispatchers.IO) {
         val staging = stagingRootfsDir(id)
@@ -147,8 +181,13 @@ class EnvironmentStorage(
             staging.deleteRecursively()
         }
         val backup = backupRootfsDir(id)
+        val target = rootfsDir(id)
         if (backup.exists()) {
-            backup.deleteRecursively()
+            if (target.exists() && verifyRootfs(id)) {
+                backup.deleteRecursively()
+            } else {
+                log.warn("Preserving rootfs-backup for $id as active rootfs is not verified")
+            }
         }
     }
 

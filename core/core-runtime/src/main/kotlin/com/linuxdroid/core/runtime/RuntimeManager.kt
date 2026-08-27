@@ -5,6 +5,7 @@ import com.linuxdroid.core.model.ProcessHandle
 import com.linuxdroid.core.model.ProcessResult
 import com.linuxdroid.core.model.RuntimeSpec
 import com.linuxdroid.core.model.SessionId
+import java.io.File
 
 /**
  * Domain-facing entry point for managing Linux runtime execution instances.
@@ -87,8 +88,8 @@ class DefaultRuntimeManager(
     }
 
     override fun showRuntimeCommand(spec: RuntimeSpec): String {
-        val prootBin = backend.ensureProotBinary()
-        val cmdList = commandBuilder.build(spec, prootBin)
+        val prootBinPath = spec.customProotPath ?: backend.getProotBinaryPath()
+        val cmdList = commandBuilder.build(spec, File(prootBinPath))
         return cmdList.joinToString(" ")
     }
 }
