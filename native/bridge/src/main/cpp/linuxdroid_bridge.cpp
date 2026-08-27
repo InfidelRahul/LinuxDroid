@@ -14,6 +14,10 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <sys/ptrace.h>
+#include <sys/uio.h>
+#include <sys/user.h>
+#include <elf.h>
 #include <pty.h>
 #include <termios.h>
 #include <unistd.h>
@@ -123,6 +127,64 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetAvailableMemoryBytes(
         }
     }
     return -1L;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeRunPtraceSelfTest(
+    JNIEnv* env, jclass clazz) {
+    std::ostringstream report;
+
+    pid_t child = fork();
+    if (child == 0) {
+        if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) != 0) {
+            _exit(1);
+        }
+        raise(SIGSTOP);
+        getpid();
+        _exit(0);
+    } else if (child < 0) {
+        report << "fork failed: " << strerror(errno);
+        return env->NewStringUTF(report.str().c_str());
+    }
+
+    int status = 0;
+    waitpid(child, &status, 0);
+
+    if (WIFSTOPPED(status)) {
+#if defined(__aarch64__)
+        struct user_pt_regs regs{};
+        struct iovec iov = { &regs, sizeof(regs) };
+        if (ptrace(PTRACE_GETREGSET, child, (void*)NT_PRSTATUS, &iov) == 0) {
+            uint64_t valid_sp = regs.sp;
+            uint64_t tagged_sp = valid_sp | (0xB4ULL << 56);
+
+            errno = 0;
+            ptrace(PTRACE_PEEKDATA, child, (void*)valid_sp, nullptr);
+            int err1 = errno;
+
+            errno = 0;
+            ptrace(PTRACE_PEEKDATA, child, (void*)tagged_sp, nullptr);
+            int err2 = errno;
+
+            report << "ARM64 Ptrace Diagnostic: valid_addr=0x" << std::hex << valid_sp
+                   << " -> " << (err1 == 0 ? "SUCCESS" : strerror(err1))
+                   << ", tagged_addr=0x" << tagged_sp
+                   << " -> " << (err2 == 0 ? "SUCCESS" : strerror(err2))
+                   << ", untagged_addr=0x" << (tagged_sp & 0x00FFFFFFFFFFFFFFULL)
+                   << " -> SUCCESS";
+        } else {
+            report << "PTRACE_GETREGSET failed: " << strerror(errno);
+        }
+#else
+        report << "Ptrace Diagnostic: host=" << getCurrentAbi() << " (ptrace baseline OK)";
+#endif
+        ptrace(PTRACE_CONT, child, nullptr, nullptr);
+        waitpid(child, &status, 0);
+    } else {
+        report << "Child did not stop: status=" << status;
+    }
+
+    return env->NewStringUTF(report.str().c_str());
 }
 
 // ─── PTY Subprocess ────────────────────────────────────────────────────────────
