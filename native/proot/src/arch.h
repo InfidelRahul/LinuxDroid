@@ -38,7 +38,7 @@ typedef unsigned char byte_t;
 #define OFFSETOF_STATX_UID 20
 #define OFFSETOF_STATX_GID 24
 
-#if !defined(ARCH_X86_64) && !defined(ARCH_ARM_EABI) && !defined(ARCH_X86) && !defined(ARCH_SH4)
+#if !defined(ARCH_X86_64) && !defined(ARCH_ARM64) && !defined(ARCH_ARM_EABI) && !defined(ARCH_X86) && !defined(ARCH_SH4)
 #    if defined(__x86_64__)
 #        define ARCH_X86_64 1
 #    elif defined(__ARM_EABI__)
@@ -132,6 +132,8 @@ typedef unsigned char byte_t;
     #define EXEC_PIC_ADDRESS   0x3000000000
     #define INTERP_PIC_ADDRESS 0x3f00000000
 
+    #define UNTAG_ADDRESS(addr) ((word_t)(addr) & 0x00FFFFFFFFFFFFFFULL)
+
 #elif defined(ARCH_X86)
 
     #define SYSNUMS_HEADER1 "syscall/sysnums-i386.h"
@@ -174,6 +176,10 @@ typedef unsigned char byte_t;
 
     #error "Unsupported architecture"
 
+#endif
+
+#ifndef UNTAG_ADDRESS
+#define UNTAG_ADDRESS(addr) ((word_t)(addr))
 #endif
 
 #endif /* ARCH_H */
