@@ -66,6 +66,25 @@ class ProotRuntimeBackend(
     }
 
     /**
+     * Pure, non-mutating path resolution for diagnostic inspection.
+     * Returns the expected path to the proot binary without creating files or modifying state.
+     */
+    fun getProotBinaryPath(): String {
+        prootBinaryCache?.let { return it.absolutePath }
+        try {
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val libProot = File(nativeLibDir, "libproot.so")
+            if (libProot.exists()) {
+                return libProot.absolutePath
+            }
+            val appProot = File(context.filesDir, "runtime/bin/proot")
+            return appProot.absolutePath
+        } catch (_: Throwable) {
+            return "proot"
+        }
+    }
+
+    /**
      * Resolves the companion loader binary path.
      */
     fun ensureLoaderBinary(): File? {

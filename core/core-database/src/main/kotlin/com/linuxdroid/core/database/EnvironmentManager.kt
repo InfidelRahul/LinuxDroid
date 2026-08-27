@@ -262,7 +262,7 @@ class DefaultEnvironmentManager(
                 }
                 EnvironmentState.INSTALLING, EnvironmentState.CLONING, EnvironmentState.RESETTING -> {
                     log.warn("Reconciling interrupted state ${env.state} for environment ${id.value}")
-                    storage.discardStaging(id)
+                    storage.recoverInterruptedPromotion(id)
                     val isValid = storage.verifyRootfs(id)
                     val nextState = if (isValid) EnvironmentState.READY else EnvironmentState.FAILED
                     val failureMsg = if (isValid) null else "Interrupted during ${env.state.name}"
