@@ -82,7 +82,11 @@ static inline void store_word(void *address, word_t value)
  */
 int write_data(const Tracee *tracee, word_t dest_tracee, const void *src_tracer, word_t size)
 {
+	word_t orig_dest = dest_tracee;
 	dest_tracee = UNTAG_ADDRESS(dest_tracee);
+	if (orig_dest != dest_tracee) {
+		VERBOSE(tracee, 3, "write_data: untagged original=0x%lx -> normalized=0x%lx", orig_dest, dest_tracee);
+	}
 	word_t *src  = (word_t *)src_tracer;
 	word_t *dest = (word_t *)dest_tracee;
 
@@ -198,7 +202,11 @@ int writev_data(const Tracee *tracee, word_t dest_tracee, const struct iovec *sr
  */
 int read_data(const Tracee *tracee, void *dest_tracer, word_t src_tracee, word_t size)
 {
+	word_t orig_src = src_tracee;
 	src_tracee = UNTAG_ADDRESS(src_tracee);
+	if (orig_src != src_tracee) {
+		VERBOSE(tracee, 3, "read_data: untagged original=0x%lx -> normalized=0x%lx", orig_src, src_tracee);
+	}
 	word_t *src  = (word_t *)src_tracee;
 	word_t *dest = (word_t *)dest_tracer;
 
@@ -270,7 +278,11 @@ int read_data(const Tracee *tracee, void *dest_tracer, word_t src_tracee, word_t
  */
 int read_string(const Tracee *tracee, char *dest_tracer, word_t src_tracee, word_t max_size)
 {
+	word_t orig_src = src_tracee;
 	src_tracee = UNTAG_ADDRESS(src_tracee);
+	if (orig_src != src_tracee) {
+		VERBOSE(tracee, 3, "read_string: untagged original=0x%lx -> normalized=0x%lx", orig_src, src_tracee);
+	}
 	word_t *src  = (word_t *)src_tracee;
 	word_t *dest = (word_t *)dest_tracer;
 
@@ -403,7 +415,11 @@ fallback:
  */
 word_t peek_word(const Tracee *tracee, word_t address)
 {
+	word_t orig_addr = address;
 	address = UNTAG_ADDRESS(address);
+	if (orig_addr != address) {
+		VERBOSE(tracee, 3, "peek_word: untagged original=0x%lx -> normalized=0x%lx", orig_addr, address);
+	}
 	word_t result = 0;
 
 #if defined(HAVE_PROCESS_VM)
@@ -447,7 +463,11 @@ word_t peek_word(const Tracee *tracee, word_t address)
  */
 void poke_word(const Tracee *tracee, word_t address, word_t value)
 {
+	word_t orig_addr = address;
 	address = UNTAG_ADDRESS(address);
+	if (orig_addr != address) {
+		VERBOSE(tracee, 3, "poke_word: untagged original=0x%lx -> normalized=0x%lx", orig_addr, address);
+	}
 	word_t tmp;
 
 #if defined(HAVE_PROCESS_VM)

@@ -132,8 +132,6 @@ typedef unsigned char byte_t;
     #define EXEC_PIC_ADDRESS   0x3000000000
     #define INTERP_PIC_ADDRESS 0x3f00000000
 
-    #define UNTAG_ADDRESS(addr) ((word_t)(addr) & 0x00FFFFFFFFFFFFFFULL)
-
 #elif defined(ARCH_X86)
 
     #define SYSNUMS_HEADER1 "syscall/sysnums-i386.h"
@@ -178,8 +176,17 @@ typedef unsigned char byte_t;
 
 #endif
 
+static inline word_t normalize_tracee_address(word_t address)
+{
+#if defined(ARCH_ARM64)
+	return address & 0x00FFFFFFFFFFFFFFULL;
+#else
+	return address;
+#endif
+}
+
 #ifndef UNTAG_ADDRESS
-#define UNTAG_ADDRESS(addr) ((word_t)(addr))
+#define UNTAG_ADDRESS(addr) normalize_tracee_address((word_t)(addr))
 #endif
 
 #endif /* ARCH_H */

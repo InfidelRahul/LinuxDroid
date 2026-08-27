@@ -286,9 +286,20 @@ int translate_ptrace_exit(Tracee *tracee)
 			if (address == (word_t) -1)
 				return -EIO;
 		}
-		/* Fall through.  */
+		errno = 0;
+		result = (word_t) ptrace(request, pid, address, NULL);
+		if (errno != 0)
+			return -errno;
+
+		poke_word(ptracer, data, result);
+		if (errno != 0)
+			return -errno;
+
+		return 0;  /* Don't restart the ptracee.  */
+
 	case PTRACE_PEEKTEXT:
 	case PTRACE_PEEKDATA:
+		address = UNTAG_ADDRESS(address);
 		errno = 0;
 		result = (word_t) ptrace(request, pid, address, NULL);
 		if (errno != 0)
@@ -315,6 +326,7 @@ int translate_ptrace_exit(Tracee *tracee)
 
 	case PTRACE_POKETEXT:
 	case PTRACE_POKEDATA:
+		address = UNTAG_ADDRESS(address);
 		if (is_32on64_mode(ptracer)) {
 			word_t tmp;
 
