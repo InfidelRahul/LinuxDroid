@@ -45,6 +45,7 @@ int get_sysarg_path(const Tracee *tracee, char path[PATH_MAX], Reg reg)
 	word_t src;
 
 	src = peek_reg(tracee, CURRENT, reg);
+	src = UNTAG_ADDRESS(src);
 
 	/* Check if the parameter is not NULL. Technically we should
 	 * not return an -EFAULT for this special value since it is
