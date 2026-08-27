@@ -603,9 +603,24 @@ int translate_execve_enter(Tracee *tracee)
 	Sysnum sysnum = get_sysnum(tracee, CURRENT);
 	Reg path_reg = (sysnum == PR_execveat) ? SYSARG_2 : SYSARG_1;
 
+	note(tracee, INFO, SYSTEM, "execve register state: sysnum=%d, x0=0x%lx, x1=0x%lx, x2=0x%lx, x3=0x%lx, x4=0x%lx, x5=0x%lx, sp=0x%lx, pc=0x%lx",
+		(int)sysnum,
+		peek_reg(tracee, CURRENT, SYSARG_1),
+		peek_reg(tracee, CURRENT, SYSARG_2),
+		peek_reg(tracee, CURRENT, SYSARG_3),
+		peek_reg(tracee, CURRENT, SYSARG_4),
+		peek_reg(tracee, CURRENT, SYSARG_5),
+		peek_reg(tracee, CURRENT, SYSARG_6),
+		peek_reg(tracee, CURRENT, STACK_POINTER),
+		peek_reg(tracee, CURRENT, INSTR_POINTER));
+
 	status = get_sysarg_path(tracee, user_path, path_reg);
 	if (status < 0) {
 		note(tracee, ERROR, SYSTEM, "get_sysarg_path failed: %s (path_reg=0x%lx, untagged=0x%lx)",
+			strerror(-status),
+			peek_reg(tracee, CURRENT, path_reg),
+			(word_t)UNTAG_ADDRESS(peek_reg(tracee, CURRENT, path_reg)));
+		return status;
 	}
 
 	/* Remember the user path before it is overwritten by
