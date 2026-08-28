@@ -214,10 +214,10 @@ static int finalize_program_filter(struct sock_fprog *program)
 
 	#define LENGTH_FINALIZE 1
 	struct sock_filter statements[LENGTH_FINALIZE] = {
-		BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_KILL)
+		BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW)
 	};
 
-	DEBUG_FILTER("FILTER: kill\n");
+	DEBUG_FILTER("FILTER: allow (fallback)\n");
 
 	status = add_statements(program, LENGTH_FINALIZE, statements);
 	if (status < 0)

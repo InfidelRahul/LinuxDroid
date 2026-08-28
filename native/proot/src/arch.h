@@ -117,6 +117,15 @@ typedef unsigned char byte_t;
 
     #define SYSTRAP_SIZE 4
 
+    #ifndef EM_AARCH64
+        #define EM_AARCH64 183
+    #endif
+    #ifndef __AUDIT_ARCH_64BIT
+        #define __AUDIT_ARCH_64BIT 0x80000000
+    #endif
+    #ifndef __AUDIT_ARCH_LE
+        #define __AUDIT_ARCH_LE 0x40000000
+    #endif
     #ifndef AUDIT_ARCH_AARCH64
         #define AUDIT_ARCH_AARCH64 (EM_AARCH64 | __AUDIT_ARCH_64BIT | __AUDIT_ARCH_LE)
     #endif
