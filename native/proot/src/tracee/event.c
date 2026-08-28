@@ -435,16 +435,14 @@ static int handle_tracee_event_kernel_4_8(Tracee *tracee, int tracee_status)
 
 	if (WIFEXITED(tracee_status)) {
 		last_exit_status = WEXITSTATUS(tracee_status);
-		VERBOSE(tracee, 1,
-			"vpid %" PRIu64 ": exited with status %d",
-			tracee->vpid, last_exit_status);
+		note(tracee, INFO, INTERNAL, "[TRACEE_EXIT] pid=%d (vpid %" PRIu64 "): exited with status %d",
+			tracee->pid, tracee->vpid, last_exit_status);
 		terminate_tracee(tracee);
 	}
 	else if (WIFSIGNALED(tracee_status)) {
 		check_architecture(tracee);
-		VERBOSE(tracee, 1,
-			"vpid %" PRIu64 ": terminated with signal %d",
-			tracee->vpid, WTERMSIG(tracee_status));
+		note(tracee, INFO, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d",
+			tracee->pid, tracee->vpid, WTERMSIG(tracee_status));
 		terminate_tracee(tracee);
 	}
 	else if (WIFSTOPPED(tracee_status)) {
@@ -664,16 +662,14 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 
 	if (WIFEXITED(tracee_status)) {
 		last_exit_status = WEXITSTATUS(tracee_status);
-		VERBOSE(tracee, 1,
-			"vpid %" PRIu64 ": exited with status %d",
-			tracee->vpid, last_exit_status);
+		note(tracee, INFO, INTERNAL, "[TRACEE_EXIT] pid=%d (vpid %" PRIu64 "): exited with status %d",
+			tracee->pid, tracee->vpid, last_exit_status);
 		terminate_tracee(tracee);
 	}
 	else if (WIFSIGNALED(tracee_status)) {
 		check_architecture(tracee);
-		VERBOSE(tracee, 1,
-			"vpid %" PRIu64 ": terminated with signal %d",
-			tracee->vpid, WTERMSIG(tracee_status));
+		note(tracee, INFO, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d",
+			tracee->pid, tracee->vpid, WTERMSIG(tracee_status));
 		terminate_tracee(tracee);
 	}
 	else if (WIFSTOPPED(tracee_status)) {
