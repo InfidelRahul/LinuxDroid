@@ -472,10 +472,24 @@ static int handle_tracee_event_kernel_4_8(Tracee *tracee, int tracee_status)
 				sig_sys = siginfo.si_syscall;
 				sig_arch = siginfo.si_arch;
 			}
-			note(tracee, ERROR, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
+			note(tracee, INFO, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
 				tracee->pid, tracee->vpid, siginfo.si_signo, siginfo.si_code,
 				(siginfo.si_code == 1 ? "SYS_SECCOMP" : "OTHER"),
 				sig_sys, sig_arch, siginfo.si_errno);
+
+			if (siginfo.si_code == 1 /* SYS_SECCOMP */) {
+				status = fetch_regs(tracee);
+				if (status >= 0) {
+					poke_reg(tracee, SYSARG_RESULT, (word_t)-ENOSYS);
+					save_current_regs(tracee, ORIGINAL);
+					tracee->_regs_were_changed = true;
+					(void) push_regs(tracee);
+
+					note(tracee, INFO, INTERNAL, "[SECCOMP_EMULATED] pid=%d (vpid %" PRIu64 "): emulated return -ENOSYS for trapped syscall %d",
+						tracee->pid, tracee->vpid, sig_sys);
+					signal = 0;
+				}
+			}
 			break;
 		}
 
@@ -725,10 +739,24 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 				sig_sys = siginfo.si_syscall;
 				sig_arch = siginfo.si_arch;
 			}
-			note(tracee, ERROR, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
+			note(tracee, INFO, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
 				tracee->pid, tracee->vpid, siginfo.si_signo, siginfo.si_code,
 				(siginfo.si_code == 1 ? "SYS_SECCOMP" : "OTHER"),
 				sig_sys, sig_arch, siginfo.si_errno);
+
+			if (siginfo.si_code == 1 /* SYS_SECCOMP */) {
+				status = fetch_regs(tracee);
+				if (status >= 0) {
+					poke_reg(tracee, SYSARG_RESULT, (word_t)-ENOSYS);
+					save_current_regs(tracee, ORIGINAL);
+					tracee->_regs_were_changed = true;
+					(void) push_regs(tracee);
+
+					note(tracee, INFO, INTERNAL, "[SECCOMP_EMULATED] pid=%d (vpid %" PRIu64 "): emulated return -ENOSYS for trapped syscall %d",
+						tracee->pid, tracee->vpid, sig_sys);
+					signal = 0;
+				}
+			}
 			break;
 		}
 
