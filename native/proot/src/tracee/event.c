@@ -441,8 +441,17 @@ static int handle_tracee_event_kernel_4_8(Tracee *tracee, int tracee_status)
 	}
 	else if (WIFSIGNALED(tracee_status)) {
 		check_architecture(tracee);
-		note(tracee, INFO, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d",
-			tracee->pid, tracee->vpid, WTERMSIG(tracee_status));
+		siginfo_t siginfo;
+		bzero(&siginfo, sizeof(siginfo_t));
+		long sig_status = ptrace(PTRACE_GETSIGINFO, tracee->pid, NULL, &siginfo);
+		int sig_sys = -1;
+		unsigned int sig_arch = 0;
+		if (sig_status == 0) {
+			sig_sys = siginfo.si_syscall;
+			sig_arch = siginfo.si_arch;
+		}
+		note(tracee, ERROR, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d (si_code=%d, si_syscall=%d, si_arch=0x%x, si_errno=%d)",
+			tracee->pid, tracee->vpid, WTERMSIG(tracee_status), siginfo.si_code, sig_sys, sig_arch, siginfo.si_errno);
 		terminate_tracee(tracee);
 	}
 	else if (WIFSTOPPED(tracee_status)) {
@@ -452,6 +461,23 @@ static int handle_tracee_event_kernel_4_8(Tracee *tracee, int tracee_status)
 
 		switch (signal) {
 			static bool deliver_sigtrap = false;
+
+		case SIGSYS: {
+			siginfo_t siginfo;
+			bzero(&siginfo, sizeof(siginfo_t));
+			long sig_status = ptrace(PTRACE_GETSIGINFO, tracee->pid, NULL, &siginfo);
+			int sig_sys = -1;
+			unsigned int sig_arch = 0;
+			if (sig_status == 0) {
+				sig_sys = siginfo.si_syscall;
+				sig_arch = siginfo.si_arch;
+			}
+			note(tracee, ERROR, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
+				tracee->pid, tracee->vpid, siginfo.si_signo, siginfo.si_code,
+				(siginfo.si_code == 1 ? "SYS_SECCOMP" : "OTHER"),
+				sig_sys, sig_arch, siginfo.si_errno);
+			break;
+		}
 
 		case SIGTRAP: {
 			const unsigned long default_ptrace_options = (
@@ -668,8 +694,17 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 	}
 	else if (WIFSIGNALED(tracee_status)) {
 		check_architecture(tracee);
-		note(tracee, INFO, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d",
-			tracee->pid, tracee->vpid, WTERMSIG(tracee_status));
+		siginfo_t siginfo;
+		bzero(&siginfo, sizeof(siginfo_t));
+		long sig_status = ptrace(PTRACE_GETSIGINFO, tracee->pid, NULL, &siginfo);
+		int sig_sys = -1;
+		unsigned int sig_arch = 0;
+		if (sig_status == 0) {
+			sig_sys = siginfo.si_syscall;
+			sig_arch = siginfo.si_arch;
+		}
+		note(tracee, ERROR, INTERNAL, "[TRACEE_SIGNALED] pid=%d (vpid %" PRIu64 "): terminated with signal %d (si_code=%d, si_syscall=%d, si_arch=0x%x, si_errno=%d)",
+			tracee->pid, tracee->vpid, WTERMSIG(tracee_status), siginfo.si_code, sig_sys, sig_arch, siginfo.si_errno);
 		terminate_tracee(tracee);
 	}
 	else if (WIFSTOPPED(tracee_status)) {
@@ -679,6 +714,23 @@ int handle_tracee_event(Tracee *tracee, int tracee_status)
 
 		switch (signal) {
 			static bool deliver_sigtrap = false;
+
+		case SIGSYS: {
+			siginfo_t siginfo;
+			bzero(&siginfo, sizeof(siginfo_t));
+			long sig_status = ptrace(PTRACE_GETSIGINFO, tracee->pid, NULL, &siginfo);
+			int sig_sys = -1;
+			unsigned int sig_arch = 0;
+			if (sig_status == 0) {
+				sig_sys = siginfo.si_syscall;
+				sig_arch = siginfo.si_arch;
+			}
+			note(tracee, ERROR, INTERNAL, "[SIGSYS_TRAPPED] pid=%d (vpid %" PRIu64 "): signo=%d, si_code=%d (%s), si_syscall=%d, si_arch=0x%x, si_errno=%d",
+				tracee->pid, tracee->vpid, siginfo.si_signo, siginfo.si_code,
+				(siginfo.si_code == 1 ? "SYS_SECCOMP" : "OTHER"),
+				sig_sys, sig_arch, siginfo.si_errno);
+			break;
+		}
 
 		case SIGTRAP: {
 			const unsigned long default_ptrace_options = (

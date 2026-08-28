@@ -179,6 +179,11 @@ class ProotRuntimeBackend(
         if (loader?.exists() == true) {
             processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
         }
+        // Disable PRoot seccomp BPF accelerator by default on Android to avoid BPF filter
+        // killing modern glibc/musl dynamic linker syscalls with SIGSYS (signal 31)
+        if (!processBuilder.environment().containsKey("PROOT_NO_SECCOMP")) {
+            processBuilder.environment()["PROOT_NO_SECCOMP"] = "1"
+        }
         spec.environmentVariables.forEach { (k, v) ->
             processBuilder.environment()[k] = v
         }
