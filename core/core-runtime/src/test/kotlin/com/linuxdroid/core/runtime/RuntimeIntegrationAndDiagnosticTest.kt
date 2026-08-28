@@ -75,6 +75,22 @@ class RuntimeIntegrationAndDiagnosticTest {
     }
 
     @Test
+    fun `executeAndWait preserves non-zero guest exit codes like exit 42`() = runTest {
+        val exit42Spec = sampleSpec.copy(command = listOf("/bin/sh", "-c", "exit 42"))
+        coEvery { backend.executeAndWaitWithSpec(exit42Spec, any()) } returns ProcessResult(
+            handleId = "h-exit42",
+            exitCode = 42,
+            stdout = "",
+            stderr = "",
+        )
+
+        val result = runtimeManager.executeAndWait(exit42Spec)
+
+        assertThat(result.exitCode).isEqualTo(42)
+        assertThat(result.stdout).isEmpty()
+    }
+
+    @Test
     fun `validation failure prevents runtime execution`() = runTest {
         coEvery { validator.validate(any()) } throws RuntimeError(
             environmentId = sampleEnvironmentId,

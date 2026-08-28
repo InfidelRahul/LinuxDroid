@@ -232,12 +232,15 @@ class RootfsBootstrapper(
                             }
                         }
 
-                        // Apply executable permissions if marked in tar entry mode or binary directory
+                        // Apply executable permissions if marked in tar entry mode, binary, linker or library directory
                         val mode = entry.mode
                         val isExec = (mode and 0b001001001) != 0 ||
                             entryName.contains("bin/") ||
                             entryName.contains("sbin/") ||
-                            (entryName.contains("lib/") && entryName.endsWith(".so"))
+                            entryName.contains("lib/") ||
+                            entryName.contains("libexec/") ||
+                            entryName.endsWith(".so") ||
+                            entryName.contains(".so.")
                         if (isExec) {
                             targetFile.setExecutable(true, false)
                             NativeBridge.setExecutable(targetFile.absolutePath)
