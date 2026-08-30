@@ -44,6 +44,7 @@ data class RuntimeSpec(
     val customProotPath: String? = null,
     val customLoaderPath: String? = null,
     val tmpDirPath: String? = null,
+    val logFilePath: String? = null,
     val sharedStorageEnabled: Boolean = true,
 ) {
     init {
@@ -62,6 +63,7 @@ data class RuntimeSpec(
             extraEnv: Map<String, String> = emptyMap(),
             extraBindings: List<RuntimeBinding> = emptyList(),
             tmpDirPath: String? = null,
+            logFilePath: String? = null,
         ): RuntimeSpec {
             val envVars = buildMap {
                 put("HOME", "/root")
@@ -96,6 +98,7 @@ data class RuntimeSpec(
                 command = command,
                 customProotPath = environment.configuration.runtime.customProotPath,
                 tmpDirPath = tmpDirPath,
+                logFilePath = logFilePath,
                 sharedStorageEnabled = environment.configuration.runtime.sharedStorageEnabled,
             )
         }

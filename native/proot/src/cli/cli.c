@@ -461,6 +461,11 @@ static int parse_config(Tracee *tracee, size_t argc, char *const argv[])
 
 bool exit_failure = true;
 
+static void talloc_log_to_note(const char *message)
+{
+	note(NULL, ERROR, TALLOC, "%s", message);
+}
+
 int main(int argc, char *const argv[])
 {
 #if defined(__ANDROID__) && defined(__aarch64__)
@@ -475,7 +480,7 @@ int main(int argc, char *const argv[])
 	talloc_enable_leak_report();
 
 #if defined(TALLOC_VERSION_MAJOR) && TALLOC_VERSION_MAJOR >= 2
-	talloc_set_log_stderr();
+	talloc_set_log_fn(talloc_log_to_note);
 #endif
 
 	/* Pre-create the first tracee (pid == 0).  */

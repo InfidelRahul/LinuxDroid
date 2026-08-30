@@ -22,7 +22,7 @@ class RuntimeLauncherTest {
 
     private fun guestEchoSpec(echo: File): RuntimeSpec = RuntimeSpec(
         environmentId = EnvironmentId("launcher-test"),
-        rootfsPath = echo.parentFile.absolutePath,
+        rootfsPath = echo.parentFile?.absolutePath ?: "/",
         architecture = Architecture.X86_64,
         workingDirectory = "/",
         command = listOf("hello"),
@@ -63,6 +63,39 @@ class RuntimeLauncherTest {
         verify(exactly = 1) { builder.build(spec, echo) }
         assert(exit == 0) { "expected exit 0, got $exit (stderr=$err)" }
         assert(out == "launcher-ok") { "expected stdout 'launcher-ok', got '$out'" }
+
+        tmpDir.deleteRecursively()
+    }
+
+    @Test
+    fun `launchProcess passes PROOT_LOG_FILE environment variable to subprocess`() {
+        val sh = File("/bin/sh")
+        if (!sh.exists() || !sh.canExecute()) return
+
+        val builder = mockk<RuntimeCommandBuilder>()
+        val launcher = RuntimeLauncher(builder)
+        val tmpDir = createTempDir()
+        val logFile = File(tmpDir, "logs/console.log")
+        val spec = guestEchoSpec(sh).copy(logFilePath = logFile.absolutePath)
+
+        // Script that prints $PROOT_LOG_FILE to stdout to verify launcher set it in environment
+        every { builder.build(spec, sh) } returns listOf(sh.absolutePath, "-c", "echo LOG_VAR=\$PROOT_LOG_FILE")
+
+        val process = launcher.launchProcess(
+            spec = spec,
+            proot = sh,
+            loader = null,
+            rootfs = File(spec.rootfsPath),
+            tmpDir = tmpDir,
+            logFile = logFile,
+        )
+
+        val exit = process.waitFor()
+        val out = process.inputStream.bufferedReader().readText().trim()
+
+        assert(exit == 0)
+        assert(out == "LOG_VAR=${logFile.absolutePath}") { "expected LOG_VAR=${logFile.absolutePath}, got '$out'" }
+        assert(logFile.parentFile?.exists() == true) { "log directory should be created" }
 
         tmpDir.deleteRecursively()
     }

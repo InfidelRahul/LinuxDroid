@@ -45,13 +45,19 @@ class EnvironmentStorage(
     /** Returns the tmp directory. */
     fun tmpDir(id: EnvironmentId): File = File(environmentDir(id), "tmp")
 
+    /** Returns the logs directory. */
+    fun logsDir(id: EnvironmentId): File = File(environmentDir(id), "logs")
+
+    /** Returns the console log file for runtime diagnostics. */
+    fun consoleLogFile(id: EnvironmentId): File = File(logsDir(id), "console.log")
+
     /**
      * Creates the directory structure for a new environment.
      * Does NOT create or touch rootfs/.
      */
     suspend fun initializeEnvironmentDirs(id: EnvironmentId) = withContext(Dispatchers.IO) {
         log.info("Initializing environment directories for $id")
-        listOf(metadataDir(id), runtimeStateDir(id), tmpDir(id)).forEach { dir ->
+        listOf(metadataDir(id), runtimeStateDir(id), tmpDir(id), logsDir(id)).forEach { dir ->
             if (!dir.exists() && !dir.mkdirs()) {
                 throw FilesystemError(dir.path, "Failed to create directory")
             }

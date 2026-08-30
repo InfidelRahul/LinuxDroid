@@ -41,6 +41,7 @@ class RuntimeLauncher(
         loader: File?,
         rootfs: File,
         tmpDir: File,
+        logFile: File? = spec.logFilePath?.let { File(it) },
     ): Process {
         val prootCmd = commandBuilder.build(spec, proot)
         val processBuilder = ProcessBuilder(prootCmd)
@@ -50,6 +51,11 @@ class RuntimeLauncher(
         processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
         if (loader?.exists() == true) {
             processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
+        }
+        val targetLog = logFile?.absolutePath ?: spec.logFilePath
+        if (targetLog != null) {
+            File(targetLog).parentFile?.mkdirs()
+            processBuilder.environment()["PROOT_LOG_FILE"] = targetLog
         }
         // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
         // BPF filter killing modern glibc/musl dynamic linker syscalls with
@@ -78,12 +84,21 @@ class RuntimeLauncher(
         tmpDir: File,
         rows: Int,
         cols: Int,
+        logFile: File? = spec.logFilePath?.let { File(it) },
     ): PtyLaunchHandle {
         val prootCmd = commandBuilder.build(spec, proot)
+        val targetLog = logFile?.absolutePath ?: spec.logFilePath
+        targetLog?.let { File(it).parentFile?.mkdirs() }
         val envVars = buildList {
             add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
             if (loader?.exists() == true) {
                 add("PROOT_LOADER=${loader.absolutePath}")
+            }
+            if (targetLog != null) {
+                add("PROOT_LOG_FILE=$targetLog")
+            }
+            if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
+                add("PROOT_NO_SECCOMP=1")
             }
             spec.environmentVariables.forEach { (k, v) -> add("$k=$v") }
         }

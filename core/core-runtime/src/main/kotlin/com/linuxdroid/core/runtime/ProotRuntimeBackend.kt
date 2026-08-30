@@ -109,6 +109,7 @@ class ProotRuntimeBackend(
         }
         storage.cleanRuntimeState(environment.id)
         storage.tmpDir(environment.id).mkdirs()
+        storage.logsDir(environment.id).mkdirs()
     }
 
     override suspend fun start(environment: Environment) = withContext(Dispatchers.IO) {
@@ -163,6 +164,8 @@ class ProotRuntimeBackend(
         val handleId = UUID.randomUUID().toString()
         val rootfs = File(resolvedSpec.rootfsPath)
         val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
+        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.consoleLogFile(resolvedSpec.environmentId)
+        logFile.parentFile?.mkdirs()
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
 
@@ -170,7 +173,7 @@ class ProotRuntimeBackend(
 
         val process: Process
         try {
-            process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir)
+            process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir, logFile)
         } catch (e: IOException) {
             log.error("Failed to execute PRoot process: ${e.message}", e)
             throw RuntimeError(
@@ -212,12 +215,14 @@ class ProotRuntimeBackend(
         sessionId: SessionId?,
     ): ProcessHandle {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = command,
             workingDirectory = workingDirectory,
             extraEnv = extraEnv,
             tmpDirPath = tmpDir.absolutePath,
+            logFilePath = logFile.absolutePath,
         )
         return executeWithSpec(spec, sessionId)
     }
@@ -269,12 +274,14 @@ class ProotRuntimeBackend(
         timeoutMs: Long,
     ): ProcessResult {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = command,
             workingDirectory = workingDirectory,
             extraEnv = extraEnv,
             tmpDirPath = tmpDir.absolutePath,
+            logFilePath = logFile.absolutePath,
         )
         return executeAndWaitWithSpec(spec, timeoutMs)
     }
@@ -289,8 +296,10 @@ class ProotRuntimeBackend(
         val loader = ensureLoaderBinary()
         val rootfs = File(resolvedSpec.rootfsPath)
         val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
+        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.consoleLogFile(resolvedSpec.environmentId)
+        logFile.parentFile?.mkdirs()
 
-        val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols)
+        val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols, logFile)
 
         val session = PtySession(
             sessionId = UUID.randomUUID().toString(),
@@ -309,11 +318,13 @@ class ProotRuntimeBackend(
         command: List<String>,
     ): PtySession {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = command,
             workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
             tmpDirPath = tmpDir.absolutePath,
+            logFilePath = logFile.absolutePath,
         )
         return startInteractiveShellWithSpec(spec, rows, cols)
     }
