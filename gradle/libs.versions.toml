@@ -1,10 +1,12 @@
 [versions]
 # Android
-agp = "8.7.3"
-kotlin = "2.0.21"
-compileSdk = "35"
+agp = "9.3.2"
+kotlin = "2.3.20"
+compileSdk = "36"
 minSdk = "28"
-targetSdk = "35"
+targetSdk = "36"
+buildTools = "36.0.0"
+ndk = "29.0.14206865"
 
 # Jetpack / AndroidX
 androidx-core-ktx = "1.15.0"
@@ -12,18 +14,18 @@ androidx-lifecycle = "2.8.7"
 androidx-activity-compose = "1.9.3"
 androidx-compose-bom = "2024.12.01"
 androidx-navigation = "2.8.5"
-androidx-room = "2.6.1"
+androidx-room = "2.8.2"
 androidx-startup = "1.2.0"
 androidx-work = "2.10.0"
 androidx-datastore = "1.1.1"
 androidx-collection = "1.4.5"
 
 # Kotlin
-kotlinx-coroutines = "1.9.0"
-kotlinx-serialization = "1.7.3"
+kotlinx-coroutines = "1.10.0"
+kotlinx-serialization = "1.10.0"
 
 # DI
-hilt = "2.54"
+hilt = "2.60.1"
 hilt-navigation-compose = "1.2.0"
 
 # Logging
@@ -114,9 +116,7 @@ androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
-ksp = { id = "com.google.devtools.ksp", version = "2.0.21-1.0.28" }
+ksp = { id = "com.google.devtools.ksp", version = "2.3.11" }
