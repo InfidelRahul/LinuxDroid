@@ -159,21 +159,52 @@ class RuntimeSpecAndCommandBuilderTest {
     }
 
     @Test
-    fun `RuntimeValidator rejects blank or non-existent rootfs directory`() {
-        val validator = RuntimeValidator()
+    fun `ProotCommandBuilder sets rootfs with -r before bindings and only binds declared paths`() {
+        val builder = ProotCommandBuilder()
         val spec = RuntimeSpec(
-            environmentId = EnvironmentId("invalid-env"),
-            rootfsPath = "/non/existent/path/for/rootfs/test",
+            environmentId = EnvironmentId("debian-test"),
+            rootfsPath = "/data/user/0/com.linuxdroid/files/environments/debian/rootfs",
             architecture = Architecture.ARM64,
-            command = listOf("/bin/sh"),
+            command = listOf("/bin/bash", "-l"),
+            bindings = listOf(
+                RuntimeBinding("/dev", "/dev"),
+                RuntimeBinding("/proc", "/proc"),
+                RuntimeBinding("/sys", "/sys"),
+                RuntimeBinding("/data/user/0/com.linuxdroid/cache/tmp", "/tmp"),
+            ),
+            workingDirectory = "/home/user",
         )
 
-        var failed = false
-        try {
-            validator.validate(spec)
-        } catch (e: FilesystemError) {
-            failed = true
-        }
-        assertThat(failed).isTrue()
+        val cmd = builder.build(spec, File("/data/user/0/com.linuxdroid/files/proot"))
+
+        assertThat(cmd).containsExactly(
+            "/data/user/0/com.linuxdroid/files/proot",
+            "-0",
+            "--kill-on-exit",
+            "--link2symlink",
+            "-r",
+            "/data/user/0/com.linuxdroid/files/environments/debian/rootfs",
+            "-b",
+            "/dev",
+            "-b",
+            "/proc",
+            "-b",
+            "/sys",
+            "-b",
+            "/data/user/0/com.linuxdroid/cache/tmp:/tmp",
+            "-w",
+            "/home/user",
+            "/bin/bash",
+            "-l",
+        ).inOrder()
+
+        // Verify host Android root paths (/apex, /vendor, /product, /data, /mnt, /system) are not bound
+        val boundPaths = spec.bindings.map { it.guestPath }
+        assertThat(boundPaths).doesNotContain("/apex")
+        assertThat(boundPaths).doesNotContain("/vendor")
+        assertThat(boundPaths).doesNotContain("/product")
+        assertThat(boundPaths).doesNotContain("/data")
+        assertThat(boundPaths).doesNotContain("/system")
+        assertThat(boundPaths).doesNotContain("/mnt")
     }
 }
