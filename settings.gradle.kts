@@ -48,4 +48,3 @@ include(":linux:bootstrap")
 
 // Native modules
 include(":native:bridge")
-include(":native:proot")
