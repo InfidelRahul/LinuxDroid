@@ -5,7 +5,6 @@ import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
-import com.linuxdroid.native_bridge.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -25,14 +24,17 @@ import java.util.concurrent.TimeUnit
  * allowing a Linux rootfs to operate without root privileges.
  *
  * LinuxDroid Native Architecture:
- * 1. Self-contained: Built from upstream PRoot v5.4.0 with static talloc and companion loader.
- * 2. Standalone: 0 external shared library dependencies (only standard Android Bionic libc/libdl/liblog).
- * 3. Relocatable: Extracted to app runtime directory with executable permissions.
+ * 1. Consumes PRoot as an executable runtime asset owned by [RuntimeAssetsManager],
+ *    not as a genuine JNI library.
+ * 2. The PRoot engine is produced by the separate LinuxDroid_proot repository and
+ *    is delivered as a versioned artifact.
+ * 3. Relocatable: extracted to app runtime directory with executable permissions.
  * 4. Guest Isolation: Uses /usr/bin/env -i to clear host Android environment variables.
  */
 class ProotRuntimeBackend(
     private val context: Context,
     private val storage: EnvironmentStorage,
+    private val assetsManager: RuntimeAssetsManager = RuntimeAssetsManager(context),
 ) : RuntimeBackend {
 
     private val log = LinuxDroidLogger(LogSubsystem.RUNTIME)
@@ -53,14 +55,17 @@ class ProotRuntimeBackend(
 
     /**
      * Resolves the executable proot binary path.
+     *
+     * Path resolution is owned by [RuntimeAssetsManager]; this backend no
+     * longer performs native-library or in-tree PRoot discovery.
      */
     fun ensureProotBinary(): File {
         prootBinaryCache?.let { if (it.exists() && it.canExecute()) return it }
         synchronized(this) {
             prootBinaryCache?.let { if (it.exists() && it.canExecute()) return it }
-            val (proot, loader) = resolveOrExtractRuntimeBinaries()
+            val proot = assetsManager.resolveProot()
             prootBinaryCache = proot
-            loaderBinaryCache = loader
+            loaderBinaryCache = assetsManager.resolveLoader()
             return proot
         }
     }
@@ -71,16 +76,10 @@ class ProotRuntimeBackend(
      */
     fun getProotBinaryPath(): String {
         prootBinaryCache?.let { return it.absolutePath }
-        try {
-            val nativeLibDir = context.applicationInfo.nativeLibraryDir
-            val libProot = File(nativeLibDir, "libproot.so")
-            if (libProot.exists()) {
-                return libProot.absolutePath
-            }
-            val appProot = File(context.filesDir, "runtime/bin/proot")
-            return appProot.absolutePath
+        return try {
+            assetsManager.installedProotFile(assetsManager.resolveAbi()).absolutePath
         } catch (_: Throwable) {
-            return "proot"
+            "proot"
         }
     }
 
@@ -128,7 +127,7 @@ class ProotRuntimeBackend(
         log.info("proot runtime ready for ${environment.id}")
     }
 
-    private val commandBuilder: RuntimeCommandBuilder = ProotCommandBuilder()
+    private val launcher: RuntimeLauncher = RuntimeLauncher()
     private val validator: RuntimeValidator = RuntimeValidator()
 
     override suspend fun stop(environment: Environment) = stopForEnvironment(environment.id)
@@ -160,41 +159,22 @@ class ProotRuntimeBackend(
         spec: RuntimeSpec,
         sessionId: SessionId? = null,
     ): ProcessHandle = withContext(Dispatchers.IO) {
+        val resolvedSpec = withSharedStorage(spec)
         val handleId = UUID.randomUUID().toString()
-        val rootfs = File(spec.rootfsPath)
-        val tmpDir = File(spec.tmpDirPath ?: storage.tmpDir(spec.environmentId).absolutePath).apply { mkdirs() }
+        val rootfs = File(resolvedSpec.rootfsPath)
+        val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
 
-        log.info("Executing in proot: ${spec.command.joinToString(" ")} (handle=$handleId)")
-
-        val prootCmd = commandBuilder.build(spec, proot)
-
-        val processBuilder = ProcessBuilder(prootCmd)
-            .directory(rootfs)
-            .redirectErrorStream(false)
-
-        // Set host & guest environment variables for PRoot process
-        processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
-        if (loader?.exists() == true) {
-            processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
-        }
-        // Disable PRoot seccomp BPF accelerator by default on Android to avoid BPF filter
-        // killing modern glibc/musl dynamic linker syscalls with SIGSYS (signal 31)
-        if (!processBuilder.environment().containsKey("PROOT_NO_SECCOMP")) {
-            processBuilder.environment()["PROOT_NO_SECCOMP"] = "1"
-        }
-        spec.environmentVariables.forEach { (k, v) ->
-            processBuilder.environment()[k] = v
-        }
+        log.info("Executing in proot: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)")
 
         val process: Process
         try {
-            process = processBuilder.start()
+            process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir)
         } catch (e: IOException) {
             log.error("Failed to execute PRoot process: ${e.message}", e)
             throw RuntimeError(
-                environmentId = spec.environmentId,
+                environmentId = resolvedSpec.environmentId,
                 message = "Failed to launch PRoot executable '${proot.path}': ${e.message}",
                 cause = e,
             )
@@ -204,10 +184,10 @@ class ProotRuntimeBackend(
 
         val prootProcess = ProotProcess(
             handleId = handleId,
-            environmentId = spec.environmentId,
+            environmentId = resolvedSpec.environmentId,
             sessionId = sessionId,
             process = process,
-            command = spec.command,
+            command = resolvedSpec.command,
         )
         activeProcesses[handleId] = prootProcess
 
@@ -215,10 +195,10 @@ class ProotRuntimeBackend(
 
         ProcessHandle(
             handleId = handleId,
-            environmentId = spec.environmentId,
+            environmentId = resolvedSpec.environmentId,
             sessionId = sessionId,
-            command = spec.command,
-            workingDirectory = spec.workingDirectory,
+            command = resolvedSpec.command,
+            workingDirectory = resolvedSpec.workingDirectory,
             pid = pid,
             state = ProcessState.RUNNING,
         )
@@ -304,46 +284,19 @@ class ProotRuntimeBackend(
         rows: Int = 24,
         cols: Int = 80,
     ): PtySession = withContext(Dispatchers.IO) {
+        val resolvedSpec = withSharedStorage(spec)
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
-        val rootfs = File(spec.rootfsPath)
-        val tmpDir = File(spec.tmpDirPath ?: storage.tmpDir(spec.environmentId).absolutePath).apply { mkdirs() }
+        val rootfs = File(resolvedSpec.rootfsPath)
+        val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
 
-        val prootCmd = commandBuilder.build(spec, proot)
-
-        val envVars = buildList {
-            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
-            if (loader?.exists() == true) {
-                add("PROOT_LOADER=${loader.absolutePath}")
-            }
-            spec.environmentVariables.forEach { (k, v) ->
-                add("$k=$v")
-            }
-        }
-
-        val outPidAndFd = IntArray(2)
-        val res = NativeBridge.createPtyProcess(
-            cmd = prootCmd.toTypedArray(),
-            cwd = rootfs.absolutePath,
-            env = envVars.toTypedArray(),
-            rows = rows,
-            cols = cols,
-            outPidAndFd = outPidAndFd
-        )
-
-        if (res != 0) {
-            log.error("Failed to create PTY process: errno $res")
-            throw RuntimeError(
-                environmentId = spec.environmentId,
-                message = "Failed to create PTY process: errno $res",
-            )
-        }
+        val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols)
 
         val session = PtySession(
             sessionId = UUID.randomUUID().toString(),
-            environmentId = spec.environmentId,
-            pid = outPidAndFd[0],
-            masterFd = outPidAndFd[1],
+            environmentId = resolvedSpec.environmentId,
+            pid = handle.pid,
+            masterFd = handle.masterFd,
         )
         log.info("Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
         session
@@ -545,99 +498,36 @@ class ProotRuntimeBackend(
     // ─── Private helpers ────────────────────────────────────────────────────────────
 
     private fun getDeviceAbi(): String? {
-        return android.os.Build.SUPPORTED_ABIS.firstOrNull { it in setOf("arm64-v8a", "x86_64") }
+        return try {
+            assetsManager.resolveAbi()
+        } catch (_: Throwable) {
+            null
+        }
     }
 
-    private fun resolveOrExtractRuntimeBinaries(): Pair<File, File?> {
-        val abi = getDeviceAbi()
-            ?: throw RuntimeError(message = "Unsupported device ABI: ${android.os.Build.SUPPORTED_ABIS.toList()}")
-
-        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
-        val runtimeDir = File(context.filesDir, "runtime/$abi").apply { mkdirs() }
-
-        // Candidate proot locations
-        val nativeProot = File(nativeLibDir, "libproot.so")
-        val altNativeProot = File(nativeLibDir, "proot")
-        val extractedProot = File(runtimeDir, "proot")
-
-        // Candidate loader locations
-        val nativeLoader = File(nativeLibDir, "libproot_loader.so")
-        val altNativeLoader = File(nativeLibDir, "libloader.so")
-        val extractedLoader = File(runtimeDir, "loader")
-
-        fun testExecutable(bin: File, loaderBin: File?): Boolean {
-            if (!bin.exists() || bin.length() == 0L) return false
-            return try {
-                val pb = ProcessBuilder(bin.absolutePath, "--version")
-                if (loaderBin?.exists() == true) {
-                    pb.environment()["PROOT_LOADER"] = loaderBin.absolutePath
-                }
-                val proc = pb.start()
-                proc.waitFor(2, TimeUnit.SECONDS)
-                val exit = proc.exitValue()
-                log.info("Proot self-test execution on ${bin.path} succeeded (exit=$exit)")
-                true
-            } catch (e: Exception) {
-                log.debug("Proot self-test probe on ${bin.path} returned: ${e.message}")
-                false
+    /**
+     * Adds the Android shared-storage binding to [spec] when enabled and the
+     * shared directory is accessible.
+     *
+     * Filesystem discovery is intentionally NOT performed inside the command
+     * builder (which must remain a pure RuntimeSpec -> argv translator). The
+     * binding is resolved here, where Android context is available, and encoded
+     * into the spec's bindings before the builder renders the argument list.
+     */
+    private fun withSharedStorage(spec: RuntimeSpec): RuntimeSpec {
+        if (!spec.sharedStorageEnabled) return spec
+        return try {
+            val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
+            if (sharedDir.exists() && sharedDir.canRead()) {
+                spec.copy(
+                    bindings = spec.bindings + RuntimeBinding(sharedDir.absolutePath, "/home/user/Android"),
+                )
+            } else {
+                spec
             }
+        } catch (_: Throwable) {
+            spec
         }
-
-        // 1. Check native library directory first (supported by Android 10+ W^X / SELinux)
-        val resolvedLoader = when {
-            nativeLoader.exists() -> nativeLoader
-            altNativeLoader.exists() -> altNativeLoader
-            extractedLoader.exists() -> extractedLoader
-            else -> null
-        }
-
-        if (nativeProot.exists() && testExecutable(nativeProot, resolvedLoader)) {
-            log.info("Using nativeLibraryDir PRoot executable: ${nativeProot.path}")
-            return nativeProot to resolvedLoader
-        }
-        if (altNativeProot.exists() && testExecutable(altNativeProot, resolvedLoader)) {
-            log.info("Using nativeLibraryDir PRoot executable: ${altNativeProot.path}")
-            return altNativeProot to resolvedLoader
-        }
-
-        // 2. Try extracted proot in filesDir
-        try {
-            if (!extractedProot.exists() || extractedProot.length() == 0L) {
-                log.info("Extracting proot runtime binary for $abi to ${extractedProot.path}")
-                context.assets.open("proot/$abi/proot").use { input ->
-                    extractedProot.outputStream().use { output -> input.copyTo(output) }
-                }
-            }
-            extractedProot.setReadable(true, false)
-            extractedProot.setExecutable(true, false)
-            NativeBridge.setExecutable(extractedProot.absolutePath)
-
-            if (!extractedLoader.exists() || extractedLoader.length() == 0L) {
-                try {
-                    context.assets.open("proot/$abi/loader").use { input ->
-                        extractedLoader.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    extractedLoader.setReadable(true, false)
-                    extractedLoader.setExecutable(true, false)
-                    NativeBridge.setExecutable(extractedLoader.absolutePath)
-                } catch (_: Exception) {}
-            }
-        } catch (e: Exception) {
-            log.warn("Error extracting proot runtime assets for $abi: ${e.message}")
-        }
-
-        if (extractedProot.exists() && testExecutable(extractedProot, extractedLoader)) {
-            log.info("Using filesDir PRoot executable: ${extractedProot.path}")
-            return extractedProot to (if (extractedLoader.exists()) extractedLoader else resolvedLoader)
-        }
-
-        // Prefer nativeProot if it exists even if self-test threw non-fatal output
-        if (nativeProot.exists()) {
-            log.info("Selected nativeLibraryDir PRoot binary: ${nativeProot.path}")
-            return nativeProot to resolvedLoader
-        }
-
-        return extractedProot to (if (extractedLoader.exists()) extractedLoader else null)
     }
 }
 

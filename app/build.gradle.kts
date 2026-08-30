@@ -1,6 +1,7 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
@@ -10,7 +11,8 @@ plugins {
 android {
     namespace = "com.linuxdroid.app"
     compileSdk = libs.versions.compileSdk.get().toInt()
-    ndkVersion = "27.2.12479018"
+    buildToolsVersion = libs.versions.buildTools.get()
+    ndkVersion = libs.versions.ndk.get()
 
     defaultConfig {
         applicationId = "com.linuxdroid.app"
@@ -63,15 +65,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-        )
-    }
-
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
@@ -85,6 +78,19 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+        optIn.addAll(
+            listOf(
+                "androidx.compose.material3.ExperimentalMaterial3Api",
+                "androidx.compose.foundation.ExperimentalFoundationApi",
+                "kotlinx.coroutines.ExperimentalCoroutinesApi",
+            ),
+        )
     }
 }
 

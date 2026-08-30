@@ -5,7 +5,9 @@ plugins {
 android {
     namespace = "com.linuxdroid.native_proot"
     compileSdk = libs.versions.compileSdk.get().toInt()
-    ndkVersion = "27.2.12479018"
+    ndkVersion = libs.versions.ndk.get()
+    // Pure C/C++ module (no Kotlin sources) — disable built-in Kotlin processing.
+    enableKotlin = false
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
         ndk {
