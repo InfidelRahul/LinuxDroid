@@ -1,6 +1,6 @@
 # LinuxDroid — Updated Final Migration Plan
 
-**Status:** Proposed execution plan
+**Status:** In progress — see [migration-progress.md](migration-progress.md) for the per-task verification record.
 **Last updated:** 2026-08-30
 **Canonical PRoot repository:** [InfidelRahul/LinuxDroid_proot](https://github.com/InfidelRahul/LinuxDroid_proot)
 
