@@ -317,11 +317,21 @@ class ProotRuntimeBackend(
         cols: Int,
         command: List<String>,
     ): PtySession {
+        val rootfs = storage.rootfsDir(environment.id)
+        val resolvedCommand = if (command.isEmpty()) {
+            val preferred = environment.configuration.shell.ifBlank { "/bin/bash" }
+            val resolved = validator.resolveShell(rootfs, preferred)
+            listOf(resolved, "-l")
+        } else {
+            val shell = command.first()
+            val resolved = validator.resolveShell(rootfs, shell)
+            listOf(resolved) + command.drop(1)
+        }
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
-            command = command,
+            command = resolvedCommand,
             workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
             tmpDirPath = tmpDir.absolutePath,
             logFilePath = logFile.absolutePath,
