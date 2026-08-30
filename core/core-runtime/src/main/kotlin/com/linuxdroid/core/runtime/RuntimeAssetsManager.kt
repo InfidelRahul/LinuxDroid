@@ -422,6 +422,14 @@ class RuntimeAssetsManager(
                     inSha256 = false
                     return@forEach
                 }
+                // Documented release header (e.g. "LinuxDroid-PRoot v0.1.0").
+                // It carries no key: the value after "LinuxDroid-PRoot" is the
+                // authoritative artifact version.
+                val header = Regex("""^LinuxDroid-PRoot\s+v?(\S+)$""", RegexOption.IGNORE_CASE).matchEntire(line)
+                if (header != null) {
+                    version = header.groupValues[1].trim().removePrefix("v").trim()
+                    return@forEach
+                }
                 if (inSha256) {
                     val parts = line.split(Regex("\\s+"), limit = 2)
                     if (parts.size == 2) {
