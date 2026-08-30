@@ -8,7 +8,12 @@ proot is a user-space implementation of `chroot`, `mount --bind`, and `binfmt_mi
 using `ptrace(2)`. It requires no root access, no kernel modules, and no custom kernel.
 
 **Homepage**: https://proot-me.github.io  
-**Source**: https://github.com/proot-me/proot
+**Upstream source**: https://github.com/proot-me/proot
+**LinuxDroid runtime**: [InfidelRahul/LinuxDroid_proot](https://github.com/InfidelRahul/LinuxDroid_proot)
+
+LinuxDroid consumes the separately maintained LinuxDroid_proot release for Android. The fork owns the PRoot native engine, loader, Android compatibility work, and native tests. LinuxDroid owns runtime asset installation/validation, rootfs lifecycle, launch plans, bindings, PTY, and graphics orchestration; it does not build or patch PRoot as part of the application repository.
+
+The old bundled PRoot implementation in this repository is retained only as a frozen migration baseline. See the [Updated Final Migration Plan](../migration-plan.md) for the external-artifact migration and removal gates.
 
 ---
 
