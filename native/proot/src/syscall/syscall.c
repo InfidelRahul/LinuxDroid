@@ -140,6 +140,7 @@ void translate_syscall(Tracee *tracee)
 		 * avoid the actual syscall if an error was reported
 		 * by the translation/extension. */
 		if (status < 0) {
+			Sysnum orig_sysnum = get_sysnum(tracee, ORIGINAL);
 			set_sysnum(tracee, PR_void);
 			poke_reg(tracee, SYSARG_RESULT, (word_t) status);
 			tracee->status = status;
@@ -147,6 +148,8 @@ void translate_syscall(Tracee *tracee)
 				tracee->restart_how = PTRACE_SYSCALL;
 				tracee->sysexit_pending = true;
 			}
+			note(tracee, INFO, INTERNAL, "[SYSCALL_ENTER_ERR] pid=%d: sysnum=%ld (%s) status=%d -> PR_void, restart_how=%d, sysexit_pending=%d",
+				tracee->pid, (long)orig_sysnum, stringify_sysnum(orig_sysnum), status, tracee->restart_how, tracee->sysexit_pending);
 		}
 		else
 			tracee->status = 1;
@@ -166,6 +169,9 @@ void translate_syscall(Tracee *tracee)
 
 		print_current_regs(tracee, 5, "sysexit start");
 
+		int prev_status = tracee->status;
+		Sysnum orig_sysnum = get_sysnum(tracee, ORIGINAL);
+
 		/* Translate the syscall only if it was actually
 		 * requested by the tracee, it is not a syscall
 		 * chained by PRoot.  */
@@ -173,6 +179,11 @@ void translate_syscall(Tracee *tracee)
 			translate_syscall_exit(tracee);
 		else
 			(void) notify_extensions(tracee, SYSCALL_CHAINED_EXIT, 0, 0);
+
+		if (prev_status < 0) {
+			note(tracee, INFO, INTERNAL, "[SYSCALL_EXIT_ERR] pid=%d: sysnum=%ld (%s) tracee_status=%d -> result=%ld",
+				tracee->pid, (long)orig_sysnum, stringify_sysnum(orig_sysnum), prev_status, (long)peek_reg(tracee, CURRENT, SYSARG_RESULT));
+		}
 
 		/* Reset the tracee's status. */
 		tracee->status = 0;

@@ -122,10 +122,7 @@ class RuntimeAssetsManager(
      */
     fun resolveProot(): File {
         val abi = resolveAbi()
-        val installed = installedProotFile(abi)
         synchronized(this) {
-            if (isValidProot(installed)) return installed
-
             val installedResult = installForAbi(abi).also { result ->
                 if (!result.prootInstalled) {
                     log.warn("Runtime asset install reported not installed: ${result.detail}")
@@ -145,6 +142,9 @@ class RuntimeAssetsManager(
                     return file
                 }
             }
+
+            val installed = installedProotFile(abi)
+            if (isValidProot(installed)) return installed
 
             // Legacy fallback (frozen baseline reference, not the target).
             legacyProot(abi)?.let { legacy ->
@@ -166,17 +166,15 @@ class RuntimeAssetsManager(
      */
     fun resolveLoader(): File? {
         val abi = resolveAbi()
-        val installed = installedLoaderFile(abi)
         synchronized(this) {
-            if (isExecutable(installed)) return installed
-
-            val assetLoader = installForAbi(abi).also {
-                // installForAbi() is idempotent; only log on first failure.
-            }.loaderPath
+            val assetLoader = installForAbi(abi).loaderPath
             if (assetLoader != null) {
                 val file = File(assetLoader)
                 if (isExecutable(file)) return file
             }
+
+            val installed = installedLoaderFile(abi)
+            if (isExecutable(installed)) return installed
 
             legacyLoader(abi)?.let { legacy ->
                 if (isExecutable(legacy)) {
@@ -276,16 +274,21 @@ class RuntimeAssetsManager(
         staging: File,
         expectedSha256: String?,
     ): Boolean {
-        // Already installed and valid? Nothing to do.
+        val assetPath = "$assetRoot/$abi/$artifactName"
+        val resolvedSha256 = expectedSha256 ?: computeAssetSha256(assetPath)
+
+        // Already installed and valid? Check if checksum matches.
         if (target.exists() && target.length() > 0L && target.canExecute()) {
-            if (expectedSha256 != null && !verifyChecksum(target, expectedSha256)) {
-                log.warn("$artifactName checksum mismatch for ${target.path}; reinstalling.")
+            if (resolvedSha256 != null) {
+                if (verifyChecksum(target, resolvedSha256)) {
+                    return true
+                }
+                log.info("$artifactName checksum mismatch for ${target.path}; updating to latest bundled asset.")
             } else {
                 return true
             }
         }
 
-        val assetPath = "$assetRoot/$abi/$artifactName"
         return try {
             context.assets.open(assetPath).use { input ->
                 staging.outputStream().use { output -> input.copyTo(output) }
@@ -348,6 +351,22 @@ class RuntimeAssetsManager(
             val candidate = File(nativeLibDir, "libproot_loader.so")
             if (candidate.exists() && candidate.length() > 0L) candidate else null
         } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun computeAssetSha256(assetPath: String): String? {
+        return try {
+            context.assets.open(assetPath).use { input ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                val buffer = ByteArray(8192)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    digest.update(buffer, 0, read)
+                }
+                digest.digest().joinToString("") { "%02x".format(it) }
+            }
+        } catch (e: Exception) {
             null
         }
     }
