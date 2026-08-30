@@ -5,6 +5,13 @@ import java.io.File
 
 /**
  * Concrete deterministic command builder for the PRoot native backend.
+ *
+ * This is a pure [RuntimeSpec] -> argv translator. It performs **no**
+ * filesystem or binary discovery:
+ *  - the PRoot executable path is supplied by the caller (already resolved
+ *    through [RuntimeAssetsManager]) as [executableOverride];
+ *  - every binding comes from [RuntimeSpec.bindings]; Android shared-storage
+ *    discovery is performed by the runtime backend, not here.
  */
 class ProotCommandBuilder : RuntimeCommandBuilder {
 
@@ -21,26 +28,13 @@ class ProotCommandBuilder : RuntimeCommandBuilder {
             add("-r")
             add(spec.rootfsPath)
 
-            // Dynamic bindings from spec
+            // Dynamic bindings from spec (no filesystem discovery here).
             spec.bindings.forEach { binding ->
                 add("-b")
                 if (binding.hostPath == binding.guestPath) {
                     add(binding.hostPath)
                 } else {
                     add("${binding.hostPath}:${binding.guestPath}${if (binding.readOnly) ":ro" else ""}")
-                }
-            }
-
-            // Shared storage binding if requested and directory is accessible
-            if (spec.sharedStorageEnabled) {
-                try {
-                    val sharedDir = File(android.os.Environment.getExternalStorageDirectory(), "LinuxDroid")
-                    if (sharedDir.exists() && sharedDir.canRead()) {
-                        add("-b")
-                        add("${sharedDir.absolutePath}:/home/user/Android")
-                    }
-                } catch (_: Throwable) {
-                    // In unit tests android.os.Environment may not be mocked; ignore silently
                 }
             }
 

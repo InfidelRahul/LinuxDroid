@@ -25,6 +25,7 @@ import com.linuxdroid.core.package_mgr.PackageManager
 import com.linuxdroid.core.process.DefaultProcessManager
 import com.linuxdroid.core.process.ProcessManager
 import com.linuxdroid.core.runtime.ProotRuntimeBackend
+import com.linuxdroid.core.runtime.RuntimeAssetsManager
 import com.linuxdroid.core.runtime.RuntimeBackend
 import com.linuxdroid.core.session.DefaultSessionManager
 import com.linuxdroid.core.session.SessionManager
@@ -52,10 +53,17 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideRuntimeAssetsManager(
+        @ApplicationContext context: Context,
+    ): RuntimeAssetsManager = RuntimeAssetsManager(context)
+
+    @Provides
+    @Singleton
     fun provideRuntimeBackend(
         @ApplicationContext context: Context,
         storage: EnvironmentStorage,
-    ): RuntimeBackend = ProotRuntimeBackend(context, storage)
+        assetsManager: RuntimeAssetsManager,
+    ): RuntimeBackend = ProotRuntimeBackend(context, storage, assetsManager)
 
     @Provides
     @Singleton
