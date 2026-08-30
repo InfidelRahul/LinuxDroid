@@ -30,14 +30,27 @@ LinuxDroid is **NOT** a VM product, does **NOT** require root/su access, does **
                             │ Direct High-Performance C++
 ┌───────────────────────────▼────────────────────────────┐
 │               Native Bridge (liblinuxdroid_bridge)     │
-│   (ANativeWindow display, GLES/Vulkan probe, evdev)    │
+│       Genuine Android JNI and host hardware bridges    │
+└───────────────────────────┬────────────────────────────┘
+                            │ consumes versioned artifact
+┌───────────────────────────▼────────────────────────────┐
+│        LinuxDroid Runtime Integration                  │
+│ RuntimeAssetsManager · RootfsManager · LaunchPlan      │
+│ Bindings · ProcessLauncher · PtyLauncher               │
+└───────────────────────────┬────────────────────────────┘
+                            │ LinuxDroid_proot contract
+┌───────────────────────────▼────────────────────────────┐
+│        LinuxDroid_proot (external repository)          │
+│       PRoot native engine · loader · Android fixes     │
 └───────────────────────────┬────────────────────────────┘
                             │ ptrace / syscall interception
 ┌───────────────────────────▼────────────────────────────┐
-│               Rootless Runtime (PRoot Backend)         │
-│          (/bin/sh, apt, dpkg, debian-arm64 rootfs)     │
+│          Persistent Linux rootfs and applications      │
+│          (/bin/sh, apt, dpkg, Debian arm64)            │
 └────────────────────────────────────────────────────────┘
 ```
+
+`LinuxDroid_proot` is a hard prerequisite and is not a Gradle module owned by this repository. LinuxDroid consumes its versioned `proot` and `loader` artifacts through `RuntimeAssetsManager`. The current `native/proot` module and `jniLibs` binaries are retained only as the migration baseline until the legacy cleanup phase.
 
 ## 3. Key Design Tenets
 1. **Unconditional Persistence:** Rootfs directories (`<filesDir>/environments/<id>/rootfs`) are never touched or purged on stop, crash, or application restart.

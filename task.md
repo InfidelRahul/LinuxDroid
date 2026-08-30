@@ -1,5 +1,7 @@
 # LinuxDroid — Task Progress
 
+> The canonical migration sequence is [docs/migration-plan.md](docs/migration-plan.md). LinuxDroid_proot is a hard prerequisite; the legacy bundled PRoot entries below describe the frozen baseline only.
+
 ## Phase 0: Project Initialization
 - [x] Android SDK 35 + NDK 27.2.12479018 bootstrapped
 - [x] Gradle 8.12 + wrapper configured
@@ -44,38 +46,32 @@
 - [x] `AndroidStorageManager` — request/verify/revoke shared storage access
 - [x] Integration test: Android → `/storage/emulated/0/LinuxDroid/` → Linux
 
-## Phase 6: Rootless Runtime Prototype
-- [x] `ProotRuntimeBackend` — proot launcher
+## Phase 6: Rootless Runtime Prototype — legacy baseline
+- [x] `ProotRuntimeBackend` — legacy bundled PRoot launcher
 - [x] `linux/bootstrap/bootstrap-debian.sh` — Debian rootfs bootstrapper
 - [x] `RootfsBootstrapper.kt` — Kotlin rootfs installation
-- [x] Bundle proot binary in `app/src/main/assets/proot/arm64-v8a/proot`
-- [x] Test: proot launches on real ARM64 device
+- [x] Record the current bundled PRoot source and native packaging as migration baseline
+- [x] Test: legacy PRoot launches on real ARM64 device
+- [ ] Do not extend the bundled PRoot implementation; native fixes move to LinuxDroid_proot
 
-## Phase 7: First Linux Shell
+## Phase 7: First Linux Shell — legacy baseline
 - [x] Download Debian arm64 rootfs onto device
-- [x] Execute `/bin/sh` via proot
+- [x] Execute `/bin/sh` via the legacy PRoot path
 - [x] Capture stdout/stderr
 - [x] Verify command output
 
-## Phases 8-27: Future Milestones
-- [x] Persistent filesystem test (Phase 8)
-- [x] ProcessManager implementation (Phase 9)
-- [x] SessionManager implementation (Phase 10)
-- [x] Wayland compositor integration (Phase 11)
-- [x] Android Surface/display bridge (Phase 12)
-- [x] GPU acceleration (Phase 13)
-- [x] Input bridging (Phase 14)
-- [x] Audio bridge (Phase 15)
-- [x] Network management (Phase 16)
-- [x] Linux desktop (Phase 17)
-- [x] XWayland (Phase 18)
-- [x] Package management UI (Phase 19)
-- [x] Linux application discovery (Phase 20)
-- [x] Resource monitoring (Phase 21)
-- [x] Full diagnostics (Phase 22)
-- [x] Recovery (Phase 23)
-- [x] Performance optimization (Phase 24)
-- [x] Security hardening (Phase 25)
-- [x] Device compatibility (Phase 26)
-- [x] Production polish (Phase 27)
+## Updated migration tracking
+
+The old future-milestone checklist is retired. It incorrectly implied that LinuxDroid should continue building PRoot in this repository and marked work complete before the external runtime contract existed.
+
+The canonical plan is [LinuxDroid — Updated Final Migration Plan](docs/migration-plan.md). Its blocking order is:
+
+1. Freeze the LinuxDroid baseline.
+2. Make [LinuxDroid_proot](https://github.com/InfidelRahul/LinuxDroid_proot) independently buildable and testable.
+3. Complete Android/ARM64 compatibility, native tests, diagnostics, and release artifacts there.
+4. Add `RuntimeAssetsManager` and consume a versioned PRoot artifact in LinuxDroid.
+5. Remove PRoot from the JNI packaging only after the replacement path is validated.
+6. Complete rootfs isolation, launch planning, process/PTY launchers, integration testing, and final cleanup.
+
+LinuxDroid is a consumer of LinuxDroid_proot, not the owner of the PRoot implementation. Any ptrace, seccomp, loader, ARM64, or syscall-interception fix must land in LinuxDroid_proot first, followed by a tested artifact update here.
 
