@@ -247,6 +247,8 @@ data class EnvironmentConfiguration(
     val linuxUser: String = "user",
     /** Linux user home directory inside the chroot. */
     val homeDir: String = "/home/user",
+    /** Default login shell binary path inside the chroot. */
+    val shell: String = "/bin/bash",
 )
 
 /**

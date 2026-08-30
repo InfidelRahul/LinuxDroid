@@ -115,6 +115,47 @@ class RuntimeSpecAndCommandBuilderTest {
         assertThat(spec.command).containsExactly("/bin/bash")
         assertThat(spec.environmentVariables["PATH"]).contains("/usr/bin")
         assertThat(spec.environmentVariables["TERM"]).isEqualTo("xterm-256color")
+        assertThat(spec.environmentVariables["HOME"]).isEqualTo("/root")
+        assertThat(spec.environmentVariables["USER"]).isEqualTo("root")
+        assertThat(spec.environmentVariables["LOGNAME"]).isEqualTo("root")
+        assertThat(spec.environmentVariables["SHELL"]).isEqualTo("/bin/bash")
+        assertThat(spec.environmentVariables["LANG"]).isEqualTo("C.UTF-8")
+        assertThat(spec.environmentVariables["TMPDIR"]).isEqualTo("/tmp")
+        assertThat(spec.environmentVariables["PWD"]).isEqualTo("/root")
+    }
+
+    @Test
+    fun `RuntimeSpec fromEnvironment respects custom user and shell configuration`() {
+        val env = Environment(
+            metadata = EnvironmentMetadata(
+                id = EnvironmentId("ubuntu-custom"),
+                name = "Ubuntu Custom",
+                distribution = Distribution.UBUNTU,
+                architecture = Architecture.ARM64,
+            ),
+            rootfsPath = "/test/rootfs",
+            metadataPath = "/test/metadata",
+            configuration = EnvironmentConfiguration(
+                linuxUser = "developer",
+                homeDir = "/home/developer",
+                shell = "/usr/bin/zsh",
+            ),
+        )
+
+        val spec = RuntimeSpec.fromEnvironment(
+            environment = env,
+            command = listOf("/usr/bin/zsh", "-l"),
+            workingDirectory = "/home/developer/projects",
+        )
+
+        assertThat(spec.user).isEqualTo("developer")
+        assertThat(spec.workingDirectory).isEqualTo("/home/developer/projects")
+        assertThat(spec.command).containsExactly("/usr/bin/zsh", "-l").inOrder()
+        assertThat(spec.environmentVariables["USER"]).isEqualTo("developer")
+        assertThat(spec.environmentVariables["LOGNAME"]).isEqualTo("developer")
+        assertThat(spec.environmentVariables["HOME"]).isEqualTo("/home/developer")
+        assertThat(spec.environmentVariables["SHELL"]).isEqualTo("/usr/bin/zsh")
+        assertThat(spec.environmentVariables["PWD"]).isEqualTo("/home/developer/projects")
     }
 
     @Test

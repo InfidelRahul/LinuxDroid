@@ -93,11 +93,14 @@ class TerminalViewModel @Inject constructor(
                 // Close existing session if any
                 closeSession()
 
+                val targetShell = env.configuration.shell.ifBlank { "/bin/bash" }
+                val shellCommand = listOf(targetShell, "-l")
+
                 val session = runtimeBackend.startInteractiveShell(
                     environment = env,
                     rows = currentRows,
                     cols = currentCols,
-                    command = listOf("/bin/sh")
+                    command = shellCommand
                 )
                 ptySession = session
                 _isShellActive.value = true

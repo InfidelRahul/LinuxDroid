@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -161,11 +162,24 @@ fun TerminalScreen(
             }
 
             // Terminal canvas / output stream
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
             ) {
+                val density = LocalDensity.current
+                val fontSizeSp = 12.sp
+                val lineHeightSp = 16.sp
+                val charWidthDp = with(density) { (fontSizeSp * 0.6f).toDp() }
+                val lineHeightDp = with(density) { lineHeightSp.toDp() }
+
+                val calculatedCols = (maxWidth / charWidthDp).toInt().coerceIn(20, 240)
+                val calculatedRows = (maxHeight / lineHeightDp).toInt().coerceIn(5, 120)
+
+                LaunchedEffect(calculatedRows, calculatedCols) {
+                    viewModel.resize(calculatedRows, calculatedCols)
+                }
+
                 SelectionContainer(
                     modifier = Modifier
                         .fillMaxSize()

@@ -27,7 +27,7 @@ class TerminalSession(
     suspend fun open(
         rows: Int = 24,
         cols: Int = 80,
-        command: List<String> = listOf("/bin/sh"),
+        command: List<String> = listOf(environment.configuration.shell.ifBlank { "/bin/bash" }, "-l"),
     ): PtySession = withContext(Dispatchers.IO) {
         log.info("Opening interactive terminal session (${cols}x$rows)")
         val spec = RuntimeSpec.fromEnvironment(

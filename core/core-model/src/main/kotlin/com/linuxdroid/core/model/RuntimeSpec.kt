@@ -65,14 +65,22 @@ data class RuntimeSpec(
             tmpDirPath: String? = null,
             logFilePath: String? = null,
         ): RuntimeSpec {
+            val configuredUser = environment.configuration.linuxUser.ifBlank { "root" }
+            val configuredHome = environment.configuration.homeDir.ifBlank {
+                if (configuredUser == "root") "/root" else "/home/$configuredUser"
+            }
+            val configuredShell = environment.configuration.shell.ifBlank { "/bin/bash" }
+
             val envVars = buildMap {
-                put("HOME", "/root")
+                put("HOME", configuredHome)
+                put("USER", configuredUser)
+                put("LOGNAME", configuredUser)
+                put("SHELL", configuredShell)
                 put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
-                put("USER", "root")
-                put("LOGNAME", "root")
                 put("TMPDIR", "/tmp")
+                put("PWD", workingDirectory)
                 putAll(environment.configuration.runtime.extraEnv)
                 putAll(extraEnv)
             }
