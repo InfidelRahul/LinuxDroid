@@ -53,8 +53,30 @@ jobs:
             -validity 1 \
             -dname "CN=LinuxDroid CI,O=LinuxDroid"
 
-      - name: Compile release APK
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+       - name: Compile release APK
+        shell: bash
+        run: |
+          # Preserve the full Gradle output to a file for failure diagnostics,
+          # while still failing the step if the build fails (pipefail).
+          set -o pipefail
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-log.txt
+
+      - name: Upload build artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+          path: |
+            build-log.txt
+            **/build/reports/**
+            **/build/test-results/**
+            **/build/outputs/**
+            **/build/intermediates/**
+            **/build/tmp/**
+            **/build/outputs/logs/**
+            hs_err_pid*.log
 
       - name: Generate APK checksum
         run: |
