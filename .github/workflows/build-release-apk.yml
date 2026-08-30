@@ -41,6 +41,8 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      # The current Gradle release configuration requires a keystore.
+      # This key is temporary and must not be used for production releases.
       - name: Create ephemeral CI signing key
         run: |
           keytool -genkeypair -v \
@@ -53,7 +55,7 @@ jobs:
             -validity 1 \
             -dname "CN=LinuxDroid CI,O=LinuxDroid"
 
-       - name: Compile release APK
+      - name: Compile release APK
         shell: bash
         run: |
           # Preserve the full Gradle output to a file for failure diagnostics,
