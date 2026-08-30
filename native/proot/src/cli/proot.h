@@ -70,6 +70,7 @@ static int handle_option_S(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_kill_on_exit(Tracee *tracee, const Cli *cli, const char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
+static int post_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
 static int post_initialize_exe(Tracee *, const Cli *, size_t, char *const *, size_t);
 
 static Cli proot_cli = {
@@ -86,6 +87,7 @@ Copyright (C) 2023 PRoot Developers, licensed under GPL v2 or later.",
 |__|  |__|__\\_____/\\_____/\\____|",
 
 	.pre_initialize_bindings = pre_initialize_bindings,
+	.post_initialize_bindings = post_initialize_bindings,
 	.post_initialize_exe = post_initialize_exe,
 
 	.options = {

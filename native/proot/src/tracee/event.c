@@ -33,6 +33,8 @@
 #include <stdbool.h>    /* bool, true, false, */
 #include <assert.h>     /* assert(3), */
 #include <stdlib.h>     /* atexit(3), getenv(3), */
+#include <fcntl.h>      /* AT_*, */
+#include <sys/stat.h>   /* struct stat, fstatat, */
 #if defined(__ANDROID__)
 #include <malloc.h>
 #endif
@@ -442,6 +444,39 @@ static word_t emulate_seccomp_trapped_syscall(Tracee *tracee, int sig_sys UNUSED
 				poke_uint32(tracee, list, 0);
 			return 1;
 		}
+	}
+
+	case PR_faccessat2: {
+		int dirfd = (int)peek_reg(tracee, ORIGINAL, SYSARG_1);
+		word_t path_addr = peek_reg(tracee, ORIGINAL, SYSARG_2);
+		int mode = (int)peek_reg(tracee, ORIGINAL, SYSARG_3);
+		int flags = (int)peek_reg(tracee, ORIGINAL, SYSARG_4);
+		char path[PATH_MAX];
+		char host_path[PATH_MAX];
+		int status;
+
+		if (path_addr == 0)
+			return (word_t)-EFAULT;
+
+		status = read_path(tracee, path, path_addr);
+		if (status < 0)
+			return (word_t)status;
+
+		status = translate_path(tracee, host_path, dirfd, path, true);
+		if (status < 0)
+			return (word_t)status;
+
+		if (flags == 0) {
+			status = faccessat(AT_FDCWD, host_path, mode, 0);
+		} else if ((flags & AT_SYMLINK_NOFOLLOW) != 0) {
+			struct stat st;
+			status = fstatat(AT_FDCWD, host_path, &st, AT_SYMLINK_NOFOLLOW);
+		} else {
+			status = faccessat(AT_FDCWD, host_path, mode, flags);
+		}
+		if (status < 0)
+			return (word_t)-errno;
+		return 0;
 	}
 
 	default:

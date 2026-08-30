@@ -115,13 +115,13 @@ class RuntimeSpecAndCommandBuilderTest {
         assertThat(spec.command).containsExactly("/bin/bash")
         assertThat(spec.environmentVariables["PATH"]).contains("/usr/bin")
         assertThat(spec.environmentVariables["TERM"]).isEqualTo("xterm-256color")
-        assertThat(spec.environmentVariables["HOME"]).isEqualTo("/root")
-        assertThat(spec.environmentVariables["USER"]).isEqualTo("root")
-        assertThat(spec.environmentVariables["LOGNAME"]).isEqualTo("root")
+        assertThat(spec.environmentVariables["HOME"]).isEqualTo("/home/user")
+        assertThat(spec.environmentVariables["USER"]).isEqualTo("user")
+        assertThat(spec.environmentVariables["LOGNAME"]).isEqualTo("user")
         assertThat(spec.environmentVariables["SHELL"]).isEqualTo("/bin/bash")
         assertThat(spec.environmentVariables["LANG"]).isEqualTo("C.UTF-8")
         assertThat(spec.environmentVariables["TMPDIR"]).isEqualTo("/tmp")
-        assertThat(spec.environmentVariables["PWD"]).isEqualTo("/root")
+        assertThat(spec.environmentVariables["PWD"]).isEqualTo("/home/user")
     }
 
     @Test
