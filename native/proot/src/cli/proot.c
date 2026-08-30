@@ -24,14 +24,11 @@
 #include <assert.h>    /* assert(3), */
 #include <stdio.h>     /* printf(3), fflush(3), */
 #include <unistd.h>    /* write(2), */
-#include <fcntl.h>     /* open(2), */
-#include <sys/stat.h>  /* struct stat, */
 
 #include "cli/cli.h"
 #include "cli/note.h"
 #include "extension/extension.h"
 #include "path/binding.h"
-#include "path/temp.h"
 #include "attribute.h"
 
 /* These should be included last.  */
@@ -402,28 +399,6 @@ static int pre_initialize_bindings(Tracee *tracee, const Cli *cli,
 	}
 
 	return cursor;
-}
-
-/**
- * Post-initialization of bindings for PRoot.
- * Virtualizes procfs entries that cannot exist on Android host kernels (e.g. /proc/sys/crypto/fips_enabled).
- */
-static int post_initialize_bindings(Tracee *tracee, const Cli *cli UNUSED,
-			size_t argc UNUSED, char *const argv[] UNUSED, size_t cursor UNUSED)
-{
-	/* Virtualize /proc/sys/crypto/fips_enabled with value 0 (FIPS disabled) if missing on host */
-	if (access("/proc/sys/crypto/fips_enabled", F_OK) != 0) {
-		const char *host_path = create_temp_file(tracee->ctx, "fips_enabled");
-		if (host_path != NULL) {
-			int fd = open(host_path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-			if (fd >= 0) {
-				(void) write(fd, "0\n", 2);
-				(void) close(fd);
-				(void) insort_binding3(tracee, tracee->ctx, host_path, "/proc/sys/crypto/fips_enabled");
-			}
-		}
-	}
-	return 0;
 }
 
 const Cli *get_proot_cli(TALLOC_CTX *context UNUSED)

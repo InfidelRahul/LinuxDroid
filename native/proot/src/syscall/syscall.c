@@ -143,6 +143,10 @@ void translate_syscall(Tracee *tracee)
 			set_sysnum(tracee, PR_void);
 			poke_reg(tracee, SYSARG_RESULT, (word_t) status);
 			tracee->status = status;
+			if (tracee->seccomp == ENABLED) {
+				tracee->restart_how = PTRACE_SYSCALL;
+				tracee->sysexit_pending = true;
+			}
 		}
 		else
 			tracee->status = 1;
