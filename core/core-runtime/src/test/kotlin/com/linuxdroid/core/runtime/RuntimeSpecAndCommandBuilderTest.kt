@@ -51,6 +51,47 @@ class RuntimeSpecAndCommandBuilderTest {
     }
 
     @Test
+    fun `ProotCommandBuilder does not discover Android storage`() {
+        // G02: the command builder must be a pure RuntimeSpec -> argv translator.
+        // It must NOT perform Android shared-storage discovery; the shared
+        // storage binding can only appear in the argv if it is explicitly part
+        // of spec.bindings.
+        val spec = RuntimeSpec(
+            environmentId = EnvironmentId("storage-env"),
+            rootfsPath = "/data/user/0/com.linuxdroid/app/files/environments/storage-env/rootfs",
+            architecture = Architecture.ARM64,
+            workingDirectory = "/",
+            command = listOf("/bin/sh"),
+            bindings = listOf(
+                RuntimeBinding("/tmp/host-tmp", "/tmp"),
+            ),
+            sharedStorageEnabled = true,
+        )
+
+        val builder = ProotCommandBuilder()
+        val cmd = builder.build(spec, File("/data/user/0/com.linuxdroid/app/runtime/proot"))
+
+        // The Android shared directory is never written by the builder.
+        assertThat(cmd.asSequence().any { it.contains("/storage/emulated") }).isFalse()
+        assertThat(cmd.asSequence().any { it.contains("/home/user/Android") }).isFalse()
+        // The only binding rendered is the explicit /tmp binding.
+        assertThat(cmd).contains("/tmp/host-tmp:/tmp")
+        assertThat(cmd).containsExactly(
+            "/data/user/0/com.linuxdroid/app/runtime/proot",
+            "-0",
+            "--kill-on-exit",
+            "--link2symlink",
+            "-r",
+            "/data/user/0/com.linuxdroid/app/files/environments/storage-env/rootfs",
+            "-b",
+            "/tmp/host-tmp:/tmp",
+            "-w",
+            "/",
+            "/bin/sh",
+        ).inOrder()
+    }
+
+    @Test
     fun `RuntimeSpec fromEnvironment sets up expected default bindings and environment`() {
         val env = Environment(
             metadata = EnvironmentMetadata(

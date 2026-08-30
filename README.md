@@ -89,6 +89,7 @@ export JAVA_HOME=/usr/local/sdkman/candidates/java/21.0.12+1.1-tem
 - [Testing Guide](docs/testing/testing.md)
 - [Build Guide](docs/development/build.md)
 - [Updated Final Migration Plan](docs/migration-plan.md)
+- [Migration Progress (status)](docs/migration-progress.md)
 
 ## How It Works
 
