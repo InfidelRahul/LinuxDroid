@@ -44,7 +44,7 @@ add_custom_command(
         -ffreestanding
         -nostdlib
         -static
-        -Wl,-Ttext=${LOADER_ADDRESS},-z,noexecstack
+        -Wl,--image-base=${LOADER_ADDRESS},-z,noexecstack
         ${CMAKE_CURRENT_SOURCE_DIR}/src/loader/loader.c
         -o ${LOADER_ELF}
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/loader/loader.c

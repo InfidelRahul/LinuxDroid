@@ -41,7 +41,7 @@ class RuntimeAssetsManagerTest {
     }
 
     @Test
-    fun `parseManifest handles dev manifest without version -> unknown`() {
+    fun `parseManifest handles dev manifest without version to unknown`() {
         val metadata = RuntimeAssetsManager.parseManifest("commit: deadbeef\n", "x86_64")
         assertThat(metadata.version).isEqualTo("unknown")
         assertThat(metadata.commit).isEqualTo("deadbeef")
