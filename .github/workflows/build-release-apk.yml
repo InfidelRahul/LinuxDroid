@@ -21,7 +21,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
           cache: gradle
 
       - name: Set up Android SDK
@@ -33,16 +33,14 @@ jobs:
       - name: Install Android SDK components
         run: |
           sdkmanager "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;29.0.14206865" \
             "cmake;3.22.1"
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      # The current Gradle release configuration requires a keystore.
-      # This key is temporary and must not be used for production releases.
       - name: Create ephemeral CI signing key
         run: |
           keytool -genkeypair -v \
