@@ -106,6 +106,9 @@ ProotCommandBuilder    (pure RuntimeSpec -> argv; no filesystem discovery)
 | `app/src/main/kotlin/com/linuxdroid/app/di/AppModule.kt` | refactor | Provides `RuntimeAssetsManager` as a singleton and injects it into `ProotRuntimeBackend`. |
 | `core/core-runtime/src/test/.../RuntimeSpecAndCommandBuilderTest.kt` | extend | New test proving the builder performs no Android storage discovery (G02/G08). |
 | `core/core-runtime/src/test/.../RuntimeAssetsManagerTest.kt` | **new** | Unit tests for manifest parsing, version compatibility, semantic-version ordering, and SHA-256 (Context-free paths). |
+| `core/core-runtime/.../RuntimeLauncher.kt` | **new** | Separates launch mechanics (`launchProcess` / `launchPty`) from backend orchestration (I01–I05). |
+| `core/core-runtime/.../ProotRuntimeBackend.kt` | refactor | Launch now delegated to `RuntimeLauncher`; removed backend-owned command construction (`commandBuilder`) and `NativeBridge` PTY usage (I02, I05). |
+| `core/core-runtime/src/test/.../RuntimeLauncherTest.kt` | **new** | Process-launch test using a host binary (defensive guard on availability). |
 | `docs/migration-progress.md` | **new** | This record. |
 
 ---
@@ -145,12 +148,11 @@ ProotCommandBuilder    (pure RuntimeSpec -> argv; no filesystem discovery)
 | P01–P06 Version management | Source implemented (`requiredProotVersion`, `isVersionCompatible`, atomic install); on-device upgrade/rollback verification blocked |
 | Q01–Q07 Regression test suite | No JDK/SDK/device |
 
-### Deferred (out of scope for the PRoot ownership migration, per Rule 5)
+### DONE (added this pass)
 
-* Phase I — `RuntimeLauncher` process/PTY extraction: a separate architecture
-  refactor not required for PRoot ownership separation. Launch logic remains in
-  `ProotRuntimeBackend` for now to avoid combining unrelated refactoring with
-  the migration.
+| Task | Result |
+|------|--------|
+| I01–I06 `RuntimeLauncher` separation | VERIFIED (source). Launch moved out of `ProotRuntimeBackend` into a new `RuntimeLauncher` with `launchProcess` + `launchPty`, consuming the same `RuntimeSpec` + resolved PRoot path. Process launch tested via a host binary; PTY path requires a device. |
 
 ---
 
