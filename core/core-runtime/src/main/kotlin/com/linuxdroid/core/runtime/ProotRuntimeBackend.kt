@@ -5,7 +5,6 @@ import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
-import com.linuxdroid.native_bridge.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -128,7 +127,7 @@ class ProotRuntimeBackend(
         log.info("proot runtime ready for ${environment.id}")
     }
 
-    private val commandBuilder: RuntimeCommandBuilder = ProotCommandBuilder()
+    private val launcher: RuntimeLauncher = RuntimeLauncher()
     private val validator: RuntimeValidator = RuntimeValidator()
 
     override suspend fun stop(environment: Environment) = stopForEnvironment(environment.id)
@@ -169,29 +168,9 @@ class ProotRuntimeBackend(
 
         log.info("Executing in proot: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)")
 
-        val prootCmd = commandBuilder.build(resolvedSpec, proot)
-
-        val processBuilder = ProcessBuilder(prootCmd)
-            .directory(rootfs)
-            .redirectErrorStream(false)
-
-        // Set host & guest environment variables for PRoot process
-        processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
-        if (loader?.exists() == true) {
-            processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
-        }
-        // Disable PRoot seccomp BPF accelerator by default on Android to avoid BPF filter
-        // killing modern glibc/musl dynamic linker syscalls with SIGSYS (signal 31)
-        if (!processBuilder.environment().containsKey("PROOT_NO_SECCOMP")) {
-            processBuilder.environment()["PROOT_NO_SECCOMP"] = "1"
-        }
-        resolvedSpec.environmentVariables.forEach { (k, v) ->
-            processBuilder.environment()[k] = v
-        }
-
         val process: Process
         try {
-            process = processBuilder.start()
+            process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir)
         } catch (e: IOException) {
             log.error("Failed to execute PRoot process: ${e.message}", e)
             throw RuntimeError(
@@ -311,41 +290,13 @@ class ProotRuntimeBackend(
         val rootfs = File(resolvedSpec.rootfsPath)
         val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
 
-        val prootCmd = commandBuilder.build(resolvedSpec, proot)
-
-        val envVars = buildList {
-            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
-            if (loader?.exists() == true) {
-                add("PROOT_LOADER=${loader.absolutePath}")
-            }
-            resolvedSpec.environmentVariables.forEach { (k, v) ->
-                add("$k=$v")
-            }
-        }
-
-        val outPidAndFd = IntArray(2)
-        val res = NativeBridge.createPtyProcess(
-            cmd = prootCmd.toTypedArray(),
-            cwd = rootfs.absolutePath,
-            env = envVars.toTypedArray(),
-            rows = rows,
-            cols = cols,
-            outPidAndFd = outPidAndFd
-        )
-
-        if (res != 0) {
-            log.error("Failed to create PTY process: errno $res")
-            throw RuntimeError(
-                environmentId = resolvedSpec.environmentId,
-                message = "Failed to create PTY process: errno $res",
-            )
-        }
+        val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols)
 
         val session = PtySession(
             sessionId = UUID.randomUUID().toString(),
             environmentId = resolvedSpec.environmentId,
-            pid = outPidAndFd[0],
-            masterFd = outPidAndFd[1],
+            pid = handle.pid,
+            masterFd = handle.masterFd,
         )
         log.info("Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
         session
