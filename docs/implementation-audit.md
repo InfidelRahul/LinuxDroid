@@ -23,7 +23,7 @@
 | **Metadata Database** | `IMPLEMENTED` | `core/core-database/` | Room database (`LinuxDroidDatabase`), `EnvironmentEntity`, `EnvironmentDao`, `EnvironmentMapper` with JSON config serialization. |
 | **Persistent Filesystem Layout** | `IMPLEMENTED` | `core/core-filesystem/` | `EnvironmentStorage` (rootfs layout, verify, clean runtime state; never deletes rootfs), `PathValidator` (traversal guard). |
 | **Shared Storage Bridge** | `IMPLEMENTED` | `core/core-storage/` | `AndroidStorageManager` managing `/storage/emulated/0/LinuxDroid/` authorization state, directory creation, verification, and revocation safety. |
-| **Rootless Runtime Backend** | `IMPLEMENTED` | `core/core-runtime/` | `RuntimeBackend` abstraction, `ProotRuntimeBackend` (ptrace-based rootless chroot, bundled `arm64-v8a` & `x86_64` proot + `libtalloc` + `libandroid-shmem`, PID reflection, LD_LIBRARY_PATH config). |
+| **Rootless Runtime Backend** | `IMPLEMENTED` (legacy baseline) | `core/core-runtime/` | `RuntimeBackend` abstraction and `ProotRuntimeBackend` currently use the bundled ptrace-based prototype (`arm64-v8a` and `x86_64`). The migration target is a versioned `LinuxDroid_proot` artifact consumed through `RuntimeAssetsManager`; the in-repository PRoot source and JNI packaging must not be extended. |
 | **Rootfs Bootstrap & Setup** | `IMPLEMENTED` | `linux/bootstrap/` | `RootfsBootstrapper` with Debian/Ubuntu arm64 download, SHA256 verification, `tar -xJf` extraction, DNS `resolv.conf`, user home setup. |
 | **Native C++ JNI Bridge** | `PARTIALLY IMPLEMENTED` | `native/bridge/` | Versioning, ABI detection, memory check, file executable mode, signal dispatch (`kill`). Needs high-performance display/input/audio/GPU bindings. |
 | **Process Management** | `PARTIALLY IMPLEMENTED` | `core/core-process/` | `ProcessManager` & `DefaultProcessManager` (process map, events, signal stopping). Needs comprehensive lifecycle tracking and asynchronous output streaming. |
@@ -47,9 +47,10 @@
 ## Detailed Subsystem Breakdown
 
 ### 1. Rootless Runtime & Persistence
-- **Current implementation:** `ProotRuntimeBackend` extracts proot and shared libraries from assets into `context.filesDir/proot`. Uses Android `ProcessBuilder` with strict bind mounts (`-b /dev`, `-b /proc`, `-b /sys`, `--link2symlink`, `--root-id`, `--cwd`).
+- **Current implementation (legacy baseline):** `ProotRuntimeBackend` resolves the bundled PRoot prototype from `jniLibs` or extracts it into the app runtime directory. It uses Android `ProcessBuilder` with strict bind mounts (`-b /dev`, `-b /proc`, `-b /sys`, `--link2symlink`, `--root-id`, `--cwd`).
+- **Migration target:** `RuntimeAssetsManager` will consume a versioned `proot` and `loader` release from [LinuxDroid_proot](https://github.com/InfidelRahul/LinuxDroid_proot). LinuxDroid will validate and launch the artifact but will not own its source, ptrace implementation, seccomp behavior, or loader fixes.
 - **Persistence guarantee:** `EnvironmentStorage` separates `rootfs/` from `runtime-state/` and `tmp/`. The `rootfs/` directory is never purged on stop, restart, or crash recovery.
-- **Architectural risk:** Proot depends on `ptrace` system calls. On modern Android versions (Android 10+), SECCOMP filters and W^X memory policies must be respected. The bundled proot binary is statically compiled or linked against Termux's shmem/talloc.
+- **Architectural risk:** PRoot depends on `ptrace` system calls. On modern Android versions (Android 10+), seccomp filters and W^X memory policies must be respected. These native compatibility issues are release-gated and fixed in LinuxDroid_proot before LinuxDroid updates its runtime dependency.
 
 ### 2. Host Compatibility Layer & Native Bridge
 - **Current implementation:** `native/bridge` contains C++17 JNI functions for PID signaling, memory checks, file execution permissions, and ABI inspection.
@@ -85,21 +86,18 @@
 
 ---
 
-## Action Plan for Remaining Phases
+## Updated migration direction
 
-1. **Host Compatibility Layer (Phase 8):** Define `HostGraphics`, `HostGpu`, `HostAudio`, `HostInput`, `HostStorage`, `HostNetwork`, `HostCamera`, `HostSensors` capability interfaces.
-2. **Native Bridge Expansion (Phase 9-11):** Add native ANativeWindow display rendering, GLES/Vulkan GPU capability probing, native input translation, and native audio sink.
-3. **Core Subsystem Implementations (Phase 12-16):**
-   - Complete `DisplayManager` & Wayland surface manager
-   - Complete `GpuManager`
-   - Complete `InputManager`
-   - Complete `AudioManager`
-   - Complete `NetworkManager`
-   - Complete `PackageManager`
-   - Complete `ApplicationManager` (.desktop discovery)
-   - Complete `ResourceManager`
-   - Complete `RecoveryManager`
-4. **Session Coordinator (Phase 17):** Upgrade `SessionManager` to sequence complete multi-subsystem startup and graceful teardown.
-5. **Testing & Validation (Phase 18-20):** Unit tests, persistence integration test, native bridge tests, and build verification.
-6. **Documentation (Phase 21):** Create all required architecture, host, security, runtime, display, audio, input, network, and testing manuals in `docs/`.
+The old phase numbering and the assumption that LinuxDroid builds PRoot locally are retired. Follow the [Updated Final Migration Plan](migration-plan.md), whose first gates are the independent `LinuxDroid_proot` baseline, Android/ARM64 compatibility work, native tests, diagnostics, and release artifacts. Only then should LinuxDroid implement `RuntimeAssetsManager` and migrate the runtime integration.
+
+The remaining LinuxDroid work is therefore ordered as follows:
+
+1. Freeze and document this repository's legacy bundled runtime baseline.
+2. Wait for a tested, versioned `LinuxDroid_proot` release.
+3. Audit `NativeBridge`, `ProotRuntimeBackend`, command construction, validation, rootfs setup, PTY, and packaging against the external-artifact boundary.
+4. Add runtime asset installation and verification, then remove PRoot from the JNI packaging.
+5. Separate rootfs management, environment construction, binding resolution, launch planning, process launching, and PTY launching.
+6. Validate normal execution before optional Wayland and desktop work.
+7. Perform differential maintenance in `LinuxDroid_proot`; update LinuxDroid only by selecting a new verified artifact.
+8. Remove the legacy in-repository PRoot path only after full integration testing.
 
