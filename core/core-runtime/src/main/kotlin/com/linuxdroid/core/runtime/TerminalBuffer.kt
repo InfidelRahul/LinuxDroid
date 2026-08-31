@@ -244,6 +244,27 @@ class TerminalBuffer(
                     cursorCol = 0
                 }
             }
+            'C' -> { // Cursor Forward \x1b[<n>C
+                val n = params.toIntOrNull() ?: 1
+                cursorCol += n
+            }
+            'D' -> { // Cursor Backward \x1b[<n>D
+                val n = params.toIntOrNull() ?: 1
+                cursorCol = maxOf(0, cursorCol - n)
+            }
+            'G' -> { // Cursor Character Absolute \x1b[<n>G
+                val n = params.toIntOrNull() ?: 1
+                cursorCol = maxOf(0, n - 1)
+            }
+            'P' -> { // Delete Character(s) \x1b[<n>P
+                val n = params.toIntOrNull() ?: 1
+                val line = getCurrentLine()
+                repeat(n) {
+                    if (cursorCol < line.size) {
+                        line.removeAt(cursorCol)
+                    }
+                }
+            }
         }
     }
 
