@@ -288,17 +288,138 @@ class RuntimeLogExporter(
     }
 
     /**
+     * Generates a comprehensive Terminal Session and Failure Log combining:
+     * - Host device, Android OS, and kernel details
+     * - Guest environment metadata and runtime state
+     * - Terminal session state (exit code, PTY alive status)
+     * - Plain-text terminal console buffer
+     * - Correlated PRoot / system failure analysis from log streams
+     * - Tail of internal proot.log and console.log
+     */
+    suspend fun generateTerminalFailureLog(
+        environment: Environment,
+        terminalOutput: String? = null,
+        exitCode: Int? = null,
+        isPtyActive: Boolean = false,
+        asJson: Boolean = false,
+    ): String = withContext(Dispatchers.IO) {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).format(Date())
+        val envId = environment.id
+
+        if (asJson) {
+            val failureReport = analyzeFailures(environment)
+            val jsonObject = org.json.JSONObject().apply {
+                put("reportType", "TERMINAL_SESSION_FAILURE_LOG")
+                put("timestamp", timestamp)
+                put("environmentId", envId.value)
+                put("environmentName", environment.name)
+                put("distribution", environment.distribution.name)
+                put("architecture", environment.architecture.name)
+                put("state", environment.state.name)
+                put("exitCode", exitCode ?: org.json.JSONObject.NULL)
+                put("isPtyActive", isPtyActive)
+                put("terminalOutput", terminalOutput ?: "")
+                put("failureReport", org.json.JSONObject(reportExporter.buildJsonReport(failureReport, includeRawContext = false)))
+            }
+            return@withContext jsonObject.toString(2)
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("================================================================================")
+        sb.appendLine("LINUXDROID TERMINAL SESSION & FAILURE LOG")
+        sb.appendLine("Generated: $timestamp")
+        sb.appendLine("================================================================================")
+        sb.appendLine()
+
+        // 1. SESSION & ENVIRONMENT METADATA
+        sb.appendLine("--- [1. SESSION & ENVIRONMENT METADATA] ---")
+        sb.appendLine("Environment: ${environment.name} (${envId.value})")
+        sb.appendLine("Distribution: ${environment.distribution.displayName} (${environment.architecture.abiName})")
+        sb.appendLine("Environment State: ${environment.state}")
+        sb.appendLine("PTY Shell Active: $isPtyActive")
+        sb.appendLine("Last Shell Exit Code: ${exitCode?.toString() ?: "N/A (Active or Aborted)"}")
+        sb.appendLine("Rootfs Directory: ${storage.rootfsDir(envId).absolutePath}")
+        sb.appendLine("Host Device: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
+        sb.appendLine("Host Kernel: ${System.getProperty("os.version") ?: "unknown"}")
+        sb.appendLine()
+
+        // 2. TERMINAL CONSOLE BUFFER (RAW OUTPUT)
+        sb.appendLine("--- [2. TERMINAL CONSOLE OUTPUT] ---")
+        if (!terminalOutput.isNullOrBlank()) {
+            sb.appendLine(terminalOutput.trimEnd())
+        } else {
+            sb.appendLine("(No terminal console text buffered)")
+        }
+        sb.appendLine()
+
+        // 3. CORRELATED RUNTIME & SYSCALL FAILURES
+        sb.appendLine("--- [3. CORRELATED RUNTIME & SYSCALL FAILURES] ---")
+        try {
+            val failureReport = analyzeFailures(environment)
+            sb.appendLine("Primary Failure: ${failureReport.primaryCategory}")
+            sb.appendLine("Root Cause Summary: ${failureReport.rootCauseSummary}")
+            sb.appendLine("Total Detected Failures: ${failureReport.totalFailures}")
+            if (failureReport.aggregatedFailures.isNotEmpty()) {
+                sb.appendLine()
+                sb.appendLine("Aggregated Failure Signatures:")
+                failureReport.aggregatedFailures.forEach { agg ->
+                    sb.appendLine(" - [${agg.category}] count=${agg.count} source=${agg.source} syscall=${agg.syscallName ?: "none"}: ${agg.message}")
+                }
+            }
+        } catch (e: Exception) {
+            sb.appendLine("Error analyzing runtime failures: ${e.message}")
+        }
+        sb.appendLine()
+
+        // 4. RECENT CONSOLE & PROOT LOG TAILS
+        sb.appendLine("--- [4. RECENT ENGINE LOGS] ---")
+        val consoleLog = storage.consoleLogFile(envId)
+        if (consoleLog.exists() && consoleLog.length() > 0) {
+            sb.appendLine(">>> console.log (last 100 lines):")
+            sb.appendLine(readTail(consoleLog, 100))
+            sb.appendLine()
+        }
+        val prootLog = storage.prootLogFile(envId)
+        if (prootLog.exists() && prootLog.length() > 0) {
+            sb.appendLine(">>> proot.log (last 150 lines):")
+            sb.appendLine(readTail(prootLog, 150))
+            sb.appendLine()
+        }
+
+        sb.appendLine("================================================================================")
+        sb.appendLine("END OF TERMINAL FAILURE LOG")
+        sb.appendLine("================================================================================")
+        sb.toString()
+    }
+
+    /**
      * Saves the requested export report to a file on disk.
      */
     suspend fun saveReportToFile(
         environment: Environment,
-        exportType: LogExportType = LogExportType.FAILURE_REPORT_COMPACT,
+        exportType: LogExportType = LogExportType.TERMINAL_FAILURE_LOG,
         asJson: Boolean = false,
+        terminalOutput: String? = null,
+        exitCode: Int? = null,
+        isPtyActive: Boolean = false,
     ): File = withContext(Dispatchers.IO) {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val logsDir = storage.logsDir(environment.id).apply { mkdirs() }
 
         when (exportType) {
+            LogExportType.TERMINAL_FAILURE_LOG -> {
+                val ext = if (asJson) "json" else "txt"
+                val file = File(logsDir, "linuxdroid_terminal_failure_$timestamp.$ext")
+                val text = generateTerminalFailureLog(
+                    environment = environment,
+                    terminalOutput = terminalOutput,
+                    exitCode = exitCode,
+                    isPtyActive = isPtyActive,
+                    asJson = asJson,
+                )
+                file.writeText(text)
+                file
+            }
             LogExportType.FAILURE_REPORT_COMPACT -> {
                 val ext = if (asJson) "json" else "txt"
                 val file = File(logsDir, "linuxdroid_failure_report_$timestamp.$ext")
@@ -330,10 +451,20 @@ class RuntimeLogExporter(
     suspend fun createShareIntent(
         context: Context,
         environment: Environment,
-        exportType: LogExportType = LogExportType.FAILURE_REPORT_COMPACT,
+        exportType: LogExportType = LogExportType.TERMINAL_FAILURE_LOG,
         asJson: Boolean = false,
+        terminalOutput: String? = null,
+        exitCode: Int? = null,
+        isPtyActive: Boolean = false,
     ): Intent = withContext(Dispatchers.IO) {
-        val file = saveReportToFile(environment, exportType, asJson)
+        val file = saveReportToFile(
+            environment = environment,
+            exportType = exportType,
+            asJson = asJson,
+            terminalOutput = terminalOutput,
+            exitCode = exitCode,
+            isPtyActive = isPtyActive,
+        )
         val authority = "${context.packageName}.fileprovider"
 
         val mimeType = when {

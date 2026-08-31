@@ -81,4 +81,16 @@ class TerminalBufferTest {
         assertThat(linesAfter.size).isEqualTo(1)
         assertThat(linesAfter[0].rawText).isEmpty()
     }
+
+    @Test
+    fun `getPlainText extracts full scrollback without ANSI escapes`() {
+        val buffer = TerminalBuffer(maxScrollbackLines = 100)
+        val text = "\u001B[32muser@host\u001B[0m:~$ command failed\r\nError code 127\r\n"
+        buffer.append(text.toByteArray(), text.length)
+
+        val plainText = buffer.getPlainText()
+        assertThat(plainText).contains("user@host:~$ command failed")
+        assertThat(plainText).contains("Error code 127")
+        assertThat(plainText).doesNotContain("\u001B[32m")
+    }
 }

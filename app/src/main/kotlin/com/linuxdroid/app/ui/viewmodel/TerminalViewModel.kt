@@ -268,16 +268,32 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
+     * Extracts the full terminal scrollback buffer as plain text.
+     */
+    fun getTerminalPlainText(): String = terminalBuffer.getPlainText()
+
+    /**
      * Exports and shares runtime failure reports or diagnostic logs for this environment.
      */
     fun exportLogs(
         context: Context,
-        exportType: com.linuxdroid.core.model.LogExportType = com.linuxdroid.core.model.LogExportType.FAILURE_REPORT_COMPACT,
+        exportType: com.linuxdroid.core.model.LogExportType = com.linuxdroid.core.model.LogExportType.TERMINAL_FAILURE_LOG,
         asJson: Boolean = false,
     ) {
         val env = environment.value ?: return
+        val textBuffer = terminalBuffer.getPlainText()
+        val exitCode = _shellExitCode.value
+        val isAlive = ptySession?.isAlive() == true
         viewModelScope.launch(Dispatchers.IO) {
-            val shareIntent = logExporter.createShareIntent(context, env, exportType, asJson)
+            val shareIntent = logExporter.createShareIntent(
+                context = context,
+                environment = env,
+                exportType = exportType,
+                asJson = asJson,
+                terminalOutput = textBuffer,
+                exitCode = exitCode,
+                isPtyActive = isAlive,
+            )
             shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(shareIntent)
         }

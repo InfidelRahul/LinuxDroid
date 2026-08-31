@@ -339,7 +339,9 @@ fun DiagnosticsScreen(
                                                 Spacer(Modifier.width(4.dp))
                                                 Text("Share Text", fontSize = 11.sp)
                                             }
-                                            if (exportType == LogExportType.FAILURE_REPORT_COMPACT || exportType == LogExportType.FAILURE_REPORT_DEVELOPER) {
+                                            if (exportType == LogExportType.FAILURE_REPORT_COMPACT ||
+                                                exportType == LogExportType.FAILURE_REPORT_DEVELOPER ||
+                                                exportType == LogExportType.TERMINAL_FAILURE_LOG) {
                                                 OutlinedButton(
                                                     onClick = { viewModel.exportLog(context, exportType, true) },
                                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)

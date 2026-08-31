@@ -303,4 +303,25 @@ class TerminalBuffer(
         }
         _lines.value = result
     }
+
+    /**
+     * Extracts the complete scrollback history as plain text (stripped of ANSI styling).
+     */
+    @Synchronized
+    fun getPlainText(): String {
+        return linesList.joinToString("\n") { lineChars ->
+            lineChars.map { it.char }.joinToString("")
+        }
+    }
+
+    /**
+     * Extracts the most recent [count] lines of terminal text.
+     */
+    @Synchronized
+    fun getRecentLines(count: Int = 100): List<String> {
+        val lines = linesList.takeLast(count)
+        return lines.map { lineChars ->
+            lineChars.map { it.char }.joinToString("")
+        }
+    }
 }

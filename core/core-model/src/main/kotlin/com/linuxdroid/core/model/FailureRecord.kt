@@ -121,6 +121,10 @@ data class FailureReport(
  * Types of diagnostic logs that can be exported from LinuxDroid.
  */
 enum class LogExportType(val displayName: String, val description: String) {
+    TERMINAL_FAILURE_LOG(
+        displayName = "Terminal Session & Failure Log",
+        description = "Terminal console scrollback, exit codes, PTY status, and correlated runtime crash context."
+    ),
     FAILURE_REPORT_COMPACT(
         displayName = "Failure Report (Compact)",
         description = "Root cause analysis, syscall errors, and deduplicated failure chains (≤ 1 MB)."

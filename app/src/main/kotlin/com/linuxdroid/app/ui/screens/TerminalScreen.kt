@@ -1,5 +1,9 @@
 package com.linuxdroid.app.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.linuxdroid.app.ui.viewmodel.TerminalViewModel
+import com.linuxdroid.core.model.LogExportType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +123,8 @@ fun TerminalScreen(
         "ps aux",
     )
 
+    var showExportOptions by remember { mutableStateOf(false) }
+
     Scaffold(
         contentWindowInsets = WindowInsets.statusBars,
         topBar = {
@@ -141,8 +148,8 @@ fun TerminalScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.exportLogs(context) }) {
-                        Icon(Icons.Default.Share, contentDescription = "Export Runtime Logs")
+                    IconButton(onClick = { showExportOptions = true }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export Terminal & Failure Logs")
                     }
                     IconButton(onClick = { viewModel.clear() }) {
                         Icon(Icons.Default.Clear, contentDescription = "Clear Terminal")
@@ -197,7 +204,7 @@ fun TerminalScreen(
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(
-                                onClick = { viewModel.exportLogs(context) },
+                                onClick = { showExportOptions = true },
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = "Export Logs", modifier = Modifier.size(14.dp))
@@ -215,6 +222,96 @@ fun TerminalScreen(
                         }
                     }
                 }
+            }
+
+            // Export Options Modal Dialog
+            if (showExportOptions) {
+                AlertDialog(
+                    onDismissRequest = { showExportOptions = false },
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text("Export Terminal & Failure Logs")
+                        }
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Choose the export type for the current terminal session and runtime environment:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Spacer(Modifier.height(4.dp))
+
+                            // Primary: Terminal Session & Failure Log
+                            Button(
+                                onClick = {
+                                    showExportOptions = false
+                                    viewModel.exportLogs(context, LogExportType.TERMINAL_FAILURE_LOG, asJson = false)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Terminal Session & Failure Log", fontSize = 13.sp)
+                            }
+
+                            // Secondary: Compact Failure Report
+                            OutlinedButton(
+                                onClick = {
+                                    showExportOptions = false
+                                    viewModel.exportLogs(context, LogExportType.FAILURE_REPORT_COMPACT, asJson = false)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Failure Report (Compact)", fontSize = 13.sp)
+                            }
+
+                            // Full Raw Logs Archive (.zip)
+                            OutlinedButton(
+                                onClick = {
+                                    showExportOptions = false
+                                    viewModel.exportLogs(context, LogExportType.FULL_LOGS, asJson = false)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Full Raw Logs Archive (.zip)", fontSize = 13.sp)
+                            }
+
+                            // Copy Raw Terminal Scrollback
+                            OutlinedButton(
+                                onClick = {
+                                    showExportOptions = false
+                                    val text = viewModel.getTerminalPlainText()
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Scrollback", text))
+                                    Toast.makeText(context, "Terminal scrollback copied to clipboard", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Copy Terminal Scrollback", fontSize = 13.sp)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showExportOptions = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
 
             // Quick command shortcut chips
