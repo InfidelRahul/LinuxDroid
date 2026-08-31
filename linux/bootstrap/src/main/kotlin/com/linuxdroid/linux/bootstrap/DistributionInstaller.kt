@@ -13,6 +13,7 @@ interface DistributionInstaller {
         definition: DistributionDefinition,
         environment: Environment,
         onProgress: suspend (Float, String) -> Unit = { _, _ -> },
+        onLog: suspend (String) -> Unit = { _ -> },
     )
 }
 
@@ -29,7 +30,8 @@ class DefaultDistributionInstaller(
         definition: DistributionDefinition,
         environment: Environment,
         onProgress: suspend (Float, String) -> Unit,
+        onLog: suspend (String) -> Unit,
     ) {
-        bootstrapper.bootstrapRootfs(environment, onProgress)
+        bootstrapper.bootstrapRootfs(environment, onProgress, onLog)
     }
 }

@@ -166,6 +166,20 @@ class AndroidStorageManager(private val context: Context) {
 
     /** Returns true if storage is currently authorized. */
     fun isAuthorized(): Boolean = _authorizationState.value is StorageAuthorizationState.Authorized
+
+    private val prefs by lazy {
+        context.getSharedPreferences("linuxdroid_storage_prefs", Context.MODE_PRIVATE)
+    }
+
+    /** Returns true if user has already been shown the first-time storage setup popup. */
+    fun hasPromptedStorageAccess(): Boolean {
+        return prefs.getBoolean("has_prompted_storage_access", false)
+    }
+
+    /** Records that user has been shown the first-time storage setup popup. */
+    fun setPromptedStorageAccess(prompted: Boolean) {
+        prefs.edit().putBoolean("has_prompted_storage_access", prompted).apply()
+    }
 }
 
 /**

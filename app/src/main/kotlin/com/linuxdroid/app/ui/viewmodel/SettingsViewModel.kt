@@ -30,4 +30,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun getPermissionIntent(): Intent? = storageManager.createPermissionIntent()
+
+    fun hasPromptedStorageAccess(): Boolean = storageManager.hasPromptedStorageAccess()
+
+    fun setPromptedStorageAccess(prompted: Boolean) {
+        storageManager.setPromptedStorageAccess(prompted)
+    }
 }

@@ -58,11 +58,11 @@ class RootfsBootstrapperTest {
 
             val bootstrapper = RootfsBootstrapper(context, storage, validator = validator)
             var progressReported = false
-            bootstrapper.bootstrapRootfs(env) { p, msg ->
+            bootstrapper.bootstrapRootfs(env, onProgress = { p, msg ->
                 if (p == 1.0f && msg.contains("already installed")) {
                     progressReported = true
                 }
-            }
+            })
 
             assertThat(progressReported).isTrue()
         }

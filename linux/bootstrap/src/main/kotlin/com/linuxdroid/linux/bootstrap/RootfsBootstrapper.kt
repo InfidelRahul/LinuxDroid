@@ -58,12 +58,17 @@ class RootfsBootstrapper(
     suspend fun bootstrapRootfs(
         environment: Environment,
         onProgress: suspend (Float, String) -> Unit = { _, _ -> },
+        onLog: suspend (String) -> Unit = { _ -> },
     ) = withContext(Dispatchers.IO) {
         val environmentId = environment.id
         val mutex = environmentLocks.computeIfAbsent(environmentId) { Mutex() }
 
         mutex.withLock {
+            val startMsg = "Starting ${environment.distribution.displayName} (${environment.architecture.abiName}) installation..."
             log.info("[BOOTSTRAP_START] Starting rootfs bootstrap for $environmentId (${environment.distribution.displayName} / ${environment.architecture.abiName})")
+            onLog(">>> [INIT] $startMsg")
+            onLog(">>> [INIT] Environment ID: ${environmentId.value}")
+            onLog(">>> [INIT] Target architecture: ${environment.architecture.abiName} (${environment.architecture.linuxArch})")
 
             // 1. Check existing environment
             if (storage.verifyRootfs(environmentId)) {
@@ -71,16 +76,22 @@ class RootfsBootstrapper(
                 val report = validator.validate(existingRootfs, environment.distribution, environment.architecture)
                 if (report.isValid) {
                     log.info("[BOOTSTRAP_READY] Existing rootfs at ${existingRootfs.path} is valid. Skipping bootstrap.")
+                    onLog(">>> [OK] Existing verified rootfs found at ${existingRootfs.path}")
+                    onLog(">>> [READY] Bootstrap complete.")
                     onProgress(1.0f, "Rootfs already installed and verified")
                     return@withLock
                 } else {
                     log.warn("[BOOTSTRAP_START] Existing rootfs failed validation, re-bootstrapping: ${report.errors}")
+                    onLog(">>> [WARN] Existing rootfs invalid (${report.errors.size} errors). Starting clean installation...")
                 }
             }
 
             val definition = DistributionCatalog.getDefinition(environment.distribution, environment.architecture)
             val source = definition.source
             log.info("[BOOTSTRAP_SOURCE] Selected distribution source: ${source.url} (release=${definition.release}, format=${source.format})")
+            onLog(">>> [SOURCE] Distribution: ${environment.distribution.displayName} (Release: ${definition.release})")
+            onLog(">>> [SOURCE] Package format: ${source.format}")
+            onLog(">>> [SOURCE] Fetching image from: ${source.url}")
 
             storage.initializeEnvironmentDirs(environmentId)
             val finalRootfsDir = storage.rootfsDir(environmentId)
@@ -103,15 +114,21 @@ class RootfsBootstrapper(
                 // 2. Download
                 onProgress(0.05f, "Downloading ${environment.distribution.displayName} ${definition.variant} rootfs…")
                 log.info("[BOOTSTRAP_DOWNLOAD] Downloading archive from ${source.url} to ${tarball.path}")
-                downloadFile(source.url, tarball, onProgress)
+                onLog(">>> [DOWNLOAD] Connecting to remote distribution archive...")
+                downloadFile(source.url, tarball, onProgress, onLog)
+                onLog(">>> [DOWNLOAD] Archive downloaded successfully (${tarball.length() / 1_048_576} MB)")
 
                 // 3. Checksum Verification
                 source.expectedChecksum?.let { expectedChecksum ->
                     onProgress(0.65f, "Verifying archive integrity…")
                     log.info("[BOOTSTRAP_VERIFY] Verifying ${source.checksumAlgorithm} checksum against expected: $expectedChecksum")
+                    onLog(">>> [VERIFY] Computing ${source.checksumAlgorithm} digest...")
                     val actualChecksum = computeChecksum(tarball, source.checksumAlgorithm)
+                    onLog(">>> [VERIFY] Expected: $expectedChecksum")
+                    onLog(">>> [VERIFY] Computed: $actualChecksum")
                     if (!actualChecksum.equals(expectedChecksum, ignoreCase = true)) {
                         log.error("[BOOTSTRAP_FAILED] Checksum mismatch: expected=$expectedChecksum, actual=$actualChecksum")
+                        onLog(">>> [ERROR] Checksum mismatch! Verification failed.")
                         tarball.delete()
                         throw RuntimeError(
                             environmentId = environmentId,
@@ -119,29 +136,39 @@ class RootfsBootstrapper(
                         )
                     }
                     log.info("[BOOTSTRAP_VERIFY] Checksum verification PASSED ($actualChecksum)")
+                    onLog(">>> [PASS] ${source.checksumAlgorithm} checksum integrity verification succeeded.")
                 }
 
                 // 4. Extract into temporary staging directory (NEVER into active rootfs/)
                 onProgress(0.70f, "Extracting Linux userspace…")
                 log.info("[BOOTSTRAP_EXTRACT] Extracting archive to staging directory: ${stagingDir.path}")
-                extractArchive(tarball, stagingDir, source.format, source.stripComponents, onProgress)
+                onLog(">>> [EXTRACT] Uncompressing and extracting filesystem tree...")
+                extractArchive(tarball, stagingDir, source.format, source.stripComponents, onProgress, onLog)
+                onLog(">>> [EXTRACT] Filesystem tree extracted to staging area.")
 
                 // 5. Configure staging rootfs
                 onProgress(0.88f, "Configuring system files…")
                 log.info("[BOOTSTRAP_VALIDATE] Configuring staging system files for ${environment.distribution.displayName}")
+                onLog(">>> [CONFIG] Writing DNS nameservers to /etc/resolv.conf")
+                onLog(">>> [CONFIG] Setting hostname to /etc/hostname: linuxdroid")
+                onLog(">>> [CONFIG] Configuring environment variables (/etc/environment)")
+                onLog(">>> [CONFIG] Setting up APT package sources for ${definition.release}")
                 configureStagingRootfs(stagingDir, definition)
 
                 // 6. Deep Validation of Staging Rootfs (Structure, Binaries, Symlinks, ELF, PT_INTERP)
                 onProgress(0.92f, "Validating Linux userspace and dynamic linkers…")
+                onLog(">>> [VALIDATE] Performing deep structural validation of rootfs...")
                 val report = validator.validate(stagingDir, environment.distribution, environment.architecture)
                 if (!report.isValid) {
                     log.error("[BOOTSTRAP_FAILED] Staging rootfs validation failed: ${report.errors}")
+                    report.errors.forEach { err -> onLog(">>> [VALIDATE_FAIL] $err") }
                     throw RuntimeError(
                         environmentId = environmentId,
                         message = "Rootfs validation failed for ${environment.distribution.displayName}:\n${report.formatSummary()}",
                     )
                 }
                 log.info("[BOOTSTRAP_VALIDATE] Staging validation report:\n${report.formatSummary()}")
+                onLog(">>> [PASS] Validation successful: all dynamic loaders and core ELF binaries intact.")
 
                 // 7. Write Rootfs Metadata Manifest
                 val metadata = RootfsMetadata(
@@ -160,9 +187,11 @@ class RootfsBootstrapper(
                 val metadataFile = File(storage.metadataDir(environmentId), "rootfs-manifest.json")
                 metadataFile.writeText(json.encodeToString(metadata))
                 log.info("[BOOTSTRAP_READY] Recorded environment metadata at ${metadataFile.path}")
+                onLog(">>> [MANIFEST] Written environment manifest (${metadata.release})")
 
                 // 8. Promote Staging to Active Rootfs
                 onProgress(0.95f, "Promoting rootfs to active environment…")
+                onLog(">>> [PROMOTE] Promoting staging directory to active rootfs...")
                 val promoted = storage.promoteStagedRootfs(environmentId)
                 if (!promoted) {
                     throw FilesystemError(
@@ -173,13 +202,17 @@ class RootfsBootstrapper(
 
                 // 9. Live PRoot Runtime Validation
                 onProgress(0.98f, "Testing guest shell through PRoot runtime…")
+                onLog(">>> [SMOKE_TEST] Executing PRoot guest process probe (/bin/sh -c 'echo LinuxDroid OK')...")
                 runLiveRuntimeValidation(environment, finalRootfsDir)
+                onLog(">>> [PASS] PRoot runtime probe executed successfully (exit code 0).")
 
                 onProgress(1.0f, "${environment.distribution.displayName} installation complete")
                 log.info("[BOOTSTRAP_READY] Rootfs bootstrap complete and verified for $environmentId")
+                onLog(">>> [SUCCESS] ${environment.distribution.displayName} is ready to run!")
 
             } catch (e: Exception) {
                 log.error("[BOOTSTRAP_FAILED] Rootfs bootstrap failed for $environmentId: ${e.message}", e)
+                onLog(">>> [FATAL] Bootstrap aborted with error: ${e.message}")
                 storage.discardStaging(environmentId)
                 throw RuntimeError(
                     environmentId = environmentId,
@@ -201,6 +234,7 @@ class RootfsBootstrapper(
         url: String,
         dest: File,
         onProgress: suspend (Float, String) -> Unit,
+        onLog: suspend (String) -> Unit = { _ -> },
     ) = withContext(Dispatchers.IO) {
         val connection = URL(url).openConnection()
         connection.connect()
@@ -210,13 +244,19 @@ class RootfsBootstrapper(
             dest.outputStream().use { output ->
                 val buffer = ByteArray(32 * 1024)
                 var downloaded = 0L
+                var lastLogMb = 0L
                 var read: Int
                 while (input.read(buffer).also { read = it } != -1) {
                     output.write(buffer, 0, read)
                     downloaded += read
+                    val currentMb = downloaded / (1024 * 1024)
                     if (totalBytes > 0) {
                         val fraction = downloaded.toFloat() / totalBytes
                         onProgress(0.05f + fraction * 0.60f, "Downloading… ${downloaded / 1_048_576}MB / ${totalBytes / 1_048_576}MB")
+                        if (currentMb >= lastLogMb + 10) {
+                            lastLogMb = currentMb
+                            onLog(">>> [DOWNLOAD] Transfer progress: $currentMb MB / ${totalBytes / 1_048_576} MB (${(fraction * 100).toInt()}%)")
+                        }
                     }
                 }
             }
@@ -229,6 +269,7 @@ class RootfsBootstrapper(
         format: ArchiveFormat,
         stripComponents: Int,
         onProgress: suspend (Float, String) -> Unit,
+        onLog: suspend (String) -> Unit = { _ -> },
     ) = withContext(Dispatchers.IO) {
         val destCanonicalPath = destDir.canonicalPath
         val fileInputStream = BufferedInputStream(FileInputStream(tarball), 64 * 1024)
@@ -300,14 +341,16 @@ class RootfsBootstrapper(
                     }
                 }
 
-                if (entryCount % 500 == 0) {
+                if (entryCount % 350 == 0 || entryName.endsWith("/sh") || entryName.endsWith("/dpkg") || entryName.endsWith("/apt")) {
                     onProgress(0.70f + (entryCount % 10000) * 0.000018f, "Extracting ($entryCount files)…")
+                    onLog("extract: $entryName")
                 }
 
                 entry = tarIn.nextEntry
             }
         }
         log.info("[BOOTSTRAP_EXTRACT] Extracted $entryCount entries successfully to staging directory")
+        onLog(">>> [EXTRACT] Completed: $entryCount entries successfully unpacked.")
     }
 
     private fun stripPathComponents(path: String, count: Int): String {

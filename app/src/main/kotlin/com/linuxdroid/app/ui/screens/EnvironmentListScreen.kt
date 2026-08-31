@@ -1,9 +1,12 @@
 package com.linuxdroid.app.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -14,6 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -35,6 +42,7 @@ fun EnvironmentListScreen(
     val environments by viewModel.environments.collectAsState()
     val installProgress by viewModel.installProgress.collectAsState()
     val installStatusText by viewModel.installStatusText.collectAsState()
+    val installerLogs by viewModel.installerLogs.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var envToDelete by remember { mutableStateOf<Environment?>(null) }
@@ -95,11 +103,13 @@ fun EnvironmentListScreen(
                 items(environments, key = { it.id.value }) { env ->
                     val progress = installProgress[env.id.value]
                     val statusText = installStatusText[env.id.value]
+                    val logs = installerLogs[env.id.value] ?: emptyList()
 
                     EnvironmentCard(
                         environment = env,
                         progress = progress,
                         statusText = statusText,
+                        logs = logs,
                         onStartClick = { viewModel.startEnvironment(env) },
                         onStopClick = { viewModel.stopEnvironment(env) },
                         onRestartClick = { viewModel.restartEnvironment(env) },
@@ -254,6 +264,7 @@ private fun EnvironmentCard(
     environment: Environment,
     progress: Float?,
     statusText: String?,
+    logs: List<String> = emptyList(),
     onStartClick: () -> Unit,
     onStopClick: () -> Unit,
     onRestartClick: () -> Unit,
@@ -315,6 +326,11 @@ private fun EnvironmentCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Ubuntu installer style live terminal output
+                InstallerTerminalConsole(logs = logs)
             }
 
             environment.failureMessage?.let { error ->
@@ -729,4 +745,144 @@ private fun EnvironmentStorageDialog(
             }
         }
     )
+}
+
+@Composable
+private fun InstallerTerminalConsole(
+    logs: List<String>,
+    modifier: Modifier = Modifier,
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(logs.size) {
+        if (logs.isNotEmpty()) {
+            listState.animateScrollToItem(logs.size - 1)
+        }
+    }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp)),
+        color = Color(0xFF0F172A),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Column {
+            // Header toolbar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF1E293B))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(Color(0xFF22C55E), shape = RoundedCornerShape(4.dp))
+                    )
+                    Text(
+                        text = "INSTALLER TERMINAL OUTPUT",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFF334155),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = "${logs.size} lines",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(logs.joinToString("\n")))
+                        },
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            contentDescription = "Copy installer logs",
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
+            // Terminal log list
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 220.dp)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                if (logs.isEmpty()) {
+                    item {
+                        Text(
+                            text = ">>> Initializing bootstrap daemon...",
+                            color = Color(0xFF64748B),
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else {
+                    items(logs) { line ->
+                        val lineColor = when {
+                            line.contains("[PASS]") || line.contains("[OK]") || line.contains("[SUCCESS]") || line.contains("[READY]") -> Color(0xFF4ADE80)
+                            line.contains("[ERROR]") || line.contains("[FATAL]") || line.contains("[VALIDATE_FAIL]") -> Color(0xFFF87171)
+                            line.contains("[WARN]") -> Color(0xFFFBBF24)
+                            line.contains("[DOWNLOAD]") || line.contains("[EXTRACT]") || line.contains("[INIT]") || line.contains("[SOURCE]") -> Color(0xFF38BDF8)
+                            line.contains("[CONFIG]") || line.contains("[VERIFY]") || line.contains("[VALIDATE]") || line.contains("[PROMOTE]") -> Color(0xFFFDE047)
+                            line.startsWith("extract:") -> Color(0xFF94A3B8)
+                            else -> Color(0xFFE2E8F0)
+                        }
+
+                        Text(
+                            text = line,
+                            color = lineColor,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp
+                        )
+                    }
+
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "▋",
+                                color = Color(0xFF4ADE80),
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

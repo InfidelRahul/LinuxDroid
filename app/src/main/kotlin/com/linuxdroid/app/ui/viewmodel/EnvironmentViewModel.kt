@@ -40,6 +40,9 @@ class EnvironmentViewModel @Inject constructor(
     private val _installStatusText = MutableStateFlow<Map<String, String>>(emptyMap())
     val installStatusText: StateFlow<Map<String, String>> = _installStatusText.asStateFlow()
 
+    private val _installerLogs = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val installerLogs: StateFlow<Map<String, List<String>>> = _installerLogs.asStateFlow()
+
     private val _errorMessage = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
 
@@ -96,10 +99,21 @@ class EnvironmentViewModel @Inject constructor(
                     failureMessage = null,
                 )
 
-                bootstrapper.bootstrapRootfs(environment) { progress, status ->
-                    _installProgress.update { it + (envId to progress) }
-                    _installStatusText.update { it + (envId to status) }
-                }
+                _installerLogs.update { it + (envId to listOf(">>> Starting ${environment.distribution.displayName} rootfs installation...")) }
+
+                bootstrapper.bootstrapRootfs(
+                    environment = environment,
+                    onProgress = { progress, status ->
+                        _installProgress.update { it + (envId to progress) }
+                        _installStatusText.update { it + (envId to status) }
+                    },
+                    onLog = { line ->
+                        _installerLogs.update { map ->
+                            val current = map[envId] ?: emptyList()
+                            map + (envId to (current + line).takeLast(500))
+                        }
+                    }
+                )
 
                 // Verify and update to READY
                 dao.updateState(
