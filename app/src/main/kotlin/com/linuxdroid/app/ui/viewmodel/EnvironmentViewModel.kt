@@ -206,6 +206,24 @@ class EnvironmentViewModel @Inject constructor(
             val envId = environment.id.value
             try {
                 log.info("Restarting environment $envId")
+                runtimeBackend.stop(environment)
+                runtimeBackend.initialize(environment)
+
+                if (environment.state == EnvironmentState.FAILED) {
+                    dao.updateState(
+                        id = envId,
+                        state = EnvironmentState.RECOVERING.name,
+                        timestamp = System.currentTimeMillis(),
+                        failureMessage = null,
+                    )
+                    dao.updateState(
+                        id = envId,
+                        state = EnvironmentState.READY.name,
+                        timestamp = System.currentTimeMillis(),
+                        failureMessage = null,
+                    )
+                }
+
                 dao.updateState(
                     id = envId,
                     state = EnvironmentState.STARTING.name,
@@ -213,9 +231,12 @@ class EnvironmentViewModel @Inject constructor(
                     failureMessage = null,
                 )
 
-                runtimeBackend.stop(environment)
-                runtimeBackend.initialize(environment)
-                runtimeBackend.start(environment)
+                val readyEnv = if (environment.state == EnvironmentState.FAILED) {
+                    environment.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+                } else {
+                    environment
+                }
+                runtimeBackend.start(readyEnv)
 
                 dao.updateState(
                     id = envId,

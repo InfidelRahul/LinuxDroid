@@ -79,9 +79,26 @@ class TerminalViewModel @Inject constructor(
                 // Ensure runtime backend is prepared and started
                 if (env.state != EnvironmentState.RUNNING) {
                     terminalBuffer.append("Starting Linux runtime…\r\n".toByteArray(), "Starting Linux runtime…\r\n".length)
-                    runtimeBackend.prepare(env)
-                    runtimeBackend.initialize(env)
-                    runtimeBackend.start(env)
+                    val readyEnv = if (env.state == EnvironmentState.FAILED) {
+                        dao.updateState(
+                            id = env.id.value,
+                            state = EnvironmentState.RECOVERING.name,
+                            timestamp = System.currentTimeMillis(),
+                            failureMessage = null,
+                        )
+                        dao.updateState(
+                            id = env.id.value,
+                            state = EnvironmentState.READY.name,
+                            timestamp = System.currentTimeMillis(),
+                            failureMessage = null,
+                        )
+                        env.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+                    } else {
+                        env
+                    }
+                    runtimeBackend.prepare(readyEnv)
+                    runtimeBackend.initialize(readyEnv)
+                    runtimeBackend.start(readyEnv)
                     dao.updateState(
                         id = env.id.value,
                         state = EnvironmentState.RUNNING.name,

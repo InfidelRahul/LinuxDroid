@@ -153,7 +153,12 @@ class ProotRuntimeBackend(
     override suspend fun restart(environment: Environment) {
         stop(environment)
         initialize(environment)
-        start(environment)
+        val readyEnv = if (environment.state == EnvironmentState.FAILED) {
+            environment.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+        } else {
+            environment
+        }
+        start(readyEnv)
     }
 
     suspend fun executeWithSpec(

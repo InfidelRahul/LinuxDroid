@@ -49,19 +49,8 @@ class RuntimeLauncher(
             .redirectErrorStream(false)
 
         val env = processBuilder.environment()
-        // Sanitize environment: clear Android-specific host variables that interfere with Linux ELF execution
-        env.remove("LD_PRELOAD")
-        env.remove("LD_LIBRARY_PATH")
-        env.remove("BOOTCLASSPATH")
-        env.remove("DEX2OATBOOTCLASSPATH")
-        env.remove("SYSTEMSERVERCLASSPATH")
-        env.remove("ANDROID_ROOT")
-        env.remove("ANDROID_DATA")
-        env.remove("ANDROID_STORAGE")
-        env.remove("ANDROID_ART_ROOT")
-        env.remove("ANDROID_I18N_ROOT")
-        env.remove("ANDROID_RUNTIME_ROOT")
-        env.remove("ANDROID_TZDATA_ROOT")
+        // Sanitize environment: isolate from Android host process environment completely
+        env.clear()
 
         env["PROOT_TMP_DIR"] = tmpDir.absolutePath
         if (loader?.exists() == true) {
@@ -75,7 +64,7 @@ class RuntimeLauncher(
         // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
         // BPF filter killing modern glibc/musl dynamic linker syscalls with
         // SIGSYS (signal 31). Overridable by an explicitly provided env var.
-        if (!env.containsKey("PROOT_NO_SECCOMP")) {
+        if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
             env["PROOT_NO_SECCOMP"] = "1"
         }
         spec.environmentVariables.forEach { (k, v) ->
