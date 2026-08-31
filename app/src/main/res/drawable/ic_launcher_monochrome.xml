@@ -7,59 +7,49 @@
 
     <!-- Android Antennae -->
     <path
-        android:strokeColor="#38BDF8"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="3.5"
         android:strokeLineCap="round"
         android:pathData="M43,32 L36,23" />
     <path
-        android:strokeColor="#38BDF8"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="3.5"
         android:strokeLineCap="round"
         android:pathData="M65,32 L72,23" />
 
     <!-- Tux / Android Fusion Silhouette Body -->
     <path
-        android:fillColor="#1E293B"
-        android:strokeColor="#38BDF8"
-        android:strokeWidth="2.5"
-        android:strokeLineJoin="round"
+        android:fillColor="#FFFFFF"
         android:pathData="M34,45 C34,33.5 43,28 54,28 C65,28 74,33.5 74,45 L74,70 C74,77.5 67.5,82 59,82 L49,82 C40.5,82 34,77.5 34,70 Z" />
 
-    <!-- Tux Inner Belly Mask -->
+    <!-- Cutouts for Monochromatic Theme -->
+    <!-- Belly Cutout -->
     <path
-        android:fillColor="#0F172A"
-        android:strokeColor="#334155"
-        android:strokeWidth="1"
+        android:fillColor="#000000"
         android:pathData="M40,50 C40,42 46,38 54,38 C62,38 68,42 68,50 L68,69 C68,74.5 63,77.5 54,77.5 C45,77.5 40,74.5 40,69 Z" />
 
-    <!-- Stylized Eyes -->
+    <!-- Eyes (Solid White in Dark Belly) -->
     <path
-        android:fillColor="#38BDF8"
+        android:fillColor="#FFFFFF"
         android:pathData="M46,42 A2.5,2.5 0 1,1 46,41.99 Z" />
     <path
-        android:fillColor="#38BDF8"
+        android:fillColor="#FFFFFF"
         android:pathData="M62,42 A2.5,2.5 0 1,1 62,41.99 Z" />
 
-    <!-- Minimal Geometric Beak -->
+    <!-- Beak (Solid White) -->
     <path
-        android:fillColor="#FBBF24"
-        android:strokeColor="#F59E0B"
-        android:strokeWidth="0.8"
-        android:strokeLineJoin="round"
+        android:fillColor="#FFFFFF"
         android:pathData="M49.5,47.5 L58.5,47.5 L54,54 Z" />
 
-    <!-- Linux Terminal Prompt '>_' -->
-    <!-- Chevron '>' -->
+    <!-- Terminal Prompt '>_' in Belly -->
     <path
-        android:strokeColor="#34D399"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="2.8"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:pathData="M45,61.5 L51.5,66 L45,70.5" />
-
-    <!-- Underscore '_' -->
     <path
-        android:strokeColor="#34D399"
+        android:strokeColor="#FFFFFF"
         android:strokeWidth="2.8"
         android:strokeLineCap="round"
         android:pathData="M55.5,70.5 L63,70.5" />
