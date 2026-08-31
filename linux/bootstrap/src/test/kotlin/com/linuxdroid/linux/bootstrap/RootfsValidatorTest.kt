@@ -102,7 +102,7 @@ class RootfsValidatorTest {
         Files.createSymbolicLink(binSh.toPath(), Paths.get("/usr/bin/bash"))
 
         // Apt sources
-        File(rootfsDir, "etc/apt/sources.list").writeText("deb http://deb.debian.org/debian bookworm main\n")
+        File(rootfsDir, "etc/apt/sources.list").writeText("deb http://deb.debian.org/debian trixie main\n")
     }
 
     @Test

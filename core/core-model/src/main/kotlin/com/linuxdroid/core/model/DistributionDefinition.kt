@@ -76,20 +76,20 @@ object DistributionCatalog {
         return when (distribution) {
             Distribution.DEBIAN -> {
                 DistributionDefinition(
-                    id = "debian-bookworm-$archSuffix",
-                    name = "Debian 12 Bookworm (${architecture.linuxArch} Minimal)",
+                    id = "debian-trixie-$archSuffix",
+                    name = "Debian 13 Trixie (${architecture.linuxArch} Minimal)",
                     distribution = Distribution.DEBIAN,
                     architecture = architecture,
-                    release = "bookworm",
+                    release = "trixie",
                     variant = "minimal",
                     source = DistributionSource(
                         url = if (architecture == Architecture.ARM64) {
-                            "https://images.linuxcontainers.org/images/debian/bookworm/arm64/default/20260831_05:24/rootfs.tar.xz"
+                            "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260831_05:24/rootfs.tar.xz"
                         } else {
-                            "https://images.linuxcontainers.org/images/debian/bookworm/amd64/default/20260831_05:24/rootfs.tar.xz"
+                            "https://images.linuxcontainers.org/images/debian/trixie/amd64/default/20260831_05:24/rootfs.tar.xz"
                         },
                         expectedChecksum = if (architecture == Architecture.ARM64) {
-                            "30afba54fc918c976f2390b75d61504905826844c6fa3c88b16ff7d11bf1a7a3"
+                            "1767187c73bf4f84376d2a48741efdf6bd2ca6c22295c1f1ab5934003de0cab4"
                         } else {
                             null
                         },
@@ -98,13 +98,13 @@ object DistributionCatalog {
                         stripComponents = 0,
                     ),
                     aptSources = """
-                        deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
-                        deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
-                        deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
                     """.trimIndent() + "\n",
                     manifest = DistributionManifest(
-                        version = "12.0",
-                        release = "bookworm",
+                        version = "13.0",
+                        release = "trixie",
                         variant = "minimal",
                         defaultShell = "/bin/bash",
                     ),
