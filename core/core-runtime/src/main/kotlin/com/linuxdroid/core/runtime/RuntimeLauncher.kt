@@ -61,6 +61,9 @@ class RuntimeLauncher(
             File(targetLog).parentFile?.mkdirs()
             env["PROOT_LOG_FILE"] = targetLog
         }
+        if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
+            env["PROOT_VERBOSE"] = "9"
+        }
         // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
         // BPF filter killing modern glibc/musl dynamic linker syscalls with
         // SIGSYS (signal 31). Overridable by an explicitly provided env var.
@@ -102,6 +105,9 @@ class RuntimeLauncher(
             }
             if (targetLog != null) {
                 add("PROOT_LOG_FILE=$targetLog")
+            }
+            if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
+                add("PROOT_VERBOSE=9")
             }
             if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
                 add("PROOT_NO_SECCOMP=1")

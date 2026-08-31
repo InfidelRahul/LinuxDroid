@@ -146,6 +146,16 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideRuntimeLogExporter(
+        storage: EnvironmentStorage,
+        diagnosticsManager: DiagnosticsManager,
+    ): com.linuxdroid.core.diagnostics.RuntimeLogExporter = com.linuxdroid.core.diagnostics.RuntimeLogExporter(
+        storage = storage,
+        diagnosticsManager = diagnosticsManager,
+    )
+
+    @Provides
+    @Singleton
     fun provideRootfsBootstrapper(
         @ApplicationContext context: Context,
         storage: EnvironmentStorage,

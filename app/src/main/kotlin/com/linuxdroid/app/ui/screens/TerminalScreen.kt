@@ -26,6 +26,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.SpanStyle
@@ -48,6 +49,7 @@ fun TerminalScreen(
     navController: NavController,
     viewModel: TerminalViewModel = hiltViewModel(),
 ) {
+    val context = LocalContext.current
     val environment by viewModel.environment.collectAsState()
     val lines by viewModel.lines.collectAsState()
     val isShellActive by viewModel.isShellActive.collectAsState()
@@ -109,6 +111,9 @@ fun TerminalScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.exportLogs(context) }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export Runtime Logs")
+                    }
                     IconButton(onClick = { viewModel.clear() }) {
                         Icon(Icons.Default.Clear, contentDescription = "Clear Terminal")
                     }
@@ -138,6 +143,48 @@ fun TerminalScreen(
                     keyboardController?.show()
                 }
         ) {
+            // Disconnected / Exit status and quick export banner
+            if (!isShellActive && !isStarting) {
+                Surface(
+                    color = Color(0xFF1E293B),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (shellExitCode != null && shellExitCode != 0) "Session exited (code $shellExitCode)" else "Session inactive",
+                            color = Color(0xFFF87171),
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = { viewModel.exportLogs(context) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = "Export Logs", modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Export Log", fontSize = 11.sp)
+                            }
+                            Button(
+                                onClick = { viewModel.restartShell() },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Restart", modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Restart", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Quick command shortcut chips
             Row(
                 modifier = Modifier

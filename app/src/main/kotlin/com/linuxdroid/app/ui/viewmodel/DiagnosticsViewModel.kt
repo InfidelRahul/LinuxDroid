@@ -1,10 +1,12 @@
 package com.linuxdroid.app.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linuxdroid.core.database.EnvironmentMapper
 import com.linuxdroid.core.database.dao.EnvironmentDao
 import com.linuxdroid.core.diagnostics.DiagnosticsManager
+import com.linuxdroid.core.diagnostics.RuntimeLogExporter
 import com.linuxdroid.core.model.DiagnosticsReport
 import com.linuxdroid.core.model.Environment
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     private val diagnosticsManager: DiagnosticsManager,
+    private val logExporter: RuntimeLogExporter,
     private val dao: EnvironmentDao,
 ) : ViewModel() {
 
@@ -28,6 +31,9 @@ class DiagnosticsViewModel @Inject constructor(
 
     private val _report = MutableStateFlow<DiagnosticsReport?>(null)
     val report: StateFlow<DiagnosticsReport?> = _report.asStateFlow()
+
+    private val _detailedLogs = MutableStateFlow<String?>(null)
+    val detailedLogs: StateFlow<String?> = _detailedLogs.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -58,11 +64,23 @@ class DiagnosticsViewModel @Inject constructor(
                     val env = EnvironmentMapper.toDomain(entity)
                     val generatedReport = diagnosticsManager.generateReport(env)
                     _report.value = generatedReport
+                    val logs = logExporter.generateDetailedLogReport(env)
+                    _detailedLogs.value = logs
                 }
             } finally {
                 _isLoading.value = false
             }
         }
     }
-}
 
+    fun exportLogs(context: Context) {
+        val envId = _selectedEnvironmentId.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val entity = dao.getById(envId) ?: return@launch
+            val env = EnvironmentMapper.toDomain(entity)
+            val shareIntent = logExporter.createShareIntent(context, env)
+            shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(shareIntent)
+        }
+    }
+}

@@ -1,5 +1,6 @@
 package com.linuxdroid.app.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,6 +28,7 @@ class TerminalViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val dao: EnvironmentDao,
     private val runtimeBackend: RuntimeBackend,
+    private val logExporter: com.linuxdroid.core.diagnostics.RuntimeLogExporter,
 ) : ViewModel() {
 
     private val log = LinuxDroidLogger(LogSubsystem.APPLICATION)
@@ -263,6 +265,18 @@ class TerminalViewModel @Inject constructor(
         ptySession?.close()
         ptySession = null
         _isShellActive.value = false
+    }
+
+    /**
+     * Exports and shares runtime diagnostic logs for this environment.
+     */
+    fun exportLogs(context: Context) {
+        val env = environment.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val shareIntent = logExporter.createShareIntent(context, env)
+            shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(shareIntent)
+        }
     }
 
     override fun onCleared() {

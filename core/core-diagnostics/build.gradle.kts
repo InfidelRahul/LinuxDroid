@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":core:core-audio"))
     implementation(project(":core:core-network"))
     implementation(project(":native:bridge"))
+    implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

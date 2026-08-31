@@ -51,6 +51,9 @@ class EnvironmentStorage(
     /** Returns the console log file for runtime diagnostics. */
     fun consoleLogFile(id: EnvironmentId): File = File(logsDir(id), "console.log")
 
+    /** Returns the PRoot internal log file for runtime diagnostics. */
+    fun prootLogFile(id: EnvironmentId): File = File(logsDir(id), "proot.log")
+
     /**
      * Creates the directory structure for a new environment.
      * Does NOT create or touch rootfs/.
