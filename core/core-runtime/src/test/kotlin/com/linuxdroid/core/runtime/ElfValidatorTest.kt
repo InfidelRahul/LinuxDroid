@@ -52,6 +52,50 @@ class ElfValidatorTest {
     }
 
     @Test
+    fun `readElfInfo parses PT_INTERP and extracts dynamic interpreter`() {
+        val elfFile = tempFolder.newFile("test_dynamic_bash")
+        val interpString = "/lib/ld-linux-aarch64.so.1"
+        val interpBytes = (interpString + "\u0000").toByteArray(Charsets.UTF_8)
+
+        FileOutputStream(elfFile).use { fos ->
+            val header = ByteArray(64)
+            header[0] = 0x7F.toByte()
+            header[1] = 'E'.code.toByte()
+            header[2] = 'L'.code.toByte()
+            header[3] = 'F'.code.toByte()
+            header[4] = 0x02 // 64-bit
+            header[5] = 0x01 // little-endian
+            header[6] = 0x01
+            header[16] = 0x03 // ET_DYN
+            header[18] = 0xB7.toByte() // EM_AARCH64
+            // e_phoff = 64
+            header[32] = 64
+            // e_phentsize = 56
+            header[54] = 56
+            // e_phnum = 1
+            header[56] = 1
+
+            fos.write(header)
+
+            // Phdr (56 bytes)
+            val phdr = ByteArray(56)
+            phdr[0] = 3 // PT_INTERP
+            // p_offset = 120
+            phdr[8] = 120
+            // p_filesz
+            phdr[32] = interpBytes.size.toByte()
+
+            fos.write(phdr)
+            fos.write(interpBytes)
+        }
+
+        val elfInfo = ElfValidator.readElfInfo(elfFile, "arm64-v8a")
+        assertThat(elfInfo.isValid).isTrue()
+        assertThat(elfInfo.interpreter).isEqualTo(interpString)
+        assertThat(ElfValidator.readInterpreter(elfFile)).isEqualTo(interpString)
+    }
+
+    @Test
     fun `validateElf detects ABI mismatch`() {
         val elfFile = tempFolder.newFile("test_x86_64.so")
         FileOutputStream(elfFile).use { fos ->

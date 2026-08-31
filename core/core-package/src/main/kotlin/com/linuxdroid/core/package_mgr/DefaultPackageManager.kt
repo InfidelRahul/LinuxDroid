@@ -27,7 +27,7 @@ class DefaultPackageManager(
 
         log.info("Installing package '$sanitizedPkg' in ${environment.id}")
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-get", "install", "-y", sanitizedPkg)
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-get", "install", "-y", sanitizedPkg)
             Distribution.ARCH_LINUX -> listOf("pacman", "-S", "--noconfirm", sanitizedPkg)
             Distribution.ALPINE -> listOf("apk", "add", sanitizedPkg)
         }
@@ -50,7 +50,7 @@ class DefaultPackageManager(
 
         log.info("Removing package '$sanitizedPkg' from ${environment.id}")
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-get", "remove", "-y", sanitizedPkg)
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-get", "remove", "-y", sanitizedPkg)
             Distribution.ARCH_LINUX -> listOf("pacman", "-R", "--noconfirm", sanitizedPkg)
             Distribution.ALPINE -> listOf("apk", "del", sanitizedPkg)
         }
@@ -63,7 +63,7 @@ class DefaultPackageManager(
     override suspend fun update(environment: Environment): Boolean = withContext(Dispatchers.IO) {
         log.info("Updating package indices for ${environment.id}")
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-get", "update")
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-get", "update")
             Distribution.ARCH_LINUX -> listOf("pacman", "-Sy")
             Distribution.ALPINE -> listOf("apk", "update")
         }
@@ -79,7 +79,7 @@ class DefaultPackageManager(
 
         log.info("Searching packages with query '$sanitizedQuery' in ${environment.id}")
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-cache", "search", sanitizedQuery)
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-cache", "search", sanitizedQuery)
             Distribution.ARCH_LINUX -> listOf("pacman", "-Ss", sanitizedQuery)
             Distribution.ALPINE -> listOf("apk", "search", "-v", sanitizedQuery)
         }
@@ -103,7 +103,7 @@ class DefaultPackageManager(
             return@withContext false
         }
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("dpkg", "-s", sanitizedPkg)
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("dpkg", "-s", sanitizedPkg)
             Distribution.ARCH_LINUX -> listOf("pacman", "-Q", sanitizedPkg)
             Distribution.ALPINE -> listOf("apk", "info", "-e", sanitizedPkg)
         }
@@ -119,12 +119,12 @@ class DefaultPackageManager(
         onProgress("Installing lightweight Wayland compositor & terminal…")
         // Minimal GUI package set: cage/weston, xwayland, foot/xterm, dbus, libwayland-client0
         val packages = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "libwayland-client0")
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "libwayland-client0")
             Distribution.ARCH_LINUX -> listOf("cage", "xorg-xwayland", "foot", "xterm", "dbus", "wayland")
             Distribution.ALPINE -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "wayland")
         }
         val cmd = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU -> listOf("apt-get", "install", "-y", "--no-install-recommends") + packages
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-get", "install", "-y", "--no-install-recommends") + packages
             Distribution.ARCH_LINUX -> listOf("pacman", "-S", "--noconfirm") + packages
             Distribution.ALPINE -> listOf("apk", "add") + packages
         }
@@ -139,4 +139,3 @@ class DefaultPackageManager(
         success
     }
 }
-

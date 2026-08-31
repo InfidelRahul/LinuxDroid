@@ -556,13 +556,13 @@ private fun CreateEnvironmentDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(Distribution.DEBIAN, Distribution.UBUNTU).forEach { dist ->
+                        listOf(Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI).forEach { dist ->
                             FilterChip(
                                 selected = selectedDist == dist,
                                 onClick = {
                                     selectedDist = dist
-                                    if (name.isBlank() || name == "Debian Linux" || name == "Ubuntu Linux") {
-                                        name = "${dist.displayName} Linux"
+                                    if (name.isBlank() || name == "Debian Linux" || name == "Ubuntu Linux" || name == "Kali Linux Linux") {
+                                        name = if (dist == Distribution.KALI) "Kali Linux" else "${dist.displayName} Linux"
                                     }
                                 },
                                 label = { Text(dist.displayName) }

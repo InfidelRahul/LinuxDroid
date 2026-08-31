@@ -5,6 +5,7 @@ import com.google.common.truth.Truth.assertThat
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.model.*
 import io.mockk.coEvery
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
@@ -31,6 +32,7 @@ class RootfsBootstrapperTest {
         runBlocking {
             val context = mockk<Context>(relaxed = true)
             val storage = mockk<EnvironmentStorage>()
+            val validator = mockk<RootfsValidator>()
             val envId = EnvironmentId("test-env")
             val env = Environment(
                 metadata = EnvironmentMetadata(
@@ -43,9 +45,18 @@ class RootfsBootstrapperTest {
                 metadataPath = "/dummy",
             )
 
+            val dummyRootfs = tempFolder.newFolder("dummy-rootfs")
             coEvery { storage.verifyRootfs(envId) } returns true
+            every { storage.rootfsDir(envId) } returns dummyRootfs
+            every { validator.validate(dummyRootfs, Distribution.DEBIAN, Architecture.ARM64) } returns RootfsValidationReport(
+                isValid = true,
+                distribution = Distribution.DEBIAN,
+                architecture = Architecture.ARM64,
+                checks = emptyList(),
+                errors = emptyList(),
+            )
 
-            val bootstrapper = RootfsBootstrapper(context, storage)
+            val bootstrapper = RootfsBootstrapper(context, storage, validator = validator)
             var progressReported = false
             bootstrapper.bootstrapRootfs(env) { p, msg ->
                 if (p == 1.0f && msg.contains("already installed")) {
@@ -67,7 +78,7 @@ class RootfsBootstrapperTest {
             XZCompressorOutputStream(fos).use { xzos ->
                 TarArchiveOutputStream(xzos).use { tarOut ->
                     val binShData = "#!/bin/sh\necho hello".toByteArray()
-                    val entry = TarArchiveEntry("rootfs/bin/sh").apply {
+                    val entry = TarArchiveEntry("bin/sh").apply {
                         size = binShData.size.toLong()
                         mode = 0b111101101 // rwxr-xr-x (0755)
                     }
@@ -76,7 +87,7 @@ class RootfsBootstrapperTest {
                     tarOut.closeArchiveEntry()
 
                     val etcData = "nameserver 8.8.8.8\n".toByteArray()
-                    val etcEntry = TarArchiveEntry("rootfs/etc/resolv.conf").apply {
+                    val etcEntry = TarArchiveEntry("etc/resolv.conf").apply {
                         size = etcData.size.toLong()
                         mode = 0b110100100 // rw-r--r-- (0644)
                     }
@@ -93,14 +104,10 @@ class RootfsBootstrapperTest {
                 TarArchiveInputStream(xzin).use { tarIn ->
                     var entry = tarIn.nextEntry
                     while (entry != null) {
-                        val parts = entry.name.split("/").filter { it.isNotEmpty() }
-                        val strippedName = parts.drop(1).joinToString("/") // stripComponents = 1
-                        if (strippedName.isNotEmpty()) {
-                            val targetFile = File(extractDir, strippedName)
-                            targetFile.parentFile?.mkdirs()
-                            targetFile.outputStream().use { out ->
-                                tarIn.copyTo(out)
-                            }
+                        val targetFile = File(extractDir, entry.name)
+                        targetFile.parentFile?.mkdirs()
+                        targetFile.outputStream().use { out ->
+                            tarIn.copyTo(out)
                         }
                         entry = tarIn.nextEntry
                     }
@@ -117,4 +124,3 @@ class RootfsBootstrapperTest {
         assertThat(extractedEtc.readText()).isEqualTo("nameserver 8.8.8.8\n")
     }
 }
-

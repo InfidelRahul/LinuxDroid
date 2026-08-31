@@ -2,6 +2,7 @@ package com.linuxdroid.core.runtime
 
 import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -63,17 +64,19 @@ data class ElfInfo(
     val entryPoint: Long,
     val typeName: String,
     val detail: String,
+    val interpreter: String? = null,
 )
 
 /**
- * Helper to validate ELF headers for ARM64 and x86_64 binaries.
+ * Helper to validate ELF headers and program headers for ARM64 and x86_64 binaries.
  */
 object ElfValidator {
 
     private val ELF_MAGIC = byteArrayOf(0x7F.toByte(), 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
 
     /**
-     * Reads ELF headers and determines validity, ABI compatibility, and execution entry point.
+     * Reads ELF headers, extracts PT_INTERP dynamic interpreter (if present),
+     * and determines validity, ABI compatibility, and execution entry point.
      */
     fun readElfInfo(file: File, targetAbi: String): ElfInfo {
         if (!file.exists() || !file.isFile || file.length() < 4) {
@@ -90,9 +93,10 @@ object ElfValidator {
         }
 
         return try {
-            FileInputStream(file).use { fis ->
+            RandomAccessFile(file, "r").use { raf ->
                 val header = ByteArray(64)
-                val read = fis.read(header)
+                raf.seek(0)
+                val read = raf.read(header)
                 if (read < 4) {
                     return ElfInfo(false, false, false, 0, 0, 0L, "INVALID", "File too small (<4 bytes)")
                 }
@@ -116,6 +120,9 @@ object ElfValidator {
                 val elfType = byteBuffer.getShort(16).toInt() and 0xFFFF
                 val eMachine = byteBuffer.getShort(18).toInt() and 0xFFFF
                 val entryPoint = if (is64Bit) byteBuffer.getLong(24) else byteBuffer.getInt(24).toLong()
+                val phOff = if (is64Bit) byteBuffer.getLong(32) else (byteBuffer.getInt(28).toLong() and 0xFFFFFFFFL)
+                val phEntSize = byteBuffer.getShort(54).toInt() and 0xFFFF
+                val phNum = byteBuffer.getShort(56).toInt() and 0xFFFF
 
                 val expectedMachine = when (targetAbi) {
                     "arm64-v8a" -> 0xB7 // EM_AARCH64 (183)
@@ -136,12 +143,45 @@ object ElfValidator {
                     )
                 }
 
+                // Parse Program Headers to locate PT_INTERP (type 3)
+                var interpreterPath: String? = null
+                if (phOff > 0 && phNum > 0 && phEntSize >= (if (is64Bit) 56 else 32) && phOff < raf.length()) {
+                    val phdrBuffer = ByteArray(phEntSize)
+                    for (i in 0 until phNum) {
+                        val currentPhOffset = phOff + (i * phEntSize)
+                        if (currentPhOffset + phEntSize > raf.length()) break
+                        raf.seek(currentPhOffset)
+                        if (raf.read(phdrBuffer) != phEntSize) break
+
+                        val phBb = ByteBuffer.wrap(phdrBuffer).order(if (isLittleEndian) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN)
+                        val pType = phBb.getInt(0)
+                        if (pType == 3) { // PT_INTERP
+                            val interpOffset = if (is64Bit) phBb.getLong(8) else (phBb.getInt(4).toLong() and 0xFFFFFFFFL)
+                            val interpSize = if (is64Bit) phBb.getLong(32) else (phBb.getInt(16).toLong() and 0xFFFFFFFFL)
+
+                            if (interpOffset > 0 && interpSize in 1..4096 && interpOffset + interpSize <= raf.length()) {
+                                raf.seek(interpOffset)
+                                val interpBytes = ByteArray(interpSize.toInt())
+                                val readBytes = raf.read(interpBytes)
+                                if (readBytes > 0) {
+                                    val str = String(interpBytes, 0, readBytes, Charsets.UTF_8).trimEnd { it == '\u0000' }
+                                    if (str.isNotBlank()) {
+                                        interpreterPath = str
+                                    }
+                                }
+                            }
+                            break
+                        }
+                    }
+                }
+
                 val typeName = when (elfType) {
                     2 -> "STANDALONE EXECUTABLE (ET_EXEC)"
                     3 -> if (entryPoint != 0L) "PIE EXECUTABLE (ET_DYN)" else "SHARED LIBRARY (ET_DYN)"
                     else -> "ELF_TYPE_$elfType"
                 }
 
+                val interpDetail = if (interpreterPath != null) " [interp=$interpreterPath]" else ""
                 ElfInfo(
                     isValid = true,
                     is64Bit = is64Bit,
@@ -150,12 +190,21 @@ object ElfValidator {
                     type = elfType,
                     entryPoint = entryPoint,
                     typeName = typeName,
-                    detail = "Valid 64-bit $typeName for $targetAbi (entry=0x${java.lang.Long.toHexString(entryPoint)})",
+                    detail = "Valid 64-bit $typeName for $targetAbi (entry=0x${java.lang.Long.toHexString(entryPoint)})$interpDetail",
+                    interpreter = interpreterPath,
                 )
             }
         } catch (e: Exception) {
             ElfInfo(false, false, false, 0, 0, 0L, "ERROR", "ELF parse error: ${e.message}")
         }
+    }
+
+    /**
+     * Reads the PT_INTERP dynamic interpreter string from [file], or null if not a dynamic ELF.
+     */
+    fun readInterpreter(file: File): String? {
+        val info = readElfInfo(file, "arm64-v8a")
+        return info.interpreter
     }
 
     /**

@@ -108,6 +108,7 @@ enum class EnvironmentState {
 enum class Distribution(val displayName: String, val packageManager: String) {
     DEBIAN("Debian", "apt"),
     UBUNTU("Ubuntu", "apt"),
+    KALI("Kali Linux", "apt"),
     ARCH_LINUX("Arch Linux", "pacman"),
     ALPINE("Alpine Linux", "apk");
 
