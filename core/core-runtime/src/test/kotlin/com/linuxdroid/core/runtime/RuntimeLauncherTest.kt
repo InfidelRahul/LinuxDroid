@@ -124,4 +124,38 @@ class RuntimeLauncherTest {
 
         tmpDir.deleteRecursively()
     }
+
+    @Test
+    fun `launchProcess sanitizes host environment variables and strips LD_PRELOAD and LD_LIBRARY_PATH`() {
+        val sh = File("/bin/sh")
+        if (!sh.exists() || !sh.canExecute()) return
+
+        val builder = mockk<RuntimeCommandBuilder>()
+        val launcher = RuntimeLauncher(builder)
+        val tmpDir = createTempDir()
+        val spec = guestEchoSpec(sh).copy(
+            environmentVariables = mapOf(
+                "USER" to "root",
+                "LD_PRELOAD" to "/should/be/stripped/lib.so",
+                "LD_LIBRARY_PATH" to "/should/be/stripped/lib",
+            )
+        )
+
+        every { builder.build(spec, sh) } returns listOf(
+            sh.absolutePath,
+            "-c",
+            "echo PRELOAD=\${LD_PRELOAD:-unset} LIBPATH=\${LD_LIBRARY_PATH:-unset} USER=\$USER PROOT_NO_SECCOMP=\$PROOT_NO_SECCOMP"
+        )
+
+        val process = launcher.launchProcess(spec, sh, null, File(spec.rootfsPath), tmpDir)
+        val exit = process.waitFor()
+        val out = process.inputStream.bufferedReader().readText().trim()
+
+        assert(exit == 0)
+        assert(out == "PRELOAD=unset LIBPATH=unset USER=root PROOT_NO_SECCOMP=1") {
+            "Expected sanitized environment, got: '$out'"
+        }
+
+        tmpDir.deleteRecursively()
+    }
 }

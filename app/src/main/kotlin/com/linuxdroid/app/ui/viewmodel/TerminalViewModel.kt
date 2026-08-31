@@ -111,7 +111,7 @@ class TerminalViewModel @Inject constructor(
                 // Start continuous IO reader job
                 readJob = launch(Dispatchers.IO) {
                     val buffer = ByteArray(4096)
-                    while (isActive && session.isAlive()) {
+                    while (isActive) {
                         val bytesRead = session.read(buffer)
                         if (bytesRead > 0) {
                             terminalBuffer.append(buffer, bytesRead)

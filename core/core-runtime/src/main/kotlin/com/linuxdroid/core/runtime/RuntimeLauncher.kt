@@ -48,23 +48,40 @@ class RuntimeLauncher(
             .directory(rootfs)
             .redirectErrorStream(false)
 
-        processBuilder.environment()["PROOT_TMP_DIR"] = tmpDir.absolutePath
+        val env = processBuilder.environment()
+        // Sanitize environment: clear Android-specific host variables that interfere with Linux ELF execution
+        env.remove("LD_PRELOAD")
+        env.remove("LD_LIBRARY_PATH")
+        env.remove("BOOTCLASSPATH")
+        env.remove("DEX2OATBOOTCLASSPATH")
+        env.remove("SYSTEMSERVERCLASSPATH")
+        env.remove("ANDROID_ROOT")
+        env.remove("ANDROID_DATA")
+        env.remove("ANDROID_STORAGE")
+        env.remove("ANDROID_ART_ROOT")
+        env.remove("ANDROID_I18N_ROOT")
+        env.remove("ANDROID_RUNTIME_ROOT")
+        env.remove("ANDROID_TZDATA_ROOT")
+
+        env["PROOT_TMP_DIR"] = tmpDir.absolutePath
         if (loader?.exists() == true) {
-            processBuilder.environment()["PROOT_LOADER"] = loader.absolutePath
+            env["PROOT_LOADER"] = loader.absolutePath
         }
         val targetLog = logFile?.absolutePath ?: spec.logFilePath
         if (targetLog != null) {
             File(targetLog).parentFile?.mkdirs()
-            processBuilder.environment()["PROOT_LOG_FILE"] = targetLog
+            env["PROOT_LOG_FILE"] = targetLog
         }
         // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
         // BPF filter killing modern glibc/musl dynamic linker syscalls with
         // SIGSYS (signal 31). Overridable by an explicitly provided env var.
-        if (!processBuilder.environment().containsKey("PROOT_NO_SECCOMP")) {
-            processBuilder.environment()["PROOT_NO_SECCOMP"] = "1"
+        if (!env.containsKey("PROOT_NO_SECCOMP")) {
+            env["PROOT_NO_SECCOMP"] = "1"
         }
         spec.environmentVariables.forEach { (k, v) ->
-            processBuilder.environment()[k] = v
+            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH") {
+                env[k] = v
+            }
         }
 
         return processBuilder.start()
@@ -100,7 +117,11 @@ class RuntimeLauncher(
             if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
                 add("PROOT_NO_SECCOMP=1")
             }
-            spec.environmentVariables.forEach { (k, v) -> add("$k=$v") }
+            spec.environmentVariables.forEach { (k, v) ->
+                if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH") {
+                    add("$k=$v")
+                }
+            }
         }
 
         val outPidAndFd = IntArray(2)
