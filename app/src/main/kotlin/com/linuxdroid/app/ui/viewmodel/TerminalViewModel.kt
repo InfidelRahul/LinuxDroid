@@ -268,12 +268,16 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
-     * Exports and shares runtime diagnostic logs for this environment.
+     * Exports and shares runtime failure reports or diagnostic logs for this environment.
      */
-    fun exportLogs(context: Context) {
+    fun exportLogs(
+        context: Context,
+        exportType: com.linuxdroid.core.model.LogExportType = com.linuxdroid.core.model.LogExportType.FAILURE_REPORT_COMPACT,
+        asJson: Boolean = false,
+    ) {
         val env = environment.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val shareIntent = logExporter.createShareIntent(context, env)
+            val shareIntent = logExporter.createShareIntent(context, env, exportType, asJson)
             shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(shareIntent)
         }

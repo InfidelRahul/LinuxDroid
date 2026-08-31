@@ -9,6 +9,8 @@ import com.linuxdroid.core.diagnostics.DiagnosticsManager
 import com.linuxdroid.core.diagnostics.RuntimeLogExporter
 import com.linuxdroid.core.model.DiagnosticsReport
 import com.linuxdroid.core.model.Environment
+import com.linuxdroid.core.model.FailureReport
+import com.linuxdroid.core.model.LogExportType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -31,6 +33,9 @@ class DiagnosticsViewModel @Inject constructor(
 
     private val _report = MutableStateFlow<DiagnosticsReport?>(null)
     val report: StateFlow<DiagnosticsReport?> = _report.asStateFlow()
+
+    private val _failureReport = MutableStateFlow<FailureReport?>(null)
+    val failureReport: StateFlow<FailureReport?> = _failureReport.asStateFlow()
 
     private val _detailedLogs = MutableStateFlow<String?>(null)
     val detailedLogs: StateFlow<String?> = _detailedLogs.asStateFlow()
@@ -64,6 +69,8 @@ class DiagnosticsViewModel @Inject constructor(
                     val env = EnvironmentMapper.toDomain(entity)
                     val generatedReport = diagnosticsManager.generateReport(env)
                     _report.value = generatedReport
+                    val failure = logExporter.analyzeFailures(env)
+                    _failureReport.value = failure
                     val logs = logExporter.generateDetailedLogReport(env)
                     _detailedLogs.value = logs
                 }
@@ -73,14 +80,23 @@ class DiagnosticsViewModel @Inject constructor(
         }
     }
 
-    fun exportLogs(context: Context) {
+    fun exportLog(context: Context, exportType: LogExportType = LogExportType.FAILURE_REPORT_COMPACT, asJson: Boolean = false) {
         val envId = _selectedEnvironmentId.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             val entity = dao.getById(envId) ?: return@launch
             val env = EnvironmentMapper.toDomain(entity)
-            val shareIntent = logExporter.createShareIntent(context, env)
+            val shareIntent = logExporter.createShareIntent(context, env, exportType, asJson)
             shareIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(shareIntent)
+        }
+    }
+
+    fun getFailureReportText(asJson: Boolean = false): String {
+        val fail = _failureReport.value ?: return "No failures detected."
+        return if (asJson) {
+            com.linuxdroid.core.diagnostics.FailureReportExporter().buildJsonReport(fail, false)
+        } else {
+            com.linuxdroid.core.diagnostics.FailureReportExporter().buildPlainTextReport(fail, false)
         }
     }
 }

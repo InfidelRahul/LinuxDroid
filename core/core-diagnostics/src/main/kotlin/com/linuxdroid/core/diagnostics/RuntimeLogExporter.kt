@@ -7,15 +7,12 @@ import androidx.core.content.FileProvider
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
-import com.linuxdroid.core.model.Environment
-import com.linuxdroid.core.model.EnvironmentId
-import com.linuxdroid.core.runtime.ProotRuntimeBackend
+import com.linuxdroid.core.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,16 +20,106 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Collects, formats, and exports comprehensive runtime diagnostics and logs.
+ * Collects, analyzes, formats, and exports comprehensive runtime diagnostics,
+ * compact structured failure reports, and full raw log archives.
  */
 class RuntimeLogExporter(
     private val storage: EnvironmentStorage,
     private val diagnosticsManager: DiagnosticsManager,
+    private val detector: FailureLogDetector = FailureLogDetector(),
+    private val reportExporter: FailureReportExporter = FailureReportExporter(),
 ) {
     private val log = LinuxDroidLogger(LogSubsystem.DIAGNOSTICS)
 
     /**
-     * Builds a detailed human-readable Markdown/plain-text diagnostic report.
+     * Builds a structured [FailureReport] analyzing recent errors from proot.log and console.log.
+     */
+    suspend fun analyzeFailures(
+        environment: Environment,
+        contextBefore: Int = 20,
+        contextAfter: Int = 50,
+    ): FailureReport = withContext(Dispatchers.IO) {
+        val envId = environment.id
+        val prootLog = storage.prootLogFile(envId)
+        val consoleLog = storage.consoleLogFile(envId)
+
+        val logLines = mutableListOf<String>()
+        if (prootLog.exists()) {
+            logLines.addAll(prootLog.readLines().takeLast(3000))
+        }
+        if (consoleLog.exists()) {
+            logLines.addAll(consoleLog.readLines().takeLast(1500))
+        }
+
+        val detectedEvents = detector.detectFailures(logLines, environment, contextBefore, contextAfter)
+        val aggregated = detector.aggregateFailures(detectedEvents)
+        val chains = detector.correlateChains(detectedEvents)
+
+        val primaryCategory = detectedEvents.firstOrNull { it.category.isCritical }?.category
+            ?: detectedEvents.firstOrNull()?.category
+            ?: FailureCategory.UNKNOWN
+
+        val rootCause = when {
+            detectedEvents.any { it.category == FailureCategory.PTRACE_PEEKDATA } ->
+                "PTRACE_PEEKDATA memory read failure: Android Bionic ptrace ABI mismatch / memory fault."
+            detectedEvents.any { it.category == FailureCategory.SIGSYS } ->
+                "SIGSYS trapped: Seccomp filter denied a guest syscall (unsupported or blocked syscall)."
+            detectedEvents.any { it.category == FailureCategory.ENOSYS } ->
+                "ENOSYS returned: Executable interpreter / dynamic linker missing or unimplemented kernel syscall."
+            detectedEvents.any { it.category == FailureCategory.EFAULT } ->
+                "EFAULT memory fault: PRoot failed to access tracee memory address."
+            detectedEvents.any { it.category == FailureCategory.PROOT_STARTUP } ->
+                "PRoot native engine startup failed: binary missing, not executable, or platform denied execution."
+            detectedEvents.isEmpty() ->
+                "No active runtime failures detected in recent log streams."
+            else ->
+                detectedEvents.first().message
+        }
+
+        val envInfo = linkedMapOf(
+            "Device" to "${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})",
+            "Android" to "${Build.VERSION.RELEASE} (SDK API ${Build.VERSION.SDK_INT})",
+            "Kernel" to (System.getProperty("os.version") ?: "unknown"),
+            "Host Architecture" to (System.getProperty("os.arch") ?: "unknown"),
+            "Environment ID" to envId.value,
+            "Distribution" to environment.distribution.name,
+            "Architecture" to environment.architecture.name,
+            "State" to environment.state.name,
+            "Rootfs Path" to storage.rootfsDir(envId).absolutePath,
+        )
+
+        FailureReport(
+            reportId = "fail-${System.currentTimeMillis()}",
+            timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss z", Locale.US).format(Date()),
+            environmentInfo = envInfo,
+            primaryCategory = primaryCategory,
+            rootCauseSummary = rootCause,
+            totalFailures = detectedEvents.size,
+            uniqueSignaturesCount = aggregated.size,
+            causalChains = chains,
+            aggregatedFailures = aggregated,
+            rawContextIncluded = false,
+        )
+    }
+
+    /**
+     * Generates a compact or developer-level failure report string (plain-text or JSON).
+     */
+    suspend fun generateFailureReportString(
+        environment: Environment,
+        includeRawContext: Boolean = false,
+        asJson: Boolean = false,
+    ): String = withContext(Dispatchers.IO) {
+        val report = analyzeFailures(environment)
+        if (asJson) {
+            reportExporter.buildJsonReport(report, includeRawContext)
+        } else {
+            reportExporter.buildPlainTextReport(report, includeRawContext)
+        }
+    }
+
+    /**
+     * Builds a detailed human-readable Markdown/plain-text subsystem diagnostic report.
      */
     suspend fun generateDetailedLogReport(
         environment: Environment,
@@ -167,39 +254,110 @@ class RuntimeLogExporter(
     }
 
     /**
-     * Saves the consolidated diagnostic log report to a file on disk.
+     * Creates a ZIP archive containing all raw internal logs (console.log, proot.log, diagnostic report).
      */
-    suspend fun saveReportToFile(environment: Environment): File = withContext(Dispatchers.IO) {
-        val report = generateDetailedLogReport(environment)
+    suspend fun generateFullLogsArchive(environment: Environment): File = withContext(Dispatchers.IO) {
+        val envId = environment.id
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val file = File(storage.logsDir(environment.id), "linuxdroid_diagnostic_$timestamp.txt")
-        file.parentFile?.mkdirs()
-        file.writeText(report)
-        log.info("Saved diagnostic report to ${file.absolutePath}")
-        file
+        val zipFile = File(storage.logsDir(envId), "linuxdroid_full_logs_$timestamp.zip")
+        zipFile.parentFile?.mkdirs()
+
+        val filesToZip = mutableListOf<Pair<String, File>>()
+        val console = storage.consoleLogFile(envId)
+        if (console.exists()) filesToZip.add("console.log" to console)
+        val proot = storage.prootLogFile(envId)
+        if (proot.exists()) filesToZip.add("proot.log" to proot)
+
+        // Add plain text diagnostic summary
+        val diagReport = File(storage.logsDir(envId), "diagnostics_summary.txt").apply {
+            writeText(generateDetailedLogReport(environment))
+        }
+        filesToZip.add("diagnostics_summary.txt" to diagReport)
+
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            for ((name, file) in filesToZip) {
+                val entry = ZipEntry(name)
+                zos.putNextEntry(entry)
+                FileInputStream(file).use { fis -> fis.copyTo(zos) }
+                zos.closeEntry()
+            }
+        }
+
+        log.info("Created full logs archive at ${zipFile.absolutePath} (${zipFile.length()} bytes)")
+        zipFile
     }
 
     /**
-     * Creates an Android share Intent for the log file or plaintext report.
+     * Saves the requested export report to a file on disk.
      */
-    suspend fun createShareIntent(context: Context, environment: Environment): Intent = withContext(Dispatchers.IO) {
-        val file = saveReportToFile(environment)
+    suspend fun saveReportToFile(
+        environment: Environment,
+        exportType: LogExportType = LogExportType.FAILURE_REPORT_COMPACT,
+        asJson: Boolean = false,
+    ): File = withContext(Dispatchers.IO) {
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val logsDir = storage.logsDir(environment.id).apply { mkdirs() }
+
+        when (exportType) {
+            LogExportType.FAILURE_REPORT_COMPACT -> {
+                val ext = if (asJson) "json" else "txt"
+                val file = File(logsDir, "linuxdroid_failure_report_$timestamp.$ext")
+                val text = generateFailureReportString(environment, includeRawContext = false, asJson = asJson)
+                file.writeText(text)
+                file
+            }
+            LogExportType.FAILURE_REPORT_DEVELOPER -> {
+                val ext = if (asJson) "json" else "txt"
+                val file = File(logsDir, "linuxdroid_failure_context_$timestamp.$ext")
+                val text = generateFailureReportString(environment, includeRawContext = true, asJson = asJson)
+                file.writeText(text)
+                file
+            }
+            LogExportType.SYSTEM_DIAGNOSTICS -> {
+                val file = File(logsDir, "linuxdroid_diagnostics_$timestamp.txt")
+                file.writeText(generateDetailedLogReport(environment))
+                file
+            }
+            LogExportType.FULL_LOGS -> {
+                generateFullLogsArchive(environment)
+            }
+        }
+    }
+
+    /**
+     * Creates an Android share Intent for the requested export type.
+     */
+    suspend fun createShareIntent(
+        context: Context,
+        environment: Environment,
+        exportType: LogExportType = LogExportType.FAILURE_REPORT_COMPACT,
+        asJson: Boolean = false,
+    ): Intent = withContext(Dispatchers.IO) {
+        val file = saveReportToFile(environment, exportType, asJson)
         val authority = "${context.packageName}.fileprovider"
 
+        val mimeType = when {
+            file.name.endsWith(".zip") -> "application/zip"
+            file.name.endsWith(".json") -> "application/json"
+            else -> "text/plain"
+        }
+
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "LinuxDroid Runtime Log - ${environment.name} (${environment.id.value})")
-            putExtra(Intent.EXTRA_TEXT, "Attached LinuxDroid runtime diagnostic report for ${environment.name}.")
+            type = mimeType
+            putExtra(Intent.EXTRA_SUBJECT, "LinuxDroid ${exportType.displayName} - ${environment.name}")
+            putExtra(Intent.EXTRA_TEXT, "Attached LinuxDroid ${exportType.displayName} for ${environment.name}.")
             try {
                 val uri = FileProvider.getUriForFile(context, authority, file)
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (e: Exception) {
-                log.warn("FileProvider URI creation failed, falling back to plaintext in EXTRA_TEXT: ${e.message}")
-                putExtra(Intent.EXTRA_TEXT, file.readText())
+                log.warn("FileProvider URI creation failed: ${e.message}")
+                if (!file.name.endsWith(".zip")) {
+                    putExtra(Intent.EXTRA_TEXT, file.readText())
+                }
             }
         }
-        Intent.createChooser(sendIntent, "Share LinuxDroid Diagnostic Logs")
+        Intent.createChooser(sendIntent, "Share LinuxDroid ${exportType.displayName}")
     }
 
     private fun readTail(file: File, maxLines: Int): String {
@@ -215,4 +373,3 @@ class RuntimeLogExporter(
         }
     }
 }
-
