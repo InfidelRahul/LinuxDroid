@@ -152,7 +152,11 @@ tasks.register("verifyProotCurrency") {
                 val commitLine = text.lineSequence().firstOrNull { it.trim().startsWith("commit:", ignoreCase = true) }
                 if (commitLine != null) {
                     val manifestCommit = commitLine.substringAfter(":").trim()
-                    if (manifestCommit.isNotBlank() && !remoteCommit.startsWith(manifestCommit) && !manifestCommit.startsWith(remoteCommit.take(manifestCommit.length))) {
+                    val isValidRemote = manifestCommit.isNotBlank() && (remoteCommit.startsWith(manifestCommit) || manifestCommit.startsWith(remoteCommit.take(manifestCommit.length)))
+                    val isValidLocal = localProotDir != null && runProcess("git", "-C", localProotDir.absolutePath, "rev-parse", "HEAD").let { (code, out) ->
+                        code == 0 && (out.startsWith(manifestCommit) || manifestCommit.startsWith(out.take(manifestCommit.length)))
+                    }
+                    if (!isValidRemote && !isValidLocal) {
                         throw GradleException(
                             "Packaged PRoot runtime manifest at ${manifest.relativeTo(rootProject.projectDir).path} " +
                             "references commit '$manifestCommit', but latest upstream commit is '$remoteCommit'. " +
