@@ -4,13 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Deep Obsidian Slate Base -->
+    <!-- Deep Obsidian Slate Background -->
     <path
         android:fillColor="#080C14"
         android:pathData="M0,0h108v108h-108z" />
-
-    <!-- Subtle Ambient Inner Shadow -->
-    <path
-        android:fillColor="#0B1322"
-        android:pathData="M24,34 C24,25 25,24 34,24 L74,24 C83,24 84,25 84,34 L84,74 C84,83 83,84 74,84 L34,84 C25,84 24,83 24,74 Z" />
 </vector>

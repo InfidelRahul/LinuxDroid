@@ -5,58 +5,44 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Sleek Minimal Squircle Badge Outline -->
+    <!-- Linux OS Container Window Frame -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
+        android:strokeWidth="2.8"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M34,24 L74,24 C82,24 84,26 84,34 L84,74 C84,82 82,84 74,84 L34,84 C26,84 24,82 24,74 L24,34 C24,26 26,24 34,24 Z" />
+        android:pathData="M38,26 L70,26 C78,26 82,30 82,38 L82,70 C82,78 78,82 70,82 L38,82 C30,82 26,78 26,70 L26,38 C26,30 30,26 38,26 Z" />
 
-    <!-- Android Antennae -->
+    <!-- OS Header / Container Top Bar -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
+        android:strokeWidth="2.0"
         android:strokeLineCap="round"
-        android:pathData="M43,33 L37,26" />
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M65,33 L71,26" />
+        android:pathData="M26,39 L82,39" />
 
-    <!-- Tux-Droid Head Dome -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:pathData="M37,47 C37,37 44,33 54,33 C64,33 71,37 71,47" />
-
-    <!-- Minimal Eyes -->
+    <!-- Container Header Status Indicators -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M45.5,41.5 A2,2 0 1,1 45.5,41.49 Z" />
+        android:pathData="M34,32.5 A1.5,1.5 0 1,1 34,32.49 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M62.5,41.5 A2,2 0 1,1 62.5,41.49 Z" />
-
-    <!-- Minimal Geometric Beak -->
+        android:pathData="M40,32.5 A1.5,1.5 0 1,1 40,32.49 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M50,47 L58,47 L54,52 Z" />
+        android:pathData="M46,32.5 A1.5,1.5 0 1,1 46,32.49 Z" />
 
     <!-- Terminal Command Prompt Chevron '>' -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
+        android:strokeWidth="3.2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M43,62 L49,66 L43,70" />
+        android:pathData="M38,53 L47,60 L38,67" />
 
-    <!-- Terminal Prompt Cursor '_' -->
+    <!-- Linux Prompt Cursor '_' -->
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.5"
+        android:strokeWidth="3.2"
         android:strokeLineCap="round"
-        android:pathData="M54,70 L65,70" />
+        android:pathData="M54,67 L68,67" />
 </vector>
