@@ -112,7 +112,10 @@ tasks.register("verifyProotCurrency") {
                 val shortRemote = if (remoteCommit.length >= 7) remoteCommit.substring(0, 7) else remoteCommit
                 val shortLocal = if (localCommit.length >= 7) localCommit.substring(0, 7) else localCommit
 
-                if (localCommit != remoteCommit && !localCommit.startsWith(shortRemote) && !remoteCommit.startsWith(shortLocal)) {
+                val (isAncestorExit, _) = runProcess("git", "-C", localProotDir.absolutePath, "merge-base", "--is-ancestor", remoteCommit, localCommit)
+                val isLocalUpToDateOrAhead = isAncestorExit == 0 || localCommit == remoteCommit || localCommit.startsWith(shortRemote)
+
+                if (!isLocalUpToDateOrAhead) {
                     logger.lifecycle("[verifyProotCurrency] Local PRoot repository ($shortLocal) differs from remote ($shortRemote). Checking if clean to update...")
                     
                     // Check if working directory is clean
