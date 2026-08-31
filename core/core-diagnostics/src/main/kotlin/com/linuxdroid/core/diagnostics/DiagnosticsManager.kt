@@ -243,7 +243,7 @@ class DiagnosticsManager(
         return DiagnosticCheck(
             name = "Wayland",
             status = if (waylandRunning) DiagnosticStatus.OK else DiagnosticStatus.NOT_APPLICABLE,
-            detail = if (waylandRunning) "Compositor running (${session?.waylandSocket})" else "Standby (no active GUI session)",
+            detail = if (waylandRunning) "Compositor running (${session.waylandSocket})" else "Standby (no active GUI session)",
         )
     }
 
@@ -252,7 +252,7 @@ class DiagnosticsManager(
         return DiagnosticCheck(
             name = "XWayland",
             status = if (xwaylandRunning) DiagnosticStatus.OK else DiagnosticStatus.NOT_APPLICABLE,
-            detail = if (xwaylandRunning) "Running (${session?.display})" else "Standby",
+            detail = if (xwaylandRunning) "Running (${session.display})" else "Standby",
         )
     }
 

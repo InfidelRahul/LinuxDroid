@@ -35,7 +35,7 @@ abstract class LinuxDroidDatabase : RoomDatabase() {
                     LinuxDroidDatabase::class.java,
                     DATABASE_NAME,
                 )
-                    .fallbackToDestructiveMigration()
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
             }
