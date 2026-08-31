@@ -4,11 +4,13 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Deep Midnight Slate Base -->
     <path
-        android:fillColor="#0B0F19"
+        android:fillColor="#090D16"
         android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Subtle Ambient Inner Glow Squircle -->
     <path
         android:fillColor="#111827"
-        android:pathData="M18,18h72v72h-72z" />
+        android:pathData="M22,34 C22,25 25,22 34,22 L74,22 C83,22 86,25 86,34 L86,74 C86,83 83,86 74,86 L34,86 C25,86 22,83 22,74 Z" />
 </vector>
-
