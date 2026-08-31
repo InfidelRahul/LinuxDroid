@@ -11,18 +11,29 @@ import android.view.Surface
  */
 object NativeBridge {
 
-    init {
+    private val isLoaded: Boolean = try {
         System.loadLibrary("linuxdroid_bridge")
+        true
+    } catch (_: Throwable) {
+        false
     }
 
     // ─── System & Process ──────────────────────────────────────────────────────────
 
-    fun getBridgeVersion(): Int = nativeGetBridgeVersion()
-    fun isExecutable(path: String): Boolean = nativeIsExecutable(path)
-    fun setExecutable(path: String): Int = nativeSetExecutable(path)
-    fun getAbi(): String = nativeGetAbi()
-    fun sendSignal(pid: Int, signal: Int): Int = nativeSendSignal(pid, signal)
-    fun getAvailableMemoryBytes(): Long = nativeGetAvailableMemoryBytes()
+    fun getBridgeVersion(): Int = if (isLoaded) try { nativeGetBridgeVersion() } catch (_: UnsatisfiedLinkError) { 1 } else 1
+    fun isExecutable(path: String): Boolean = if (isLoaded) {
+        try { nativeIsExecutable(path) } catch (_: UnsatisfiedLinkError) { java.io.File(path).canExecute() }
+    } else {
+        java.io.File(path).canExecute()
+    }
+    fun setExecutable(path: String): Int = if (isLoaded) {
+        try { nativeSetExecutable(path) } catch (_: UnsatisfiedLinkError) { if (java.io.File(path).setExecutable(true, false)) 0 else -1 }
+    } else {
+        if (java.io.File(path).setExecutable(true, false)) 0 else -1
+    }
+    fun getAbi(): String = if (isLoaded) try { nativeGetAbi() } catch (_: UnsatisfiedLinkError) { System.getProperty("os.arch") ?: "unknown" } else (System.getProperty("os.arch") ?: "unknown")
+    fun sendSignal(pid: Int, signal: Int): Int = if (isLoaded) try { nativeSendSignal(pid, signal) } catch (_: UnsatisfiedLinkError) { -1 } else -1
+    fun getAvailableMemoryBytes(): Long = if (isLoaded) try { nativeGetAvailableMemoryBytes() } catch (_: UnsatisfiedLinkError) { Runtime.getRuntime().freeMemory() } else Runtime.getRuntime().freeMemory()
 
     // ─── PTY Subprocess ────────────────────────────────────────────────────────────
 

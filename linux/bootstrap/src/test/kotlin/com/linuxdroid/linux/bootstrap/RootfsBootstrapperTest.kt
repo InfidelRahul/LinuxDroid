@@ -123,4 +123,95 @@ class RootfsBootstrapperTest {
         assertThat(extractedEtc.exists()).isTrue()
         assertThat(extractedEtc.readText()).isEqualTo("nameserver 8.8.8.8\n")
     }
+
+    @Test
+    fun `configureStagingRootfs safely overwrites Debian dangling resolv_conf symlink`() {
+        val rootfsDir = tempFolder.newFolder("debian-staging-rootfs")
+        val etcDir = File(rootfsDir, "etc").apply { mkdirs() }
+        val resolvConf = File(etcDir, "resolv.conf")
+
+        // Simulate Debian rootfs where /etc/resolv.conf is a symlink to ../run/systemd/resolve/stub-resolv.conf
+        // and /run/systemd/resolve does not yet exist in staging
+        java.nio.file.Files.createSymbolicLink(
+            resolvConf.toPath(),
+            java.nio.file.Paths.get("../run/systemd/resolve/stub-resolv.conf")
+        )
+        assertThat(java.nio.file.Files.isSymbolicLink(resolvConf.toPath())).isTrue()
+        // Verify it is indeed dangling (target does not exist)
+        assertThat(resolvConf.exists()).isFalse()
+
+        // Call configureStagingRootfs directly
+        val context = mockk<Context>(relaxed = true)
+        val storage = mockk<EnvironmentStorage>()
+        val bootstrapper = RootfsBootstrapper(context, storage)
+
+        val debianDef = DistributionCatalog.getDefinition(Distribution.DEBIAN, Architecture.ARM64)
+        bootstrapper.configureStagingRootfs(rootfsDir, debianDef)
+
+        // Verify /etc/resolv.conf is now a regular readable file, NOT a dangling symlink
+        assertThat(java.nio.file.Files.isSymbolicLink(resolvConf.toPath())).isFalse()
+        assertThat(resolvConf.exists()).isTrue()
+        assertThat(resolvConf.readText()).contains("nameserver 8.8.8.8")
+
+        // Verify other configured files
+        val hostnameFile = File(rootfsDir, "etc/hostname")
+        assertThat(hostnameFile.exists()).isTrue()
+        assertThat(hostnameFile.readText()).contains("linuxdroid")
+
+        val aptSources = File(rootfsDir, "etc/apt/sources.list")
+        assertThat(aptSources.exists()).isTrue()
+        assertThat(aptSources.readText()).contains("debian")
+    }
+
+    @Test
+    fun `extractArchive properly extracts symlinks and regular files over symlinks`() {
+        val testTarXz = tempFolder.newFile("symlink_test.tar.xz")
+        val extractDir = tempFolder.newFolder("symlink_extracted")
+
+        // 1. Create a tar.xz containing a symlink and a regular file
+        FileOutputStream(testTarXz).use { fos ->
+            XZCompressorOutputStream(fos).use { xzos ->
+                TarArchiveOutputStream(xzos).use { tarOut ->
+                    // Symlink /bin/sh -> /usr/bin/bash
+                    val symlinkEntry = TarArchiveEntry("bin/sh", TarArchiveEntry.LF_SYMLINK).apply {
+                        linkName = "/usr/bin/bash"
+                    }
+                    tarOut.putArchiveEntry(symlinkEntry)
+                    tarOut.closeArchiveEntry()
+
+                    // Regular file /usr/bin/bash
+                    val bashData = "#!/bin/bash\necho bash".toByteArray()
+                    val bashEntry = TarArchiveEntry("usr/bin/bash").apply {
+                        size = bashData.size.toLong()
+                        mode = 0b111101101 // 0755
+                    }
+                    tarOut.putArchiveEntry(bashEntry)
+                    tarOut.write(bashData)
+                    tarOut.closeArchiveEntry()
+                }
+            }
+        }
+
+        // 2. Extract using extractArchive
+        val context = mockk<Context>(relaxed = true)
+        val storage = mockk<EnvironmentStorage>()
+        val bootstrapper = RootfsBootstrapper(context, storage)
+
+        runBlocking {
+            bootstrapper.extractArchive(
+                tarball = testTarXz,
+                destDir = extractDir,
+                format = ArchiveFormat.TAR_XZ,
+                stripComponents = 0,
+                onProgress = { _: Float, _: String -> }
+            )
+        }
+
+        val extractedSh = File(extractDir, "bin/sh")
+        val extractedBash = File(extractDir, "usr/bin/bash")
+
+        assertThat(java.nio.file.Files.isSymbolicLink(extractedSh.toPath())).isTrue()
+        assertThat(extractedBash.exists()).isTrue()
+        assertThat(extractedBash.canExecute()).isTrue()
+    }
 }

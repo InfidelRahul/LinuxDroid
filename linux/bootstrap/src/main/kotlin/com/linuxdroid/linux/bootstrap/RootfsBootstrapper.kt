@@ -223,7 +223,7 @@ class RootfsBootstrapper(
         }
     }
 
-    private suspend fun extractArchive(
+    internal suspend fun extractArchive(
         tarball: File,
         destDir: File,
         format: ArchiveFormat,
@@ -271,6 +271,11 @@ class RootfsBootstrapper(
                         }
                     } else {
                         targetFile.parentFile?.mkdirs()
+                        try {
+                            Files.deleteIfExists(targetFile.toPath())
+                        } catch (_: Exception) {
+                            targetFile.delete()
+                        }
                         targetFile.outputStream().use { out ->
                             var len: Int
                             while (tarIn.read(buffer).also { len = it } != -1) {
@@ -315,41 +320,61 @@ class RootfsBootstrapper(
         }
     }
 
-    private fun configureStagingRootfs(rootfsDir: File, definition: DistributionDefinition) {
+    internal fun configureStagingRootfs(rootfsDir: File, definition: DistributionDefinition) {
         // 1. DNS Configuration
-        File(rootfsDir, "etc/resolv.conf").apply {
-            parentFile?.mkdirs()
-            writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\nnameserver 1.1.1.1\n")
+        // In Debian and modern Linux rootfs distributions, /etc/resolv.conf may be extracted as a
+        // dangling symlink (e.g. pointing to ../run/systemd/resolve/stub-resolv.conf).
+        // Safely remove any pre-existing symlink or file before writing the static nameserver configuration
+        // so that writeText creates a clean, regular file without triggering ENOENT on dangling links.
+        val resolvConf = File(rootfsDir, "etc/resolv.conf")
+        resolvConf.parentFile?.mkdirs()
+        try {
+            Files.deleteIfExists(resolvConf.toPath())
+        } catch (_: Exception) {
+            resolvConf.delete()
         }
+        resolvConf.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\nnameserver 1.1.1.1\n")
 
         // 2. Hostname
-        File(rootfsDir, "etc/hostname").apply {
-            parentFile?.mkdirs()
-            writeText("linuxdroid\n")
+        val hostname = File(rootfsDir, "etc/hostname")
+        hostname.parentFile?.mkdirs()
+        try {
+            Files.deleteIfExists(hostname.toPath())
+        } catch (_: Exception) {
+            hostname.delete()
         }
+        hostname.writeText("linuxdroid\n")
 
         // 3. Environment Variables
-        File(rootfsDir, "etc/environment").apply {
-            parentFile?.mkdirs()
-            writeText(
-                """
-                WAYLAND_DISPLAY=wayland-0
-                XDG_RUNTIME_DIR=/tmp
-                DISPLAY=:0
-                GDK_BACKEND=wayland,x11
-                QT_QPA_PLATFORM=wayland;xcb
-                CLUTTER_BACKEND=wayland
-                SDL_VIDEODRIVER=wayland
-                """.trimIndent() + "\n"
-            )
+        val envFile = File(rootfsDir, "etc/environment")
+        envFile.parentFile?.mkdirs()
+        try {
+            Files.deleteIfExists(envFile.toPath())
+        } catch (_: Exception) {
+            envFile.delete()
         }
+        envFile.writeText(
+            """
+            WAYLAND_DISPLAY=wayland-0
+            XDG_RUNTIME_DIR=/tmp
+            DISPLAY=:0
+            GDK_BACKEND=wayland,x11
+            QT_QPA_PLATFORM=wayland;xcb
+            CLUTTER_BACKEND=wayland
+            SDL_VIDEODRIVER=wayland
+            """.trimIndent() + "\n"
+        )
 
         // 4. Distribution APT Sources Configuration
         if (definition.aptSources.isNotBlank()) {
-            File(rootfsDir, "etc/apt/sources.list").apply {
-                parentFile?.mkdirs()
-                writeText(definition.aptSources)
+            val sourcesFile = File(rootfsDir, "etc/apt/sources.list")
+            sourcesFile.parentFile?.mkdirs()
+            try {
+                Files.deleteIfExists(sourcesFile.toPath())
+            } catch (_: Exception) {
+                sourcesFile.delete()
             }
+            sourcesFile.writeText(definition.aptSources.trimIndent() + "\n")
         }
 
         // 5. Wayland Session Launcher script
