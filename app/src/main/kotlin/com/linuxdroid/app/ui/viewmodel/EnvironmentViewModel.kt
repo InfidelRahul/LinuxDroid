@@ -21,7 +21,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class EnvironmentViewModel @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val dao: EnvironmentDao,
     private val storage: EnvironmentStorage,
     private val runtimeBackend: RuntimeBackend,
