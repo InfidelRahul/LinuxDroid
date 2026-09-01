@@ -10,6 +10,11 @@ enum class FailureCategory {
     PTRACE_POKEDATA,
     PTRACE_FAILURE,
     SYSCALL_FAILURE,
+    EXPECTED_PROBE,
+    MISSING_ROOTFS_FILE,
+    BROKEN_PATH_TRANSLATION,
+    BROKEN_BIND,
+    NETWORK_CONFIGURATION,
     SECCOMP_FAILURE,
     SIGSYS,
     ENOSYS,
@@ -26,7 +31,17 @@ enum class FailureCategory {
     UNKNOWN;
 
     val isCritical: Boolean
-        get() = this in setOf(PROOT_STARTUP, EXECVE_FAILURE, PTRACE_PEEKDATA, PROCESS_CRASH, RUNTIME_FAILED, SIGSYS)
+        get() = this in setOf(
+            PROOT_STARTUP,
+            EXECVE_FAILURE,
+            PTRACE_PEEKDATA,
+            PROCESS_CRASH,
+            RUNTIME_FAILED,
+            SIGSYS,
+            MISSING_ROOTFS_FILE,
+            BROKEN_PATH_TRANSLATION,
+            BROKEN_BIND
+        )
 }
 
 /**
@@ -49,6 +64,7 @@ data class FailureEvent(
     val command: List<String> = emptyList(),
     val pid: Int? = null,
     val syscallNumber: Int? = null,
+    val rawSyscallNumber: Int? = null,
     val syscallName: String? = null,
     val errno: Int? = null,
     val errnoName: String? = null,
@@ -69,19 +85,25 @@ data class FailureEvent(
     val seccompSignal: Int? = null,
     val seccompCode: Int? = null,
     val seccompSyscall: Int? = null,
-    val dirfd: Int? = null,
+    val dirfd: Long? = null,
     val guestPath: String? = null,
     val hostPath: String? = null,
+    val flags: Long? = null,
+    val mode: Long? = null,
+    val socketInfo: String? = null,
+    val isExpectedProbe: Boolean = false,
+    val probeExplanation: String? = null,
     val contextBefore: List<String> = emptyList(),
     val contextAfter: List<String> = emptyList(),
 ) {
     val signature: String
         get() {
+            val pathSig = guestPath?.take(30) ?: socketInfo?.take(30) ?: ""
             val normMsg = message.replace(Regex("pid=\\d+"), "pid=*")
                 .replace(Regex("0x[0-9a-fA-F]+"), "0x*")
                 .replace(Regex("\\b\\d{4,}\\b"), "*")
                 .take(60)
-            return "${category.name}:${syscallName ?: "none"}:${errnoName ?: errno ?: "none"}:$source:$normMsg"
+            return "${category.name}:${syscallName ?: "none"}:${errnoName ?: errno ?: "none"}:$pathSig:$source:$normMsg"
         }
 }
 

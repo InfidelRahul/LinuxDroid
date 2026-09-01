@@ -55,9 +55,10 @@ class RuntimeLogExporter(
         val aggregated = detector.aggregateFailures(detectedEvents)
         val chains = detector.correlateChains(detectedEvents)
 
-        val primaryCategory = detectedEvents.firstOrNull { it.category.isCritical }?.category
-            ?: detectedEvents.firstOrNull()?.category
-            ?: FailureCategory.UNKNOWN
+        val nonProbeEvents = detectedEvents.filter { !it.isExpectedProbe }
+        val primaryCategory = nonProbeEvents.firstOrNull { it.category.isCritical }?.category
+            ?: nonProbeEvents.firstOrNull()?.category
+            ?: if (detectedEvents.isNotEmpty()) FailureCategory.EXPECTED_PROBE else FailureCategory.UNKNOWN
 
         val rootCause = when {
             detectedEvents.any { it.category == FailureCategory.PTRACE_PEEKDATA } ->
@@ -70,10 +71,14 @@ class RuntimeLogExporter(
                 "EFAULT memory fault: PRoot failed to access tracee memory address."
             detectedEvents.any { it.category == FailureCategory.PROOT_STARTUP } ->
                 "PRoot native engine startup failed: binary missing, not executable, or platform denied execution."
+            detectedEvents.any { it.category == FailureCategory.MISSING_ROOTFS_FILE } ->
+                "Missing essential rootfs dependency: ${detectedEvents.first { it.category == FailureCategory.MISSING_ROOTFS_FILE }.guestPath ?: "critical binary"}"
             detectedEvents.isEmpty() ->
                 "No active runtime failures detected in recent log streams."
+            nonProbeEvents.isEmpty() ->
+                "Nominal runtime state: only benign userspace probes detected (e.g. ld.so preload/cache, shell config, nscd fallback)."
             else ->
-                detectedEvents.first().message
+                nonProbeEvents.first().message
         }
 
         val envInfo = linkedMapOf(

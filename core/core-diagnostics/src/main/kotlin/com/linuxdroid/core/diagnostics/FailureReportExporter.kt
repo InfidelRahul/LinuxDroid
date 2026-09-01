@@ -55,11 +55,15 @@ class FailureReportExporter(
             report.causalChains.take(10).forEachIndexed { index, chain ->
                 sb.appendLine("Chain #${index + 1} (Correlation ID: ${chain.firstOrNull()?.correlationId ?: "unknown"}):")
                 chain.forEachIndexed { evIdx, ev ->
-                    val sysStr = ev.syscallName?.let { " syscall=$it (#${ev.syscallNumber})" } ?: ""
+                    val rawNum = ev.rawSyscallNumber?.let { " (raw=#$it)" } ?: ""
+                    val sysStr = ev.syscallName?.let { " syscall=$it (#${ev.syscallNumber}$rawNum)" } ?: ""
                     val errStr = ev.errnoName?.let { " errno=$it (#${ev.errno})" } ?: ""
+                    val pathStr = if (!ev.message.contains(ev.guestPath ?: "\u0000")) ev.guestPath?.let { " path='$it'" } ?: "" else ""
+                    val sockStr = if (!ev.message.contains(ev.socketInfo ?: "\u0000")) ev.socketInfo?.let { " socket='$it'" } ?: "" else ""
+                    val probeStr = if (ev.isExpectedProbe) " [PROBE: ${ev.probeExplanation ?: "benign"}]" else ""
                     val sigStr = ev.signalName?.let { " signal=$it (#${ev.signal})" } ?: ""
                     val addrStr = ev.rawAddress?.let { " addr=$it" } ?: ""
-                    sb.appendLine("  ${evIdx + 1}. [${ev.category.name}] ${ev.message}$sysStr$errStr$sigStr$addrStr")
+                    sb.appendLine("  ${evIdx + 1}. [${ev.category.name}] ${ev.message}$sysStr$errStr$pathStr$sockStr$probeStr$sigStr$addrStr")
                 }
                 sb.appendLine()
             }

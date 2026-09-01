@@ -114,20 +114,65 @@ class FailureLogDetectorTest {
 
     @Test
     fun testRichSyscallExitErrorParsing() {
-        val line = "[SYSCALL_EXIT_ERR] pid=1234: sysnum=216 (openat) result=-2 (errno=2), dirfd=-100, guest_path='/etc/ld.so.preload', host_path='/data/data/com.linuxdroid/rootfs/etc/ld.so.preload', orig_args=(0xffffff9c, 0x7ffffff120, 0x80000, 0x0)"
+        val line = "[SYSCALL_EXIT_ERR] pid=1234: sysnum=216 (raw=56, openat) result=-2 (errno=2), dirfd=-100, guest_path='/etc/ld.so.preload', host_path='/data/data/com.linuxdroid/rootfs/etc/ld.so.preload', flags=0x80000, mode=0x0, socket=''"
         val events = detector.detectFailures(listOf(line))
         assertEquals(1, events.size)
 
         val ev = events.first()
         assertEquals(1234, ev.pid)
         assertEquals(216, ev.syscallNumber)
+        assertEquals(56, ev.rawSyscallNumber)
         assertEquals("openat", ev.syscallName)
         assertEquals(2, ev.errno)
         assertEquals("ENOENT", ev.errnoName)
-        assertEquals(FailureCategory.ENOENT, ev.category)
-        assertEquals(-100, ev.dirfd)
+        assertEquals(FailureCategory.EXPECTED_PROBE, ev.category)
+        assertTrue(ev.isExpectedProbe)
+        assertEquals(-100L, ev.dirfd)
         assertEquals("/etc/ld.so.preload", ev.guestPath)
         assertEquals("/data/data/com.linuxdroid/rootfs/etc/ld.so.preload", ev.hostPath)
     }
-}
 
+    @Test
+    fun testMergingEnterAndExitPairs() {
+        val rawLogs = listOf(
+            "[SYSCALL_ENTER_ERR] pid=7360: sysnum=216 (raw=56, openat) status=-2 -> PR_void, dirfd=-100, guest_path='/etc/ld.so.preload', host_path='/rootfs/etc/ld.so.preload', flags=0x80000, mode=0x0, socket=''",
+            "[SYSCALL_EXIT_ERR] pid=7360: sysnum=216 (raw=56, openat) result=-2 (errno=2), dirfd=-100, guest_path='/etc/ld.so.preload', host_path='/rootfs/etc/ld.so.preload', flags=0x80000, mode=0x0, socket=''",
+            "[SYSCALL_ENTER_ERR] pid=7360: sysnum=43 (raw=203, connect) status=-2 -> PR_void, dirfd=3, guest_path='unix:/var/run/nscd/socket', host_path='', flags=0x0, mode=0x0, socket='unix:/var/run/nscd/socket'",
+            "[SYSCALL_EXIT_ERR] pid=7360: sysnum=43 (raw=203, connect) result=-2 (errno=2), dirfd=3, guest_path='unix:/var/run/nscd/socket', host_path='', flags=0x0, mode=0x0, socket='unix:/var/run/nscd/socket'"
+        )
+
+        val events = detector.detectFailures(rawLogs)
+        // 4 raw log lines (2 enter + 2 exit) should be merged into exactly 2 logical events
+        assertEquals(2, events.size)
+
+        val openatEv = events[0]
+        assertEquals(7360, openatEv.pid)
+        assertEquals("openat", openatEv.syscallName)
+        assertEquals(56, openatEv.rawSyscallNumber)
+        assertEquals(2, openatEv.errno)
+        assertEquals(FailureCategory.EXPECTED_PROBE, openatEv.category)
+        assertTrue(openatEv.isExpectedProbe)
+        assertEquals("/etc/ld.so.preload", openatEv.guestPath)
+
+        val connectEv = events[1]
+        assertEquals(7360, connectEv.pid)
+        assertEquals("connect", connectEv.syscallName)
+        assertEquals(203, connectEv.rawSyscallNumber)
+        assertEquals(2, connectEv.errno)
+        assertEquals(FailureCategory.EXPECTED_PROBE, connectEv.category)
+        assertTrue(connectEv.isExpectedProbe)
+        assertEquals("unix:/var/run/nscd/socket", connectEv.socketInfo)
+    }
+
+    @Test
+    fun testCriticalMissingFileCategorization() {
+        val line = "[SYSCALL_EXIT_ERR] pid=1234: sysnum=216 (raw=56, openat) result=-2 (errno=2), dirfd=-100, guest_path='/bin/sh', host_path='/rootfs/bin/sh', flags=0x0, mode=0x0, socket=''"
+        val events = detector.detectFailures(listOf(line))
+        assertEquals(1, events.size)
+
+        val ev = events.first()
+        assertEquals(FailureCategory.MISSING_ROOTFS_FILE, ev.category)
+        assertFalse(ev.isExpectedProbe)
+        assertTrue(ev.category.isCritical)
+    }
+}
