@@ -23,6 +23,9 @@ kotlin {
 dependencies {
     implementation(project(":core:core-model"))
     implementation(project(":core:core-logging"))
+    api(project(":core:core-gui"))
+    implementation(project(":core:core-host"))
+    implementation(project(":core:core-filesystem"))
     implementation(project(":native:bridge"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)

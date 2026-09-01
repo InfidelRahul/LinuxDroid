@@ -2,6 +2,7 @@ package com.linuxdroid.core.session
 
 import com.google.common.truth.Truth.assertThat
 import com.linuxdroid.core.filesystem.EnvironmentStorage
+import com.linuxdroid.core.gui.*
 import com.linuxdroid.core.model.*
 import com.linuxdroid.core.runtime.PtySession
 import com.linuxdroid.core.runtime.RuntimeManager
@@ -72,23 +73,79 @@ class SessionHierarchyTest {
     }
 
     @Test
-    fun `DesktopSession initializes subsystems and starts session script`() = runTest {
+    fun `DesktopSession reports RUNNING using the verified GUI runtime session`() = runTest {
         val sessionId = SessionId.generate()
-        val session = DesktopSession(sessionId, environment, runtimeManager, storage)
-
-        coEvery { runtimeManager.execute(any(), any()) } returns ProcessHandle(
-            handleId = "desktop-proc",
-            environmentId = environment.id,
+        val waylandSession = fakeWaylandSession(environment.id, sessionId, socketName = "wayland-3")
+        val guiRuntime = FakeGuiRuntime(
+            readyStatus = GuiRuntimeStatus(
+                state = GuiState.RUNNING,
+                session = waylandSession,
+                compositor = CompositorStatus(
+                    id = CompositorId.WESTON,
+                    state = GuiState.RUNNING,
+                    pid = 4242,
+                    waylandSocket = "wayland-3",
+                ),
+            ),
+        )
+        val session = DesktopSession(
             sessionId = sessionId,
-            command = listOf("/bin/sh"),
-            workingDirectory = "/home/user",
-            pid = 9999,
-            state = ProcessState.RUNNING,
+            environment = environment,
+            runtimeManager = runtimeManager,
+            storage = storage,
+            guiRuntimeFactory = { _, _, _ -> guiRuntime },
         )
 
         val activeSession = session.start()
+
         assertThat(activeSession.state).isEqualTo(SessionState.RUNNING)
-        assertThat(activeSession.runtimePid).isEqualTo(9999)
-        assertThat(activeSession.waylandSocket).isEqualTo("wayland-0")
+        assertThat(activeSession.waylandSocket).isEqualTo("wayland-3")
+        assertThat(activeSession.compositorPid).isEqualTo(4242)
+        // XWayland is optional and must not be started during compositor bring-up.
+        assertThat(activeSession.display).isNull()
+        assertThat(guiRuntime.initialized).isTrue()
+        assertThat(guiRuntime.started).isTrue()
+    }
+
+    @Test
+    fun `DesktopSession shuts the GUI runtime down when startup fails`() = runTest {
+        val sessionId = SessionId.generate()
+        val guiRuntime = FakeGuiRuntime(
+            startError = GuiError("[COMPOSITOR_READINESS_TIMEOUT] compositor did not become ready"),
+        )
+        val session = DesktopSession(
+            sessionId = sessionId,
+            environment = environment,
+            runtimeManager = runtimeManager,
+            storage = storage,
+            guiRuntimeFactory = { _, _, _ -> guiRuntime },
+        )
+
+        val error = runCatching { session.start() }.exceptionOrNull()
+
+        assertThat(error).isInstanceOf(GuiError::class.java)
+        assertThat(guiRuntime.shutdownCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `DesktopSession stop shuts down the GUI runtime and the linux runtime`() = runTest {
+        val sessionId = SessionId.generate()
+        val waylandSession = fakeWaylandSession(environment.id, sessionId)
+        val guiRuntime = FakeGuiRuntime(
+            readyStatus = GuiRuntimeStatus(state = GuiState.RUNNING, session = waylandSession),
+        )
+        val session = DesktopSession(
+            sessionId = sessionId,
+            environment = environment,
+            runtimeManager = runtimeManager,
+            storage = storage,
+            guiRuntimeFactory = { _, _, _ -> guiRuntime },
+        )
+        session.start()
+
+        session.stop()
+
+        assertThat(guiRuntime.shutdownCount).isEqualTo(1)
+        coVerify { runtimeManager.stop(environment.id) }
     }
 }

@@ -10,10 +10,10 @@ import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import com.linuxdroid.core.network.NetworkManager
 import com.linuxdroid.core.runtime.RuntimeBackend
+import com.linuxdroid.core.runtime.RuntimeManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -29,10 +29,13 @@ class DefaultSessionManager(
     private val inputManager: InputManager? = null,
     private val audioManager: AudioManager? = null,
     private val networkManager: NetworkManager? = null,
+    private val runtimeManager: RuntimeManager? = null,
+    private val guiRuntimeFactory: GuiRuntimeFactory? = null,
 ) : SessionManager {
 
     private val log = LinuxDroidLogger(LogSubsystem.SESSION)
     private val sessionMap = ConcurrentHashMap<SessionId, Session>()
+    private val desktopSessions = ConcurrentHashMap<SessionId, DesktopSession>()
 
     private val _sessions = MutableStateFlow<Map<SessionId, Session>>(emptyMap())
     override val sessions: Flow<Map<SessionId, Session>> = _sessions.asStateFlow()
@@ -97,36 +100,22 @@ class DefaultSessionManager(
             // 7. Initialize Network
             networkManager?.applyConfig(environment.configuration.network)
 
-            // 8. Configure Wayland socket & launch Wayland compositor
+            // 8. Start the graphical session (compositor bring-up + verified readiness)
             session = session.copy(state = SessionState.STARTING_COMPOSITOR)
             sessionMap[sessionId] = session
             _sessions.value = sessionMap.toMap()
 
-            val waylandSocket = "wayland-0"
             displayManager?.applyConfig(environment.configuration.display)
 
-            val rootfsDir = storage.rootfsDir(environment.id)
-            ensureGuiSessionEnvironment(rootfsDir)
+            val graphicalSession = startGraphicalSession(environment, sessionId)
 
-            val sessionProcess = runtimeBackend.execute(
-                environment = environment,
-                command = listOf("/bin/sh", "/usr/local/bin/linuxdroid-session"),
-                workingDirectory = "/home/user",
-                extraEnv = mapOf(
-                    "WAYLAND_DISPLAY" to waylandSocket,
-                    "XDG_RUNTIME_DIR" to "/tmp",
-                    "DISPLAY" to ":0",
-                ),
-                sessionId = sessionId,
-            )
-
-            // 9. Mark RUNNING
+            // 9. Mark RUNNING only after the compositor reported verified readiness
             val runningSession = session.copy(
                 state = SessionState.RUNNING,
-                waylandSocket = waylandSocket,
-                display = if (environment.configuration.desktop.xwaylandEnabled) ":0" else null,
-                compositorPid = sessionProcess.pid,
-                runtimePid = sessionProcess.pid,
+                waylandSocket = graphicalSession.waylandSocket,
+                display = graphicalSession.display,
+                compositorPid = graphicalSession.compositorPid,
+                runtimePid = graphicalSession.runtimePid,
             )
             sessionMap[sessionId] = runningSession
             _sessions.value = sessionMap.toMap()
@@ -142,8 +131,9 @@ class DefaultSessionManager(
             sessionMap[sessionId] = failedSession
             _sessions.value = sessionMap.toMap()
 
-            // Teardown partial state safely
+            // Teardown partial state safely (GUI first, then host subsystems).
             try {
+                desktopSessions.remove(sessionId)?.stop()
                 audioManager?.stop()
                 inputManager?.stop()
                 runtimeBackend.stop(environment)
@@ -161,6 +151,14 @@ class DefaultSessionManager(
         val stoppingSession = session.copy(state = SessionState.STOPPING)
         sessionMap[sessionId] = stoppingSession
         _sessions.value = sessionMap.toMap()
+
+        // Ordered shutdown: graphical session (compositor + Wayland state) first,
+        // then the host subsystems that were started for it.
+        try {
+            desktopSessions.remove(sessionId)?.stop()
+        } catch (e: Exception) {
+            log.warn("Error stopping graphical session: ${e.message}")
+        }
 
         try {
             audioManager?.stop()
@@ -184,53 +182,39 @@ class DefaultSessionManager(
         }
     }
 
-    private fun ensureGuiSessionEnvironment(rootfsDir: File) {
-        // Ensure /etc/environment exists with Wayland defaults
-        val envFile = File(rootfsDir, "etc/environment")
-        if (!envFile.exists()) {
-            envFile.parentFile?.mkdirs()
-            envFile.writeText(
-                """
-                WAYLAND_DISPLAY=wayland-0
-                XDG_RUNTIME_DIR=/tmp
-                DISPLAY=:0
-                GDK_BACKEND=wayland,x11
-                QT_QPA_PLATFORM=wayland;xcb
-                CLUTTER_BACKEND=wayland
-                SDL_VIDEODRIVER=wayland
-                """.trimIndent() + "\n"
+    /**
+     * Starts the graphical session through [DesktopSession], which drives the
+     * GUI runtime (Wayland provisioning, compositor startup, readiness
+     * verification). Returns without a compositor when no GUI factory is wired,
+     * so headless/CLI sessions remain supported.
+     */
+    private suspend fun startGraphicalSession(
+        environment: Environment,
+        sessionId: SessionId,
+    ): Session {
+        val factory = guiRuntimeFactory
+        if (factory == null) {
+            log.info("No GUI runtime configured; session $sessionId stays non-graphical")
+            return Session(
+                id = sessionId,
+                environmentId = environment.id,
+                state = SessionState.RUNNING,
             )
         }
-
-        // Ensure session startup script exists
-        val sessionScript = File(rootfsDir, "usr/local/bin/linuxdroid-session")
-        if (!sessionScript.exists()) {
-            sessionScript.parentFile?.mkdirs()
-            sessionScript.writeText(
-                """
-                #!/bin/sh
-                export XDG_RUNTIME_DIR=/tmp
-                export WAYLAND_DISPLAY=wayland-0
-                export DISPLAY=:0
-                mkdir -p /tmp
-                chmod 0700 /tmp
-                if command -v cage >/dev/null 2>&1; then
-                    if command -v foot >/dev/null 2>&1; then
-                        exec cage -- foot
-                    elif command -v xterm >/dev/null 2>&1; then
-                        exec cage -- xterm
-                    else
-                        exec cage -- /bin/sh
-                    fi
-                elif command -v weston >/dev/null 2>&1; then
-                    exec weston --socket=wayland-0
-                else
-                    echo "Minimal Wayland GUI ready. Install cage/weston for graphical session."
-                    exec /bin/sh
-                fi
-                """.trimIndent() + "\n"
-            )
-            sessionScript.setExecutable(true, false)
-        }
+        val desktopSession = DesktopSession(
+            sessionId = sessionId,
+            environment = environment,
+            runtimeManager = requireNotNull(runtimeManager) {
+                "A RuntimeManager is required to start a graphical session"
+            },
+            storage = storage,
+            guiRuntimeFactory = factory,
+            gpuManager = gpuManager,
+            inputManager = inputManager,
+            audioManager = audioManager,
+            networkManager = networkManager,
+        )
+        desktopSessions[sessionId] = desktopSession
+        return desktopSession.start()
     }
 }

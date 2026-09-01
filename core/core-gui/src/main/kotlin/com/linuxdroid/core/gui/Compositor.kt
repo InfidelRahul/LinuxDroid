@@ -115,6 +115,12 @@ interface Compositor {
     /** Starts the compositor and waits for observed readiness. */
     suspend fun start(request: CompositorLaunchRequest): CompositorStatus
 
+    /**
+     * Promotes a READY compositor to RUNNING once clients may connect.
+     * Implementations must ignore the call from any other state.
+     */
+    fun markRunning() = Unit
+
     /** Stops the compositor cleanly. Idempotent. */
     suspend fun stop()
 }

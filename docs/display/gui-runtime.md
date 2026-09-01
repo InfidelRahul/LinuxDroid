@@ -144,7 +144,8 @@ the compositor itself demands.
 
 1. ✅ GUI foundation — module, build integration, logging, configuration
    boundary, runtime interfaces, session lifecycle interfaces
-2. ⬜ Display backend (create and maintain a graphical display surface)
+2. ✅ Display backend + real graphical session bring-up — see
+   [`graphical-session.md`](graphical-session.md)
 3. ⬜ Wayland compositor foundation (a client connects and displays a window)
 4. ⬜ Basic window management (create, map, focus, stack, move, resize, close)
 5. ⬜ Shell foundation (desktop background, shell process, shell↔compositor link)

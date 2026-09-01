@@ -26,6 +26,7 @@ dependencies {
     implementation(project(":core:core-runtime"))
     implementation(project(":core:core-process"))
     implementation(project(":core:core-display"))
+    api(project(":core:core-gui"))
     implementation(project(":core:core-gpu"))
     implementation(project(":core:core-input"))
     implementation(project(":core:core-audio"))

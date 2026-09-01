@@ -8,6 +8,8 @@ import com.linuxdroid.core.database.dao.EnvironmentDao
 import com.linuxdroid.core.diagnostics.DefaultResourceManager
 import com.linuxdroid.core.diagnostics.DiagnosticsManager
 import com.linuxdroid.core.diagnostics.ResourceManager
+import com.linuxdroid.core.display.AndroidDisplayTransport
+import com.linuxdroid.core.display.AndroidGraphicsCapabilityProbe
 import com.linuxdroid.core.display.DefaultDisplayManager
 import com.linuxdroid.core.display.DisplayManager
 import com.linuxdroid.core.filesystem.EnvironmentStorage
@@ -24,10 +26,14 @@ import com.linuxdroid.core.package_mgr.DefaultPackageManager
 import com.linuxdroid.core.package_mgr.PackageManager
 import com.linuxdroid.core.process.DefaultProcessManager
 import com.linuxdroid.core.process.ProcessManager
+import com.linuxdroid.core.runtime.DefaultRuntimeManager
 import com.linuxdroid.core.runtime.ProotRuntimeBackend
 import com.linuxdroid.core.runtime.RuntimeAssetsManager
 import com.linuxdroid.core.runtime.RuntimeBackend
+import com.linuxdroid.core.runtime.RuntimeManager
+import com.linuxdroid.core.session.DefaultGuiRuntimeFactory
 import com.linuxdroid.core.session.DefaultSessionManager
+import com.linuxdroid.core.session.GuiRuntimeFactory
 import com.linuxdroid.core.session.SessionManager
 import com.linuxdroid.core.storage.AndroidStorageManager
 import com.linuxdroid.linux.bootstrap.RootfsBootstrapper
@@ -59,11 +65,23 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideRuntimeBackend(
+    fun provideProotRuntimeBackend(
         @ApplicationContext context: Context,
         storage: EnvironmentStorage,
         assetsManager: RuntimeAssetsManager,
-    ): RuntimeBackend = ProotRuntimeBackend(context, storage, assetsManager)
+    ): ProotRuntimeBackend = ProotRuntimeBackend(context, storage, assetsManager)
+
+    @Provides
+    @Singleton
+    fun provideRuntimeBackend(
+        backend: ProotRuntimeBackend,
+    ): RuntimeBackend = backend
+
+    @Provides
+    @Singleton
+    fun provideRuntimeManager(
+        backend: ProotRuntimeBackend,
+    ): RuntimeManager = DefaultRuntimeManager(backend)
 
     @Provides
     @Singleton
@@ -169,7 +187,44 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideProcessManager(): ProcessManager = DefaultProcessManager()
+    fun provideDefaultProcessManager(): DefaultProcessManager = DefaultProcessManager()
+
+    @Provides
+    @Singleton
+    fun provideProcessManager(
+        processManager: DefaultProcessManager,
+    ): ProcessManager = processManager
+
+    // ─── GUI: display boundary and graphical session wiring ───────────────────
+
+    @Provides
+    @Singleton
+    fun provideDisplayTransport(
+        hostGraphics: HostGraphics,
+    ): AndroidDisplayTransport = AndroidDisplayTransport(hostGraphics) { null }
+
+    @Provides
+    @Singleton
+    fun provideGraphicsCapabilityProbe(
+        hostGpu: HostGpu,
+        hostGraphics: HostGraphics,
+    ): AndroidGraphicsCapabilityProbe = AndroidGraphicsCapabilityProbe(hostGpu, hostGraphics)
+
+    @Provides
+    @Singleton
+    fun provideGuiRuntimeFactory(
+        storage: EnvironmentStorage,
+        runtimeManager: RuntimeManager,
+        processManager: DefaultProcessManager,
+        displayTransport: AndroidDisplayTransport,
+        capabilityProbe: AndroidGraphicsCapabilityProbe,
+    ): GuiRuntimeFactory = DefaultGuiRuntimeFactory(
+        storage = storage,
+        runtimeManager = runtimeManager,
+        processManager = processManager,
+        displayTransport = displayTransport,
+        capabilityProbe = capabilityProbe,
+    )
 
     @Provides
     @Singleton
@@ -181,6 +236,8 @@ object AppModule {
         inputManager: InputManager,
         audioManager: AudioManager,
         networkManager: NetworkManager,
+        runtimeManager: RuntimeManager,
+        guiRuntimeFactory: GuiRuntimeFactory,
     ): SessionManager = DefaultSessionManager(
         runtimeBackend = runtime,
         storage = storage,
@@ -189,6 +246,8 @@ object AppModule {
         inputManager = inputManager,
         audioManager = audioManager,
         networkManager = networkManager,
+        runtimeManager = runtimeManager,
+        guiRuntimeFactory = guiRuntimeFactory,
     )
 
     @Provides

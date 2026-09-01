@@ -405,17 +405,10 @@ class RootfsBootstrapper(
         } catch (_: Exception) {
             envFile.delete()
         }
-        envFile.writeText(
-            """
-            WAYLAND_DISPLAY=wayland-0
-            XDG_RUNTIME_DIR=/tmp
-            DISPLAY=:0
-            GDK_BACKEND=wayland,x11
-            QT_QPA_PLATFORM=wayland;xcb
-            CLUTTER_BACKEND=wayland
-            SDL_VIDEODRIVER=wayland
-            """.trimIndent() + "\n"
-        )
+        // The Wayland session environment (XDG_RUNTIME_DIR, WAYLAND_DISPLAY,
+        // toolkit hints) is generated per session by the GUI runtime and must
+        // NOT be baked into the rootfs. See docs/display/graphical-session.md.
+        envFile.writeText("LANG=C.UTF-8\n")
 
         // 4. Distribution APT Sources Configuration
         if (definition.aptSources.isNotBlank()) {
@@ -429,45 +422,18 @@ class RootfsBootstrapper(
             sourcesFile.writeText(definition.aptSources.trimIndent() + "\n")
         }
 
-        // 5. Wayland Session Launcher script
+        // The Wayland session launcher script was removed: the compositor is
+        // started by the GUI runtime through the LinuxDroid runtime, with a
+        // generated per-session environment and verified readiness.
         val binDir = File(rootfsDir, "usr/local/bin").apply { mkdirs() }
-        File(binDir, "linuxdroid-session").apply {
-            writeText(
-                """
-                #!/bin/sh
-                export XDG_RUNTIME_DIR=/tmp
-                export WAYLAND_DISPLAY=wayland-0
-                export DISPLAY=:0
-                mkdir -p /tmp
-                chmod 0700 /tmp
-                if command -v cage >/dev/null 2>&1; then
-                    if command -v foot >/dev/null 2>&1; then
-                        exec cage -- foot
-                    elif command -v xterm >/dev/null 2>&1; then
-                        exec cage -- xterm
-                    else
-                        exec cage -- /bin/sh
-                    fi
-                elif command -v weston >/dev/null 2>&1; then
-                    exec weston --socket=wayland-0
-                else
-                    echo "Minimal Wayland GUI ready. Install cage/weston for graphical session."
-                    exec /bin/sh
-                fi
-                """.trimIndent() + "\n"
-            )
-            setExecutable(true, false)
-            NativeBridge.setExecutable(absolutePath)
-        }
 
         // 6. Terminal Launcher script
         File(binDir, "linuxdroid-terminal").apply {
             writeText(
                 """
                 #!/bin/sh
-                export XDG_RUNTIME_DIR=/tmp
-                export WAYLAND_DISPLAY=wayland-0
-                export DISPLAY=:0
+                # XDG_RUNTIME_DIR and WAYLAND_DISPLAY are supplied by the
+                # LinuxDroid GUI session; do not hardcode them here.
                 if command -v foot >/dev/null 2>&1; then
                     exec foot "$@"
                 elif command -v xterm >/dev/null 2>&1; then
