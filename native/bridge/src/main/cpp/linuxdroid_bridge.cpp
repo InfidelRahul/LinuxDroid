@@ -366,6 +366,52 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceDestroyed(
     linuxdroid::DisplayBridge::getInstance().onSurfaceDestroyed();
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeIsSurfaceReady(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    return linuxdroid::DisplayBridge::getInstance().isReady() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeConfigureOutput(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint width, jint height) {
+    return linuxdroid::DisplayBridge::getInstance().configure(width, height) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativePresentFrame(
+    JNIEnv* env,
+    [[maybe_unused]] jclass clazz,
+    jbyteArray pixels,
+    jint byteCount,
+    jint width,
+    jint height,
+    jint stride,
+    jint sourceFormat) {
+    if (pixels == nullptr) {
+        return linuxdroid::DisplayBridge::kPresentBadGeometry;
+    }
+    const jsize available = env->GetArrayLength(pixels);
+    if (byteCount < 0 || byteCount > available) {
+        return linuxdroid::DisplayBridge::kPresentBadGeometry;
+    }
+
+    // Critical access avoids copying a full frame on every present.
+    void* raw = env->GetPrimitiveArrayCritical(pixels, nullptr);
+    if (raw == nullptr) {
+        return linuxdroid::DisplayBridge::kPresentBadGeometry;
+    }
+    const auto status = linuxdroid::DisplayBridge::getInstance().presentFrame(
+        static_cast<const uint8_t*>(raw),
+        static_cast<size_t>(byteCount),
+        width,
+        height,
+        stride,
+        sourceFormat);
+    env->ReleasePrimitiveArrayCritical(pixels, raw, JNI_ABORT);
+    return status;
+}
+
 // ─── GPU ──────────────────────────────────────────────────────────────────────
 
 JNIEXPORT jstring JNICALL

@@ -231,11 +231,11 @@ What remains unverified:
   still lists `cage` in its GUI package set. Until `weston` is present in the
   rootfs, bring-up fails fast and correctly with
   `COMPOSITOR_LAUNCH_FAILED … reason=ENOENT`.
-- **Weston backend module.** `WestonConfig` currently maps both presenting
-  backends to `headless-backend.so`, because Weston has no Android-surface
-  backend; the compositor renders offscreen and the pixels are not yet blitted
-  to the `ANativeWindow`. Wiring that blit is display-transport work, not part
-  of compositor bring-up.
+- **Weston backend module.** `WestonConfig` maps the presenting backends to
+  `headless-backend.so` because Weston has no Android-surface backend. The
+  pixels are no longer stranded there: they are pulled off the output with
+  `weston_output_capture_v1` and presented to the `ANativeWindow`. See
+  [display-presentation.md](display-presentation.md).
 - **`AndroidDisplayTransport` is wired with a null GUI log** in `AppModule`
   (`{ null }`) because the log is per environment while the transport is a
   singleton; transport events currently reach only the structured logger.

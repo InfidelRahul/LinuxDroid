@@ -79,6 +79,23 @@ class FakeCompositorProcessLauncher(
     var launchCount: Int = 0
         private set
 
+    /** Every command launched, in order. */
+    val commands = mutableListOf<List<String>>()
+
+    /**
+     * The compositor's own launch, ignoring helper processes such as the
+     * frame capture client, so assertions target the right process.
+     */
+    val compositorCommand: List<String>?
+        get() = commands.firstOrNull { it.firstOrNull() != WestonCompositor.CAPTURE_EXECUTABLE }
+
+    /** Separate process for the capture helper, so terminations are distinguishable. */
+    val captureProcess = FakeCompositorProcess(pid = 4343, handleId = "capture-handle")
+
+    /** True once the frame capture helper has been launched. */
+    val captureLaunched: Boolean
+        get() = commands.any { it.firstOrNull() == WestonCompositor.CAPTURE_EXECUTABLE }
+
     override suspend fun launch(
         command: List<String>,
         env: Map<String, String>,
@@ -87,10 +104,14 @@ class FakeCompositorProcessLauncher(
         logFilePath: String?,
     ): CompositorProcess {
         launchCount++
+        commands += command
+        launchError?.let { throw it }
+        if (command.firstOrNull() == WestonCompositor.CAPTURE_EXECUTABLE) {
+            return captureProcess
+        }
         lastCommand = command
         lastEnv = env
         lastBindings = bindings
-        launchError?.let { throw it }
         return process ?: error("no process configured")
     }
 
@@ -212,4 +233,82 @@ object Capabilities {
     )
 
     val none: GraphicsCapabilities = of()
+}
+
+// ─── Frame presentation fakes ────────────────────────────────────────────────
+
+/** [FrameSource] that serves a scripted list of frames. */
+class FakeFrameSource(
+    var descriptor: FrameDescriptor = FrameDescriptor(4, 2, 16, FramePixelFormat.BGRA_8888),
+    override var isAvailable: Boolean = true,
+) : FrameSource {
+
+    /** Result to return instead of a frame, when set. */
+    var failWith: PresentationFailure? = null
+
+    /** Invoked before each frame is handed over; lets a test destroy the surface mid-acquire. */
+    var beforeFrame: (() -> Unit)? = null
+
+    var acquireCount: Int = 0
+        private set
+    var closed: Boolean = false
+        private set
+    val resizes = mutableListOf<Pair<Int, Int>>()
+    private var sequence = 0L
+
+    override val currentDescriptor: FrameDescriptor? get() = descriptor
+
+    override suspend fun acquire(consume: suspend (CompositorFrame) -> PresentResult): PresentResult {
+        acquireCount++
+        failWith?.let { return PresentResult.Failed(it) }
+        beforeFrame?.invoke()
+        val frame = CompositorFrame(descriptor, ByteArray(descriptor.sizeBytes), sequence++)
+        return consume(frame)
+    }
+
+    override suspend fun onOutputResized(widthPx: Int, heightPx: Int) {
+        resizes += widthPx to heightPx
+    }
+
+    override suspend fun close() {
+        closed = true
+    }
+}
+
+/** [FrameSink] that records what it was asked to present. */
+class FakeFrameSink(
+    private val lifecycle: SurfaceLifecycle,
+) : FrameSink {
+
+    var configureFailure: PresentationFailure? = null
+    var presentResult: PresentResult = PresentResult.Presented
+
+    val configured = mutableListOf<FrameDescriptor>()
+    val presentedFrames = mutableListOf<Long>()
+    var released: Boolean = false
+        private set
+
+    override val surfaceState: SurfaceLifecycleState get() = lifecycle.state.value
+    override var configuredGeometry: DisplayGeometry? = null
+        private set
+
+    override suspend fun configure(
+        geometry: DisplayGeometry,
+        descriptor: FrameDescriptor,
+    ): PresentationFailure? {
+        configureFailure?.let { return it }
+        configured += descriptor
+        configuredGeometry = geometry
+        lifecycle.onActivated()
+        return null
+    }
+
+    override suspend fun present(frame: CompositorFrame): PresentResult {
+        if (presentResult is PresentResult.Presented) presentedFrames += frame.sequence
+        return presentResult
+    }
+
+    override suspend fun release() {
+        released = true
+    }
 }

@@ -2,26 +2,62 @@ package com.linuxdroid.core.display
 
 import com.linuxdroid.core.gui.DisplayGeometry
 import com.linuxdroid.core.gui.DisplayTransport
+import com.linuxdroid.core.gui.FramePump
+import com.linuxdroid.core.gui.FrameSink
+import com.linuxdroid.core.gui.FrameSource
 import com.linuxdroid.core.gui.GuiLog
 import com.linuxdroid.core.gui.GuiLogCategory
+import com.linuxdroid.core.gui.SharedMemoryFrameSource
+import com.linuxdroid.core.gui.SurfaceLifecycle
 import com.linuxdroid.core.gui.WaylandSessionInfo
 import com.linuxdroid.core.host.HostGraphics
 import com.linuxdroid.core.model.GuiError
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Connects the compositor output to the Android display surface through the
  * existing [HostGraphics] boundary.
  *
+ * Owns the presentation path for a graphical session:
+ *
+ * ```
+ * Weston headless output
+ *   -> weston_output_capture_v1 (linuxdroid-capture, in the rootfs)
+ *   -> shared frame buffer file
+ *   -> SharedMemoryFrameSource   [FrameSource]
+ *   -> FramePump
+ *   -> AndroidFrameSink          [FrameSink]
+ *   -> HostGraphics -> native bridge -> ANativeWindow -> Surface
+ * ```
+ *
  * Android framework objects (`Surface`, `ANativeWindow`) never leave
- * [HostGraphics]/`:native:bridge`; this class only passes geometry and
- * lifecycle across, so nothing Android-specific reaches the GUI abstractions.
+ * [HostGraphics]/`:native:bridge`; this class passes geometry, lifecycle and
+ * platform-neutral frames, so nothing Android-specific reaches the GUI
+ * abstractions.
  */
 class AndroidDisplayTransport(
     private val hostGraphics: HostGraphics,
     private val guiLog: () -> GuiLog?,
+    /** Shared with the Android view so both agree on the surface state. */
+    val surfaceLifecycle: SurfaceLifecycle = SurfaceLifecycle(guiLog),
+    /** Overridable so tests can supply a fake producer/consumer. */
+    private val frameSourceFactory: (WaylandSessionInfo) -> FrameSource = { session ->
+        SharedMemoryFrameSource(
+            bufferFile = File(session.hostRuntimeDir, SharedMemoryFrameSource.BUFFER_FILE_NAME),
+            guiLog = guiLog,
+        )
+    },
+    private val frameSinkFactory: (SurfaceLifecycle) -> FrameSink = { lifecycle ->
+        AndroidFrameSink(hostGraphics, lifecycle, guiLog)
+    },
+    /** Frame-level logging; off by default to avoid a log line per frame. */
+    private val traceFrames: Boolean = false,
 ) : DisplayTransport {
 
     private val attached = AtomicBoolean(false)
@@ -29,8 +65,20 @@ class AndroidDisplayTransport(
     @Volatile
     private var currentGeometry: DisplayGeometry? = null
 
+    @Volatile
+    private var pump: FramePump? = null
+
+    @Volatile
+    private var source: FrameSource? = null
+
+    @Volatile
+    private var scope: CoroutineScope? = null
+
     override val isAttached: Boolean get() = attached.get()
     override val geometry: DisplayGeometry? get() = currentGeometry
+
+    /** Frames presented in the current session; 0 when not presenting. */
+    val framesPresented: Long get() = pump?.framesPresented ?: 0L
 
     override suspend fun attach(
         session: WaylandSessionInfo,
@@ -48,12 +96,42 @@ class AndroidDisplayTransport(
             dpi = geometry.densityDpi,
             refreshRate = geometry.refreshRateHz,
         )
+
+        // The view may already have reported the surface; if not, record it now
+        // so the lifecycle reflects the surface the host is actually holding.
+        if (surfaceLifecycle.state.value == com.linuxdroid.core.gui.SurfaceLifecycleState.NONE ||
+            surfaceLifecycle.state.value == com.linuxdroid.core.gui.SurfaceLifecycleState.DESTROYED
+        ) {
+            surfaceLifecycle.onSurfaceCreated(geometry)
+        }
+        surfaceLifecycle.onAttached()
+
+        val frameSource = frameSourceFactory(session)
+        val frameSink = frameSinkFactory(surfaceLifecycle)
+        val framePump = FramePump(
+            source = frameSource,
+            sink = frameSink,
+            surfaceLifecycle = surfaceLifecycle,
+            guiLog = guiLog,
+            traceFrames = traceFrames,
+        )
+        val pumpScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        source = frameSource
+        pump = framePump
+        scope = pumpScope
+
+        // The sink activates the surface once it has been configured for a real
+        // frame; until then presentation is correctly refused.
+        framePump.start(pumpScope)
+
         currentGeometry = geometry
         attached.set(true)
         guiLog()?.info(
             GuiLogCategory.GRAPHICS,
             "android display output attached: ${geometry.widthPx}x${geometry.heightPx} " +
-                "@ ${geometry.densityDpi}dpi ${geometry.refreshRateHz}Hz",
+                "@ ${geometry.densityDpi}dpi ${geometry.refreshRateHz}Hz; " +
+                "presenting from ${session.hostRuntimeDir}/${SharedMemoryFrameSource.BUFFER_FILE_NAME}",
         )
     }
 
@@ -67,7 +145,9 @@ class AndroidDisplayTransport(
             dpi = geometry.densityDpi,
             refreshRate = geometry.refreshRateHz,
         )
+        surfaceLifecycle.onGeometryChanged(geometry)
         currentGeometry = geometry
+        pump?.onGeometryChanged(geometry)
         guiLog()?.info(
             GuiLogCategory.GRAPHICS,
             "android display geometry changed: ${geometry.widthPx}x${geometry.heightPx}",
@@ -76,8 +156,23 @@ class AndroidDisplayTransport(
 
     override suspend fun detach(): Unit = withContext(Dispatchers.IO) {
         if (!attached.getAndSet(false)) return@withContext
+        val presented = pump?.framesPresented ?: 0L
+
+        // Stop presenting before releasing the surface, so no frame is in
+        // flight when the native window goes away.
+        runCatching { pump?.stop() }
+        runCatching { source?.close() }
+        scope?.cancel()
+
+        pump = null
+        source = null
+        scope = null
         currentGeometry = null
-        guiLog()?.info(GuiLogCategory.GRAPHICS, "android display output detached")
+        surfaceLifecycle.onSurfaceDestroyed()
+        guiLog()?.info(
+            GuiLogCategory.GRAPHICS,
+            "android display output detached after $presented frames",
+        )
     }
 
     /**

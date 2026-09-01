@@ -15,6 +15,7 @@ import com.linuxdroid.core.display.DisplayManager
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.gpu.DefaultGpuManager
 import com.linuxdroid.core.gpu.GpuManager
+import com.linuxdroid.core.gui.SurfaceLifecycle
 import com.linuxdroid.core.host.*
 import com.linuxdroid.core.input.DefaultInputManager
 import com.linuxdroid.core.input.InputManager
@@ -197,11 +198,26 @@ object AppModule {
 
     // ─── GUI: display boundary and graphical session wiring ───────────────────
 
+    /**
+     * Single source of truth for the Android surface state, shared by the
+     * output view (which reports the raw callbacks) and the display transport
+     * (which presents frames). Both must agree or frames could be posted into
+     * a destroyed window.
+     */
+    @Provides
+    @Singleton
+    fun provideSurfaceLifecycle(): SurfaceLifecycle = SurfaceLifecycle { null }
+
     @Provides
     @Singleton
     fun provideDisplayTransport(
         hostGraphics: HostGraphics,
-    ): AndroidDisplayTransport = AndroidDisplayTransport(hostGraphics) { null }
+        surfaceLifecycle: SurfaceLifecycle,
+    ): AndroidDisplayTransport = AndroidDisplayTransport(
+        hostGraphics = hostGraphics,
+        guiLog = { null },
+        surfaceLifecycle = surfaceLifecycle,
+    )
 
     @Provides
     @Singleton

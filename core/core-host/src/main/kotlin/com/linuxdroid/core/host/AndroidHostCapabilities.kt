@@ -55,10 +55,33 @@ class AndroidHostGraphics : HostGraphics {
         this.refreshRate = refreshRate
     }
 
-    override fun isSurfaceReady(): Boolean = ready.get()
+    // Reflects what the native layer actually holds, not just whether a
+    // Surface object was handed over: the ANativeWindow may have been released
+    // independently, and presenting into a released window is a crash.
+    override fun isSurfaceReady(): Boolean = ready.get() && NativeBridge.nativeIsSurfaceReady()
+
     override fun getDisplayWidth(): Int = width
     override fun getDisplayHeight(): Int = height
     override fun getDisplayDpi(): Int = dpi
+
+    override fun configureOutput(widthPx: Int, heightPx: Int): Boolean =
+        NativeBridge.nativeConfigureOutput(widthPx, heightPx)
+
+    override fun presentFrame(
+        pixels: ByteArray,
+        byteCount: Int,
+        widthPx: Int,
+        heightPx: Int,
+        strideBytes: Int,
+        sourceFormat: Int,
+    ): Int = NativeBridge.nativePresentFrame(
+        pixels,
+        byteCount,
+        widthPx,
+        heightPx,
+        strideBytes,
+        sourceFormat,
+    )
 }
 
 class AndroidHostGpu : HostGpu {

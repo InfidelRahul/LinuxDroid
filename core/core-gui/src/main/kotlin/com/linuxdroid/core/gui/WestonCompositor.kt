@@ -15,19 +15,36 @@ import java.io.File
  */
 object WestonConfig {
 
-    /** Maps a selected backend to the Weston backend module name. */
+    /**
+     * Maps a selected backend to the Weston backend module name.
+     *
+     * Weston has **no Android-surface backend**, so there is no module that
+     * draws into an `ANativeWindow` directly. Every presenting configuration
+     * therefore runs on the headless backend and the frame is pulled out of
+     * the output with `weston_output_capture_v1` — Weston's supported way to
+     * read an output's pixels — then presented by [FrameSink]. The
+     * `headless-backend.so` here is consequently *not* the "no output" case it
+     * used to be; presentation happens over the capture path.
+     */
     fun backendModule(backend: CompositorBackend): String = when (backend) {
-        // Both present through the LinuxDroid display transport into the Android
-        // surface; the difference is whether a GL renderer is used.
         CompositorBackend.ANDROID_SURFACE,
         CompositorBackend.SOFTWARE,
+        CompositorBackend.HEADLESS,
         -> "headless-backend.so"
-        CompositorBackend.HEADLESS -> "headless-backend.so"
         CompositorBackend.NESTED_WAYLAND -> "wayland-backend.so"
     }
 
+    /**
+     * Renderer for a backend.
+     *
+     * The capture path needs the finished frame in CPU-readable memory. Pixman
+     * composites straight into a shm buffer, so capture is a plain copy; the
+     * GL renderer would require a `glReadPixels` round-trip per frame. Until
+     * the GL path is measured to be faster on device, presenting backends use
+     * pixman.
+     */
     fun renderer(backend: CompositorBackend): String = when (backend) {
-        CompositorBackend.ANDROID_SURFACE -> "gl"
+        CompositorBackend.NESTED_WAYLAND -> "gl"
         else -> "pixman"
     }
 
@@ -87,6 +104,10 @@ class WestonCompositor(
 
     @Volatile
     private var process: CompositorProcess? = null
+
+    /** Frame capture helper; owned by the compositor and stopped before it. */
+    @Volatile
+    private var captureProcess: CompositorProcess? = null
 
     override suspend fun isSupported(backend: CompositorBackend): Boolean =
         backend != CompositorBackend.NESTED_WAYLAND && launcher.hasExecutable(executable)
@@ -178,19 +199,71 @@ class WestonCompositor(
             GuiLogCategory.WAYLAND,
             "wayland readiness verified: socket=${session.socketName} pid=${started.pid}",
         )
+
+        // Weston has no Android-surface backend, so pixels are pulled off the
+        // output with weston_output_capture_v1 by a helper client. It can only
+        // connect once the socket is ready, hence starting it here.
+        startCaptureHelper(session)
+
         transition(GuiState.READY, backend = request.backend.backend, socket = session.socketName)
         return _status.value
+    }
+
+    /**
+     * Starts the frame capture helper inside the rootfs.
+     *
+     * A failure here is logged but does not fail compositor startup: the
+     * Wayland session is genuinely usable without presentation, and the
+     * display transport reports the missing frames as a presentation failure
+     * with a far more specific diagnostic than "compositor failed".
+     */
+    private suspend fun startCaptureHelper(session: WaylandSessionInfo) {
+        if (!launcher.hasExecutable(CAPTURE_EXECUTABLE)) {
+            log.warn(
+                GuiLogCategory.GRAPHICS,
+                "frame capture helper '$CAPTURE_EXECUTABLE' is not installed in the rootfs; " +
+                    "the compositor will run but nothing will be presented to the display",
+            )
+            return
+        }
+        val bufferGuestPath = "${session.runtimeDir}/${SharedMemoryFrameSource.BUFFER_FILE_NAME}"
+        captureProcess = try {
+            launcher.launch(
+                command = listOf(CAPTURE_EXECUTABLE, bufferGuestPath),
+                env = session.environment,
+                workingDirectory = session.runtimeDir,
+                bindings = listOf(GuestBinding(session.hostRuntimeDir, session.runtimeDir)),
+                logFilePath = "${session.logDir}/$CAPTURE_LOG_FILE",
+            )
+        } catch (e: Exception) {
+            log.error(
+                GuiLogCategory.GRAPHICS,
+                "frame capture helper failed to start; no frames will be presented",
+                e,
+            )
+            null
+        }
+        captureProcess?.let {
+            log.info(
+                GuiLogCategory.GRAPHICS,
+                "frame capture helper started: pid=${it.pid} buffer=$bufferGuestPath",
+            )
+        }
     }
 
     override suspend fun stop() {
         val current = process
         if (current == null) {
+            stopCaptureHelper()
             if (_status.value.state != GuiState.STOPPED) {
                 transition(GuiState.STOPPED)
             }
             return
         }
         transition(GuiState.STOPPING)
+        // Reverse of startup: the capture helper stops before the compositor
+        // it reads from, so it never polls a dead output.
+        stopCaptureHelper()
         log.info(GuiLogCategory.COMPOSITOR, "compositor stopping: pid=${current.pid}")
         val terminated = try {
             current.terminate()
@@ -219,6 +292,18 @@ class WestonCompositor(
             pid = -1,
             waylandSocket = null,
             stoppedAt = System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun stopCaptureHelper() {
+        val helper = captureProcess ?: return
+        captureProcess = null
+        val stopped = runCatching { helper.terminate() }
+            .onFailure { log.warn(GuiLogCategory.GRAPHICS, "frame capture helper stop failed", it) }
+            .getOrDefault(false)
+        log.info(
+            GuiLogCategory.GRAPHICS,
+            "frame capture helper stopped: pid=${helper.pid} terminated=$stopped",
         )
     }
 
@@ -299,6 +384,10 @@ class WestonCompositor(
     companion object {
         const val CONFIG_FILE_NAME = "weston.ini"
         const val COMPOSITOR_LOG_NAME = "compositor.log"
+
+        /** Frame capture helper installed in the rootfs. */
+        const val CAPTURE_EXECUTABLE = "linuxdroid-capture"
+        const val CAPTURE_LOG_FILE = "capture.log"
     }
 }
 

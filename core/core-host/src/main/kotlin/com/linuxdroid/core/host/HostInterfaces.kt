@@ -15,6 +15,29 @@ interface HostGraphics {
     fun getDisplayWidth(): Int
     fun getDisplayHeight(): Int
     fun getDisplayDpi(): Int
+
+    /**
+     * Configures the output buffer geometry for frames of this size.
+     * Returns false when there is no usable surface.
+     */
+    fun configureOutput(widthPx: Int, heightPx: Int): Boolean
+
+    /**
+     * Copies one frame into the next output buffer and posts it.
+     *
+     * [strideBytes] is the source row stride and is used as given, never
+     * inferred from the width. [sourceFormat] is a
+     * `DisplayBridge::SourceFormat` ordinal. Returns 0 on success and a
+     * negative `DisplayBridge::PresentStatus` on failure.
+     */
+    fun presentFrame(
+        pixels: ByteArray,
+        byteCount: Int,
+        widthPx: Int,
+        heightPx: Int,
+        strideBytes: Int,
+        sourceFormat: Int,
+    ): Int
 }
 
 /**

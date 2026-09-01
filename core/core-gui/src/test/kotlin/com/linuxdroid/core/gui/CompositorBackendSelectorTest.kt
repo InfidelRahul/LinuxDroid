@@ -69,10 +69,13 @@ class WestonConfigTest {
     private val geometry = DisplayGeometry(1080, 2400, 420, 60f)
 
     @Test
-    fun `uses the gl renderer for the accelerated android surface backend`() {
+    fun `presenting backends use pixman so frames are cpu-readable for capture`() {
+        // The frame reaches Android through weston_output_capture_v1 into a
+        // wl_shm buffer, so the finished frame must be in CPU memory. Pixman
+        // composites straight there; GL would need a glReadPixels per frame.
         val ini = WestonConfig.render(CompositorBackend.ANDROID_SURFACE, geometry)
 
-        assertThat(ini).contains("renderer=gl")
+        assertThat(ini).contains("renderer=pixman")
         assertThat(ini).contains("mode=1080x2400")
     }
 

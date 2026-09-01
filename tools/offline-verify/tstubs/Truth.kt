@@ -6,11 +6,20 @@ class AssertionFailure(msg: String) : AssertionError(msg)
 
 private fun fail(msg: String): Nothing = throw AssertionFailure(msg)
 
+private fun Number.isIntegral(): Boolean =
+    this is Int || this is Long || this is Short || this is Byte
+
 open class Subject(private val actual: Any?) {
     fun isEqualTo(expected: Any?) {
         val a = actual; val e = expected
-        val eq = if (a is Iterable<*> && e is Iterable<*>) a.toList() == e.toList() else a == e
-        if (!eq) fail("expected <$e> but was <$a>")
+        val eq = when {
+            a is Iterable<*> && e is Iterable<*> -> a.toList() == e.toList()
+            // Truth compares integral values across boxed types, so 2L == 2.
+            a is Number && e is Number && a.isIntegral() && e.isIntegral() ->
+                a.toLong() == e.toLong()
+            else -> a == e
+        }
+        if (!eq) fail("expected <$e> (${e?.javaClass?.simpleName}) but was <$a> (${a?.javaClass?.simpleName})")
     }
     fun isNotEqualTo(other: Any?) { if (actual == other) fail("expected not to be <$other>") }
     fun isNull() { if (actual != null) fail("expected null but was <$actual>") }

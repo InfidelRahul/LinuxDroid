@@ -63,10 +63,19 @@ class GraphicalSessionBringUpTest {
         private val createSocket: Boolean = true,
     ) : CompositorProcessLauncher {
         val process = FakeCompositorProcess()
+        val captureProcess = FakeCompositorProcess(pid = 4343, handleId = "capture-handle")
         var lastEnv: Map<String, String> = emptyMap()
             private set
         var lastCommand: List<String> = emptyList()
             private set
+        val commands = mutableListOf<List<String>>()
+
+        /** The compositor's own launch, excluding the frame capture helper. */
+        val compositorCommand: List<String>?
+            get() = commands.firstOrNull { it.firstOrNull() != WestonCompositor.CAPTURE_EXECUTABLE }
+
+        val captureLaunched: Boolean
+            get() = commands.any { it.firstOrNull() == WestonCompositor.CAPTURE_EXECUTABLE }
 
         override suspend fun launch(
             command: List<String>,
@@ -75,6 +84,10 @@ class GraphicalSessionBringUpTest {
             bindings: List<GuestBinding>,
             logFilePath: String?,
         ): CompositorProcess {
+            commands += command
+            if (command.firstOrNull() == WestonCompositor.CAPTURE_EXECUTABLE) {
+                return captureProcess
+            }
             lastCommand = command
             lastEnv = env
             if (createSocket) {
@@ -135,7 +148,7 @@ class GraphicalSessionBringUpTest {
         // D: a real socket file exists.
         assertThat(File(session.hostSocketPath).exists()).isTrue()
         // Compositor was told the real socket name and runtime dir, not /tmp.
-        assertThat(launcher.lastCommand).contains("--socket=${session.socketName}")
+        assertThat(launcher.compositorCommand).contains("--socket=${session.socketName}")
         assertThat(launcher.lastEnv["XDG_RUNTIME_DIR"]).isEqualTo("/run/linuxdroid")
     }
 

@@ -54,9 +54,41 @@ $JAVA_HOME/bin/java \
   RunnerKt out/test
 ```
 
+## Native and Android-side verification
+
+- `native-stubs/` — minimal NDK headers (`android/native_window.h`,
+  `android/log.h`, `jni.h`) so the C++ display bridge can be compiled and
+  run off-device, plus `display_bridge_checks.cpp`, which exercises the real
+  `DisplayBridge::presentFrame` against a fake `ANativeWindow` (channel swap,
+  alpha forcing, padded strides, clipping, every rejection path).
+
+  ```sh
+  g++ -std=c++17 -Wall -Wextra -Itools/offline-verify/native-stubs \
+      -Inative/bridge/src/main/cpp \
+      -o /tmp/checks tools/offline-verify/native-stubs/display_bridge_checks.cpp
+  /tmp/checks
+  ```
+
+- `wayland-stubs/` — minimal `wayland-client.h` and the Weston output-capture
+  protocol header, enough to syntax-check `linux/capture/linuxdroid-capture.c`
+  where no Wayland development packages exist.
+
+  ```sh
+  gcc -std=c11 -fsyntax-only -Wall -Wextra \
+      -Itools/offline-verify/wayland-stubs linux/capture/linuxdroid-capture.c
+  ```
+
+- `astubs/` — `android.view.Surface` and a `NativeBridge` stand-in, so
+  `:core:core-display` (`AndroidFrameSink`, `AndroidDisplayTransport`) and the
+  `HostGraphics` contract can be compiled and tested off-device.
+
 ## Coverage and limits
 
-- Covers `:core:core-gui` main + tests: **92 tests, all passing**.
-- Does **not** cover `:core:core-session`, `:core:core-display` or `:app` —
-  those need MockK and the Android SDK, neither of which is reachable offline.
-  They remain verified only by the Gradle build.
+- `:core:core-gui` main + tests: **149 tests, all passing**.
+- `:core:core-display` (`AndroidFrameSink`): **10 tests, all passing**.
+- Native `DisplayBridge`: **12 checks, all passing**.
+- Does **not** cover `:core:core-session` or `:app` — those need MockK and the
+  Android SDK, neither of which is reachable offline. They remain verified only
+  by the Gradle build.
+- The stubs are *not* the real libraries. They prove types, logic and memory
+  layout, not real `ANativeWindow` or real Weston behaviour.

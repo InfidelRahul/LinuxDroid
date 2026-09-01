@@ -191,10 +191,11 @@ class WestonCompositorTest {
             ),
         )
 
-        val command = launcher.lastCommand!!
+        val command = launcher.compositorCommand!!
         assertThat(command).contains("--socket=wayland-7")
         assertThat(command.first()).isEqualTo("weston")
-        assertThat(File(dir, WestonCompositor.CONFIG_FILE_NAME).readText()).contains("renderer=gl")
+        assertThat(File(dir, WestonCompositor.CONFIG_FILE_NAME).readText())
+            .contains("renderer=pixman")
     }
 
     @Test
@@ -210,6 +211,82 @@ class WestonCompositorTest {
         assertThat(launcher.lastBindings).containsExactly(
             GuestBinding(dir.absolutePath, "/run/linuxdroid"),
         )
+    }
+
+    @Test
+    fun `the frame capture helper is started so pixels can reach the display`() = runTest {
+        val dir = temp.newFolder("runtime")
+        File(dir, "wayland-0").writeText("")
+        val launcher = FakeCompositorProcessLauncher()
+
+        compositor(launcher).start(request(dir))
+
+        // Weston has no Android backend, so without the capture helper nothing
+        // is ever presented; it must be launched as part of bring-up.
+        assertThat(launcher.captureLaunched).isTrue()
+        val captureCommand = launcher.commands.first { it.first() == WestonCompositor.CAPTURE_EXECUTABLE }
+        assertThat(captureCommand).contains(
+            "/run/linuxdroid/${SharedMemoryFrameSource.BUFFER_FILE_NAME}",
+        )
+    }
+
+    @Test
+    fun `the capture helper is only started after the socket is ready`() = runTest {
+        val dir = temp.newFolder("runtime")
+        // No socket file, so readiness never succeeds.
+        val launcher = FakeCompositorProcessLauncher()
+
+        val weston = compositor(launcher)
+        // Readiness failure is surfaced, never converted into a success.
+        val error = runCatching { weston.start(request(dir)) }.exceptionOrNull()
+
+        assertThat(error).isNotNull()
+        assertThat(weston.status.state).isEqualTo(GuiState.ERROR)
+        // A capture client started before the socket exists could never connect.
+        assertThat(launcher.captureLaunched).isFalse()
+    }
+
+    @Test
+    fun `a missing capture helper degrades presentation without failing the session`() = runTest {
+        val dir = temp.newFolder("runtime")
+        File(dir, "wayland-0").writeText("")
+        // Only weston exists in the rootfs; the helper is absent.
+        val launcher = object : CompositorProcessLauncher by FakeCompositorProcessLauncher() {
+            var westonLaunched = false
+            override suspend fun hasExecutable(name: String): Boolean = name == "weston"
+            override suspend fun launch(
+                command: List<String>,
+                env: Map<String, String>,
+                workingDirectory: String,
+                bindings: List<GuestBinding>,
+                logFilePath: String?,
+            ): CompositorProcess {
+                westonLaunched = true
+                return FakeCompositorProcess()
+            }
+        }
+
+        val status = compositor(launcher).start(request(dir))
+
+        // The Wayland session is genuinely usable, so it must not be failed.
+        assertThat(status.state).isEqualTo(GuiState.READY)
+        assertThat(launcher.westonLaunched).isTrue()
+        assertThat(log.hasMessageContaining("will run but nothing will be presented")).isTrue()
+    }
+
+    @Test
+    fun `stopping tears the capture helper down before the compositor`() = runTest {
+        val dir = temp.newFolder("runtime")
+        File(dir, "wayland-0").writeText("")
+        val launcher = FakeCompositorProcessLauncher()
+        val weston = compositor(launcher)
+        weston.start(request(dir))
+
+        weston.stop()
+
+        // Reverse order: the reader stops before the output it reads from.
+        assertThat(launcher.captureProcess.terminateCount).isEqualTo(1)
+        assertThat(weston.status.state).isEqualTo(GuiState.STOPPED)
     }
 
     @Test

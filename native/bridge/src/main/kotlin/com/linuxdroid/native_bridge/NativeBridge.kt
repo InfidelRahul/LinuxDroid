@@ -69,6 +69,29 @@ object NativeBridge {
 
     fun onSurfaceDestroyed() = nativeOnSurfaceDestroyed()
 
+    /** True when an ANativeWindow is currently held. */
+    fun isSurfaceReady(): Boolean = nativeIsSurfaceReady()
+
+    /** Configures the output buffer geometry. Returns false if there is no window. */
+    fun configureOutput(width: Int, height: Int): Boolean = nativeConfigureOutput(width, height)
+
+    /**
+     * Copies one frame into the next window buffer and posts it.
+     *
+     * [stride] is the source row stride in bytes and is used as given.
+     * [sourceFormat] must be a `DisplayBridge::SourceFormat` ordinal.
+     * Returns a `DisplayBridge::PresentStatus` code: 0 on success, negative on
+     * failure.
+     */
+    fun presentFrame(
+        pixels: ByteArray,
+        byteCount: Int,
+        width: Int,
+        height: Int,
+        stride: Int,
+        sourceFormat: Int,
+    ): Int = nativePresentFrame(pixels, byteCount, width, height, stride, sourceFormat)
+
     // ─── GPU Detection ─────────────────────────────────────────────────────────────
 
     fun getGpuVendor(): String = nativeGetGpuVendor()
@@ -118,6 +141,16 @@ object NativeBridge {
     @JvmStatic external fun nativeOnSurfaceCreated(surface: Surface, width: Int, height: Int)
     @JvmStatic external fun nativeOnSurfaceChanged(surface: Surface, width: Int, height: Int, format: Int)
     @JvmStatic external fun nativeOnSurfaceDestroyed()
+    @JvmStatic external fun nativeIsSurfaceReady(): Boolean
+    @JvmStatic external fun nativeConfigureOutput(width: Int, height: Int): Boolean
+    @JvmStatic external fun nativePresentFrame(
+        pixels: ByteArray,
+        byteCount: Int,
+        width: Int,
+        height: Int,
+        stride: Int,
+        sourceFormat: Int,
+    ): Int
 
     @JvmStatic external fun nativeGetGpuVendor(): String
     @JvmStatic external fun nativeGetGpuRenderer(): String
