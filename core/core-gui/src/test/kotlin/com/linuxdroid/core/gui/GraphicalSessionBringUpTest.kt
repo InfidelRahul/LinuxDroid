@@ -98,7 +98,7 @@ class GraphicalSessionBringUpTest {
     ): DefaultGuiRuntime = DefaultGuiRuntime(
         capabilityProbe = FixedCapabilityProbe(capabilities),
         backendSelector = DefaultCompositorBackendSelector(),
-        sessionProvisioner = DefaultWaylandSessionProvisioner(storage) { log },
+        sessionProvisioner = DefaultWaylandSessionProvisioner(storage, guiLogFactory = { log }),
         compositorRegistry = DefaultCompositorRegistry(
             listOf(
                 WestonCompositorFactory {

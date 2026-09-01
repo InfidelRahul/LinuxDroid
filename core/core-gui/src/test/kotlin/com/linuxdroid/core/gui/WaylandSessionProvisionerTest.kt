@@ -26,7 +26,7 @@ class DefaultWaylandSessionProvisionerTest {
     @Before
     fun setUp() {
         storage = EnvironmentStorage(temp.newFolder("environments"))
-        provisioner = DefaultWaylandSessionProvisioner(storage) { log }
+        provisioner = DefaultWaylandSessionProvisioner(storage, guiLogFactory = { log })
     }
 
     @Test

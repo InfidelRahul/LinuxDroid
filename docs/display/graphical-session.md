@@ -197,16 +197,33 @@ Unit and integration-style tests, all runnable on the JVM without a device:
 - `SessionHierarchyTest` — `DesktopSession` reports RUNNING from the verified GUI
   runtime session and tears down on failure.
 
-### Verification limitation
+### Verification status
 
-The development sandbox has **no JDK, no Android SDK, and no access to Maven
-Central / Gradle distributions**, so `./gradlew test` and `assembleDebug` could
-not be executed and no on-device graphical run was performed. The tests above
-are written but have not been run. Two boundaries are therefore unproven on real
-hardware: the actual `weston` process behaviour under PRoot, and
-`UnixSocketConnectivityChecker` against a real Weston socket. Both are isolated
-behind `CompositorProcessLauncher` and `SocketConnectivityChecker` and are faked
-in the tests.
+The `:core:core-gui` tests above **have been compiled and executed: 92 tests,
+all passing.**
+
+The development sandbox has no Android SDK and no access to Maven Central or
+the Gradle distribution service, so `./gradlew test` and `assembleDebug` still
+cannot run. Because `:core:core-gui` is deliberately free of `android.*`, its
+sources and tests were instead compiled with Kotlin 2.3.20 (the version pinned
+in `gradle/libs.versions.toml`) against the Kotlin stdlib and coroutines, using
+the offline harness in [`tools/offline-verify/`](../../tools/offline-verify/)
+to stand in for JUnit, Truth and Timber. Test bodies are unmodified.
+
+This exercise caught one real defect: two tests constructed
+`DefaultWaylandSessionProvisioner(storage) { log }` with a trailing lambda,
+which bound to the `maxSocketCandidates` parameter rather than
+`guiLogFactory`. The call sites now name the argument.
+
+What remains unverified:
+
+- `:core:core-session`, `:core:core-display` and `:app` — these need MockK and
+  the Android SDK, so they are still only covered by the Gradle build.
+- The two real-hardware boundaries: actual `weston` process behaviour under
+  PRoot, and `UnixSocketConnectivityChecker` against a real Weston socket. Both
+  are isolated behind `CompositorProcessLauncher` and
+  `SocketConnectivityChecker` and are faked in the tests.
+- No on-device graphical run was performed.
 
 ## 10. Known issues related to this feature
 
