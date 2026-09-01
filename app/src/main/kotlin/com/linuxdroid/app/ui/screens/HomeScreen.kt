@@ -183,37 +183,11 @@ fun HomeScreen(
                             environmentViewModel.startEnvironment(activeEnv)
                         }
                         navController.navigate(Screen.Terminal.route(activeEnv.id.value))
+                    },
+                    onStop = {
+                        environmentViewModel.stopEnvironment(activeEnv)
                     }
                 )
-
-                // Stop Session Button (Visible only when RUNNING)
-                AnimatedVisibility(
-                    visible = activeEnv.state == EnvironmentState.RUNNING,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically(),
-                ) {
-                    NeuButton(
-                        onClick = { environmentViewModel.stopEnvironment(activeEnv) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        contentPadding = PaddingValues(vertical = 12.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Stop,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = neuColors.error
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Stop Linux Session",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = neuColors.error,
-                            maxLines = 1,
-                        )
-                    }
-                }
 
                 // Live System Telemetry Card (RAM & Storage Bars, Network, CPU, Battery)
                 SystemOverviewCard(context = context)
@@ -521,132 +495,167 @@ private fun NeuGuiLaunchCard(
 }
 
 /**
- * CLI Launch card with Terminal prompt box, distribution info, and active session status.
+ * CLI Launch card — big terminal icon left, distribution info right.
+ * When a session is running: terminal icon navigates back to session,
+ * and a Stop button appears to its right.
  */
 @Composable
 private fun NeuCliLaunchCard(
     environment: Environment,
     onClick: () -> Unit,
+    onStop: () -> Unit = {},
 ) {
     val neuColors = NeuTheme.colors
     val isRunning = environment.state == EnvironmentState.RUNNING
 
     NeuCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+        modifier = Modifier.fillMaxWidth(),
         elevation = 4.dp,
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // ── Left: Big terminal button (+ optional stop) ──────────────
             Row(
-                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Square Box with Terminal Shell Emblem
+                // Big terminal icon button
                 Surface(
-                    modifier = Modifier.size(56.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = neuColors.surfacePressed,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, neuColors.primaryAccent.copy(alpha = 0.45f)),
-                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .size(68.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onClick,
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isRunning) neuColors.primaryAccent.copy(alpha = 0.12f)
+                            else neuColors.surfacePressed,
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isRunning) 1.5.dp else 1.dp,
+                        color = neuColors.primaryAccent.copy(alpha = if (isRunning) 0.75f else 0.40f),
+                    ),
+                    shadowElevation = if (isRunning) 4.dp else 2.dp,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            ">_",
-                            fontFamily = SfMono,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = neuColors.primaryAccent,
+                        Icon(
+                            imageVector = Icons.Default.Terminal,
+                            contentDescription = "Open Terminal",
+                            tint = neuColors.primaryAccent,
+                            modifier = Modifier.size(32.dp),
                         )
                     }
                 }
 
-                // Right Side: Distribution info and status
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
+                // Stop button — only visible when running
+                AnimatedVisibility(
+                    visible = isRunning,
+                    enter = fadeIn() + expandVertically(expandFrom = Alignment.CenterVertically),
+                    exit  = fadeOut() + shrinkVertically(shrinkTowards = Alignment.CenterVertically),
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onStop,
+                            ),
+                        shape = RoundedCornerShape(12.dp),
+                        color = neuColors.error.copy(alpha = 0.10f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp, neuColors.error.copy(alpha = 0.55f)
+                        ),
                     ) {
-                        Text(
-                            text = "Terminal CLI Mode",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                            color = neuColors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Surface(
-                            color = neuColors.surfacePressed,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                        ) {
-                            Text(
-                                text = "Bash Shell",
-                                fontFamily = SfMono,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = neuColors.primaryAccent,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                maxLines = 1,
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Stop,
+                                contentDescription = "Stop Session",
+                                tint = neuColors.error,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
-                    }
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = "${environment.distribution.displayName} • Interactive Shell",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = neuColors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(7.dp)
-                                .clip(CircleShape)
-                                .background(if (isRunning) neuColors.success else neuColors.textMuted)
-                        )
-                        Text(
-                            text = if (isRunning) "Active Session Running" else "Ready to Launch",
-                            fontSize = 11.sp,
-                            color = if (isRunning) neuColors.success else neuColors.textSecondary,
-                            fontFamily = SfMono,
-                            maxLines = 1,
-                        )
                     }
                 }
             }
 
-            NeuButton(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth(),
-                isAccent = true,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 11.dp),
+            // ── Right: Info column ───────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onClick,
+                    ),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Terminal CLI",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        ),
+                        color = neuColors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Surface(
+                        color = neuColors.surfacePressed,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f),
+                        ),
+                    ) {
+                        Text(
+                            text = "Bash",
+                            fontFamily = SfMono,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = neuColors.primaryAccent,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1,
+                        )
+                    }
+                }
+
                 Text(
-                    text = if (isRunning) "Resume CLI Session" else "Start CLI Session",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
+                    text = "${environment.distribution.displayName} · Interactive Shell",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = neuColors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (isRunning) neuColors.success else neuColors.textMuted)
+                    )
+                    Text(
+                        text = if (isRunning) "Session active — tap icon to resume" else "Tap to start a new session",
+                        fontSize = 10.sp,
+                        fontFamily = SfMono,
+                        color = if (isRunning) neuColors.success else neuColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
