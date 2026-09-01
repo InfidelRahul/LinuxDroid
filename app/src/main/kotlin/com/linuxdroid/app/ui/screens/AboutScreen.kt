@@ -12,6 +12,7 @@ import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
@@ -80,42 +81,58 @@ fun AboutScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // App Header Card
-            NeuCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        NeuIconButton(
-                            onClick = {},
-                            enabled = false,
-                            size = 46.dp,
-                            tint = neuColors.primaryAccent
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(24.dp))
-                        }
-                        Column {
-                            Text(
-                                "LinuxDroid",
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                                color = neuColors.textPrimary
-                            )
-                            Text(
-                                "Version ${BuildConfig.VERSION_NAME}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = neuColors.textSecondary
-                            )
-                        }
-                    }
-                    Text(
-                        "LinuxDroid provides a persistent Linux userspace running directly on Android hardware.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = neuColors.textSecondary,
+            // App Header Card (macOS System Profile Style)
+            NeuCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Column {
+                    MacosWindowHeader(
+                        title = "About LinuxDroid",
+                        badgeText = "v${BuildConfig.VERSION_NAME}",
+                        subtitle = "ARM64"
                     )
+
+                    HorizontalDivider(
+                        color = neuColors.borderHighlight.copy(alpha = 0.2f),
+                        thickness = 0.5.dp
+                    )
+
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            NeuIconButton(
+                                onClick = {},
+                                enabled = false,
+                                size = 48.dp,
+                                tint = neuColors.primaryAccent
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(26.dp))
+                            }
+                            Column {
+                                Text(
+                                    "LinuxDroid",
+                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = neuColors.textPrimary
+                                )
+                                Text(
+                                    "Version ${BuildConfig.VERSION_NAME}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = neuColors.textSecondary
+                                )
+                            }
+                        }
+                        Text(
+                            "LinuxDroid provides a persistent Linux userspace running directly on Android hardware.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = neuColors.textSecondary,
+                        )
+                    }
                 }
             }
 

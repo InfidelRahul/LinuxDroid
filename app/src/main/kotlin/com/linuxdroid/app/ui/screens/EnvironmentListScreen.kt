@@ -852,52 +852,15 @@ private fun InstallerTerminalConsole(
     NeuCard(
         modifier = modifier.fillMaxWidth(),
         isInset = true,
+        shape = RoundedCornerShape(14.dp),
     ) {
         Column {
-            // Header toolbar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(neuColors.surfacePressed)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(neuColors.success, shape = RoundedCornerShape(4.dp))
-                    )
-                    Text(
-                        text = "INSTALLER TERMINAL OUTPUT",
-                        color = neuColors.textSecondary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Surface(
-                        color = neuColors.surface,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = "${logs.size} lines",
-                            color = neuColors.textSecondary,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
+            // macOS Header toolbar
+            MacosWindowHeader(
+                title = "Installer Console",
+                badgeText = "${logs.size} lines",
+                subtitle = "rootfs",
+                actions = {
                     NeuIconButton(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(logs.joinToString("\n")))
@@ -912,7 +875,12 @@ private fun InstallerTerminalConsole(
                         )
                     }
                 }
-            }
+            )
+
+            HorizontalDivider(
+                color = neuColors.borderHighlight.copy(alpha = 0.2f),
+                thickness = 0.5.dp
+            )
 
             // Terminal log list
             LazyColumn(

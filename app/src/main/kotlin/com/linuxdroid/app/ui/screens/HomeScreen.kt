@@ -100,38 +100,52 @@ fun HomeScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            // Neumorphic App Hero Banner
+            // macOS-Inspired Hero Window Card
             NeuCard(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = 6.dp,
+                shape = RoundedCornerShape(18.dp),
             ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column {
+                    MacosWindowHeader(
+                        title = "LinuxDroid",
+                        badgeText = "AArch64",
+                        subtitle = "Linux on Android"
+                    )
+
+                    HorizontalDivider(
+                        color = neuColors.borderHighlight.copy(alpha = 0.2f),
+                        thickness = 0.5.dp
+                    )
+
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        NeuIconButton(
-                            onClick = {},
-                            enabled = false,
-                            size = 44.dp,
-                            tint = neuColors.primaryAccent
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(24.dp))
-                        }
-                        Column {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                                color = neuColors.textPrimary,
-                            )
-                            Text(
-                                text = "Linux on Android",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = neuColors.textSecondary,
-                            )
+                            NeuIconButton(
+                                onClick = {},
+                                enabled = false,
+                                size = 48.dp,
+                                tint = neuColors.primaryAccent
+                            ) {
+                                Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(26.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = stringResource(R.string.app_name),
+                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = neuColors.textPrimary,
+                                )
+                                Text(
+                                    text = "Linux on Android",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = neuColors.textSecondary,
+                                )
+                            }
                         }
                     }
                 }
@@ -139,7 +153,7 @@ fun HomeScreen(
 
             Text(
                 "Quick Navigation",
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
                 color = neuColors.textPrimary,
             )
 
@@ -161,7 +175,7 @@ fun HomeScreen(
             NeuQuickActionCard(
                 icon = Icons.Default.Info,
                 title = "About",
-                description = "Version, architecture, and engine specs",
+                description = "System specs, hardware details, and engine",
                 onClick = { navController.navigate(Screen.About.route) },
             )
         }

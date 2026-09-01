@@ -434,3 +434,139 @@ fun <T> NeuSegmentedControl(
         }
     }
 }
+
+/**
+ * macOS Window Control Traffic Lights (Close: Red, Minimize: Yellow, Maximize: Green).
+ */
+@Composable
+fun MacosTrafficLights(
+    modifier: Modifier = Modifier,
+    onClose: (() -> Unit)? = null,
+    onMinimize: (() -> Unit)? = null,
+    onMaximize: (() -> Unit)? = null,
+) {
+    val haptic = LocalHapticFeedback.current
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Red / Close
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFFF5F56))
+                .border(width = 0.5.dp, color = Color(0xFFE0443E), shape = CircleShape)
+                .clickable(enabled = onClose != null) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClose?.invoke()
+                }
+        )
+
+        // Yellow / Minimize
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFFFBD2E))
+                .border(width = 0.5.dp, color = Color(0xFFDEA123), shape = CircleShape)
+                .clickable(enabled = onMinimize != null) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onMinimize?.invoke()
+                }
+        )
+
+        // Green / Maximize / Fullscreen
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF27C93F))
+                .border(width = 0.5.dp, color = Color(0xFF1AAB29), shape = CircleShape)
+                .clickable(enabled = onMaximize != null) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onMaximize?.invoke()
+                }
+        )
+    }
+}
+
+/**
+ * macOS Window Titlebar Header with traffic lights, centered title/badge, and action slot.
+ */
+@Composable
+fun MacosWindowHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    badgeText: String? = null,
+    onClose: (() -> Unit)? = null,
+    onMinimize: (() -> Unit)? = null,
+    onMaximize: (() -> Unit)? = null,
+    actions: @Composable (RowScope.() -> Unit)? = null,
+) {
+    val neuColors = NeuTheme.colors
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Left Traffic Lights
+        MacosTrafficLights(
+            onClose = onClose,
+            onMinimize = onMinimize,
+            onMaximize = onMaximize
+        )
+
+        // Centered Window Title & Badge
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                ),
+                color = neuColors.textPrimary
+            )
+            if (badgeText != null) {
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f))
+                ) {
+                    Text(
+                        text = badgeText,
+                        color = neuColors.primaryAccent,
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = neuColors.textMuted
+                )
+            }
+        }
+
+        // Right Actions Slot
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            actions?.invoke(this)
+        }
+    }
+}
+
