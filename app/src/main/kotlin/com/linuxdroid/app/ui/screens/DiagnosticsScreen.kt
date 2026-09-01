@@ -32,11 +32,14 @@ import com.linuxdroid.app.ui.viewmodel.DiagnosticsViewModel
 import com.linuxdroid.core.model.DiagnosticCheck
 import com.linuxdroid.core.model.DiagnosticStatus
 import com.linuxdroid.core.model.LogExportType
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiagnosticsScreen(
+    navController: NavController? = null,
     viewModel: DiagnosticsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -65,6 +68,21 @@ fun DiagnosticsScreen(
                     containerColor = neuColors.background,
                     titleContentColor = neuColors.textPrimary,
                 ),
+                navigationIcon = {
+                    if (navController?.previousBackStackEntry != null) {
+                        NeuIconButton(
+                            onClick = { navController.popBackStack() },
+                            size = 38.dp,
+                            tint = neuColors.textPrimary,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                },
                 actions = {
                     if (selectedEnvId != null) {
                         NeuIconButton(

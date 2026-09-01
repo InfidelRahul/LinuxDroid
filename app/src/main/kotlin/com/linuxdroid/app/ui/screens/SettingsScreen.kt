@@ -2,25 +2,34 @@ package com.linuxdroid.app.ui.screens
 
 import android.content.Context
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.navigation.NavController
+import com.linuxdroid.app.ui.navigation.Screen
 import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.app.ui.viewmodel.SettingsViewModel
 import com.linuxdroid.core.model.AppThemeMode
@@ -30,6 +39,7 @@ import com.linuxdroid.core.storage.StorageAuthorizationState
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    navController: NavController? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -58,7 +68,22 @@ fun SettingsScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = neuColors.background,
                     titleContentColor = neuColors.textPrimary,
-                )
+                ),
+                navigationIcon = {
+                    if (navController?.previousBackStackEntry != null) {
+                        NeuIconButton(
+                            onClick = { navController.popBackStack() },
+                            size = 38.dp,
+                            tint = neuColors.textPrimary,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
@@ -71,10 +96,41 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // Theme Mode Section
+            // Section 1: Management, Diagnostics & System Info
+            Text(
+                "System & Management",
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+                color = neuColors.textPrimary,
+            )
+
+            NeuSettingsActionCard(
+                icon = Icons.AutoMirrored.Filled.List,
+                title = "Environments",
+                subtitle = "Manage Linux rootfs distributions and storage",
+                badge = "Installed",
+                onClick = { navController?.navigate(Screen.Environments.route) }
+            )
+
+            NeuSettingsActionCard(
+                icon = Icons.Default.BugReport,
+                title = "Diagnostics & Failure Reports",
+                subtitle = "Syscall telemetry, health checks, and log exports",
+                badge = "Telemetry",
+                onClick = { navController?.navigate(Screen.Diagnostics.route) }
+            )
+
+            NeuSettingsActionCard(
+                icon = Icons.Default.Info,
+                title = "About LinuxDroid",
+                subtitle = "Hardware specs, kernel release, and engine details",
+                badge = "System",
+                onClick = { navController?.navigate(Screen.About.route) }
+            )
+
+            // Section 2: Appearance
             Text(
                 "Appearance",
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
                 color = neuColors.textPrimary,
             )
             NeuCard(modifier = Modifier.fillMaxWidth()) {
@@ -142,10 +198,10 @@ fun SettingsScreen(
                 }
             }
 
-            // Storage Section
+            // Section 3: Shared Storage
             Text(
                 "Shared Storage",
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
                 color = neuColors.textPrimary,
             )
             NeuCard(modifier = Modifier.fillMaxWidth()) {
@@ -250,10 +306,10 @@ fun SettingsScreen(
                 }
             }
 
-            // Device / System Info Section
+            // Section 4: Device / System Hardware Overview
             Text(
                 "System & Hardware",
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
                 color = neuColors.textPrimary,
             )
             NeuCard(modifier = Modifier.fillMaxWidth()) {
@@ -265,6 +321,83 @@ fun SettingsScreen(
                     SettingInfoRow("Runtime Engine", "PRoot (Rootless syscall translation via ptrace)")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NeuSettingsActionCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    badge: String,
+    onClick: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    NeuCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            NeuIconButton(
+                onClick = onClick,
+                size = 42.dp,
+                tint = neuColors.primaryAccent,
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+                        color = neuColors.textPrimary,
+                    )
+                    Surface(
+                        color = neuColors.surfacePressed,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
+                    ) {
+                        Text(
+                            text = badge,
+                            fontFamily = SfMono,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = neuColors.primaryAccent,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = neuColors.textSecondary,
+                )
+            }
+
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = neuColors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
@@ -285,3 +418,4 @@ private fun SettingInfoRow(title: String, value: String) {
         )
     }
 }
+

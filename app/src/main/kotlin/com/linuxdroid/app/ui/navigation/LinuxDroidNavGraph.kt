@@ -47,13 +47,13 @@ fun LinuxDroidNavGraph(
             TerminalScreen(navController = navController)
         }
         composable(Screen.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(navController = navController)
         }
         composable(Screen.Diagnostics.route) {
-            DiagnosticsScreen()
+            DiagnosticsScreen(navController = navController)
         }
         composable(Screen.About.route) {
-            AboutScreen()
+            AboutScreen(navController = navController)
         }
     }
 }

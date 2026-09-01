@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.linuxdroid.app.BuildConfig
 import com.linuxdroid.app.ui.theme.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.navigation.NavController
 import com.linuxdroid.app.ui.viewmodel.EnvironmentViewModel
 import com.linuxdroid.core.model.EnvironmentState
 import java.io.File
@@ -44,6 +46,7 @@ import java.io.File
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
+    navController: NavController? = null,
     environmentViewModel: EnvironmentViewModel = hiltViewModel(),
 ) {
     val neuColors = NeuTheme.colors
@@ -74,7 +77,22 @@ fun AboutScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = neuColors.background,
                     titleContentColor = neuColors.textPrimary,
-                )
+                ),
+                navigationIcon = {
+                    if (navController?.previousBackStackEntry != null) {
+                        NeuIconButton(
+                            onClick = { navController.popBackStack() },
+                            size = 38.dp,
+                            tint = neuColors.textPrimary,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
             )
         }
     ) { padding ->
