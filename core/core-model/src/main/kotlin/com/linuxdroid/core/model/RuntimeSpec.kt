@@ -70,6 +70,11 @@ data class RuntimeSpec(
                 if (configuredUser == "root") "/root" else "/home/$configuredUser"
             }
             val configuredShell = environment.configuration.shell.ifBlank { "/bin/bash" }
+            val safeWorkingDir = when {
+                workingDirectory.isBlank() -> configuredHome.ifBlank { "/root" }
+                workingDirectory.startsWith("/") -> workingDirectory
+                else -> "/$workingDirectory"
+            }
 
             val envVars = buildMap {
                 put("HOME", configuredHome)
@@ -79,8 +84,9 @@ data class RuntimeSpec(
                 put("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
                 put("TERM", "xterm-256color")
                 put("LANG", "C.UTF-8")
+                put("LC_ALL", "C.UTF-8")
                 put("TMPDIR", "/tmp")
-                put("PWD", workingDirectory)
+                put("PWD", safeWorkingDir)
                 putAll(environment.configuration.runtime.extraEnv)
                 putAll(extraEnv)
             }
@@ -99,7 +105,7 @@ data class RuntimeSpec(
                 environmentId = environment.id,
                 rootfsPath = environment.rootfsPath,
                 architecture = environment.architecture,
-                workingDirectory = workingDirectory,
+                workingDirectory = safeWorkingDir,
                 user = environment.configuration.linuxUser,
                 environmentVariables = envVars,
                 bindings = defaultBindings,

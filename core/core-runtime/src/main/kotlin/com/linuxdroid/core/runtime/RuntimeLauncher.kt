@@ -51,30 +51,7 @@ class RuntimeLauncher(
         val env = processBuilder.environment()
         // Sanitize environment: isolate from Android host process environment completely
         env.clear()
-
-        env["PROOT_TMP_DIR"] = tmpDir.absolutePath
-        if (loader?.exists() == true) {
-            env["PROOT_LOADER"] = loader.absolutePath
-        }
-        val targetLog = logFile?.absolutePath ?: spec.logFilePath
-        if (targetLog != null) {
-            File(targetLog).parentFile?.mkdirs()
-            env["PROOT_LOG_FILE"] = targetLog
-        }
-        if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
-            env["PROOT_VERBOSE"] = "9"
-        }
-        // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
-        // BPF filter killing modern glibc/musl dynamic linker syscalls with
-        // SIGSYS (signal 31). Overridable by an explicitly provided env var.
-        if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
-            env["PROOT_NO_SECCOMP"] = "1"
-        }
-        spec.environmentVariables.forEach { (k, v) ->
-            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH") {
-                env[k] = v
-            }
-        }
+        env.putAll(buildIsolatedEnvironment(spec, loader, tmpDir, logFile))
 
         return processBuilder.start()
     }
@@ -96,28 +73,8 @@ class RuntimeLauncher(
         logFile: File? = spec.logFilePath?.let { File(it) },
     ): PtyLaunchHandle {
         val prootCmd = commandBuilder.build(spec, proot)
-        val targetLog = logFile?.absolutePath ?: spec.logFilePath
-        targetLog?.let { File(it).parentFile?.mkdirs() }
-        val envVars = buildList {
-            add("PROOT_TMP_DIR=${tmpDir.absolutePath}")
-            if (loader?.exists() == true) {
-                add("PROOT_LOADER=${loader.absolutePath}")
-            }
-            if (targetLog != null) {
-                add("PROOT_LOG_FILE=$targetLog")
-            }
-            if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
-                add("PROOT_VERBOSE=9")
-            }
-            if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
-                add("PROOT_NO_SECCOMP=1")
-            }
-            spec.environmentVariables.forEach { (k, v) ->
-                if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH") {
-                    add("$k=$v")
-                }
-            }
-        }
+        val envMap = buildIsolatedEnvironment(spec, loader, tmpDir, logFile)
+        val envVars = envMap.map { (k, v) -> "$k=$v" }
 
         val outPidAndFd = IntArray(2)
         val res = NativeBridge.createPtyProcess(
@@ -135,5 +92,40 @@ class RuntimeLauncher(
             )
         }
         return PtyLaunchHandle(outPidAndFd[0], outPidAndFd[1])
+    }
+
+    /**
+     * Constructs a pristine, isolated environment for the guest PRoot instance,
+     * stripping all host Bionic / Android variables while retaining guest-specific configuration.
+     */
+    fun buildIsolatedEnvironment(
+        spec: RuntimeSpec,
+        loader: File?,
+        tmpDir: File,
+        logFile: File? = spec.logFilePath?.let { File(it) },
+    ): Map<String, String> = buildMap {
+        put("PROOT_TMP_DIR", tmpDir.absolutePath)
+        if (loader?.exists() == true) {
+            put("PROOT_LOADER", loader.absolutePath)
+        }
+        val targetLog = logFile?.absolutePath ?: spec.logFilePath
+        if (targetLog != null) {
+            File(targetLog).parentFile?.mkdirs()
+            put("PROOT_LOG_FILE", targetLog)
+        }
+        if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
+            put("PROOT_VERBOSE", "9")
+        }
+        // Disable PRoot seccomp BPF accelerator by default on Android to avoid a
+        // BPF filter killing modern glibc/musl dynamic linker syscalls with
+        // SIGSYS (signal 31). Overridable by an explicitly provided env var.
+        if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
+            put("PROOT_NO_SECCOMP", "1")
+        }
+        spec.environmentVariables.forEach { (k, v) ->
+            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH") {
+                put(k, v)
+            }
+        }
     }
 }
