@@ -446,6 +446,40 @@ class RuntimeLogExporter(
     }
 
     /**
+     * Returns the textual content for any given LogExportType without saving to disk.
+     */
+    suspend fun generateLogContent(
+        environment: Environment,
+        exportType: LogExportType,
+        asJson: Boolean = false,
+        terminalOutput: String? = null,
+        exitCode: Int? = null,
+        isPtyActive: Boolean = false,
+    ): String = withContext(Dispatchers.IO) {
+        when (exportType) {
+            LogExportType.TERMINAL_FAILURE_LOG -> generateTerminalFailureLog(
+                environment = environment,
+                terminalOutput = terminalOutput,
+                exitCode = exitCode,
+                isPtyActive = isPtyActive,
+                asJson = asJson,
+            )
+            LogExportType.FAILURE_REPORT_COMPACT -> generateFailureReportString(
+                environment = environment,
+                includeRawContext = false,
+                asJson = asJson,
+            )
+            LogExportType.FAILURE_REPORT_DEVELOPER -> generateFailureReportString(
+                environment = environment,
+                includeRawContext = true,
+                asJson = asJson,
+            )
+            LogExportType.SYSTEM_DIAGNOSTICS -> generateDetailedLogReport(environment)
+            LogExportType.FULL_LOGS -> generateDetailedLogReport(environment)
+        }
+    }
+
+    /**
      * Creates an Android share Intent for the requested export type.
      */
     suspend fun createShareIntent(

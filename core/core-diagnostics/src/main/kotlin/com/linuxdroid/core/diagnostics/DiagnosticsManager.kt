@@ -135,12 +135,21 @@ class DiagnosticsManager(
                     detail = "Rootfs present (~${sizeMb}MB)",
                 )
             } else {
-                DiagnosticCheck(
-                    name = "Filesystem",
-                    status = DiagnosticStatus.ERROR,
-                    detail = "Rootfs missing or incomplete at ${storage.rootfsDir(environment.id).path}",
-                    recommendation = "Reinstall the Linux environment",
-                )
+                if (environment.state == EnvironmentState.STOPPED) {
+                    DiagnosticCheck(
+                        name = "Filesystem",
+                        status = DiagnosticStatus.NOT_APPLICABLE,
+                        detail = "Rootfs not provisioned yet (install distribution to start)",
+                        recommendation = "Install Linux environment from the Environments tab",
+                    )
+                } else {
+                    DiagnosticCheck(
+                        name = "Filesystem",
+                        status = DiagnosticStatus.ERROR,
+                        detail = "Rootfs missing or incomplete at ${storage.rootfsDir(environment.id).path}",
+                        recommendation = "Reinstall the Linux environment",
+                    )
+                }
             }
         } catch (e: Exception) {
             DiagnosticCheck(
@@ -166,8 +175,8 @@ class DiagnosticsManager(
             } else {
                 DiagnosticCheck(
                     name = "Linux Userspace",
-                    status = DiagnosticStatus.WARNING,
-                    detail = "Environment not running (state: ${environment.state})",
+                    status = DiagnosticStatus.NOT_APPLICABLE,
+                    detail = "Standby (rootfs not provisioned yet)",
                 )
             }
         }

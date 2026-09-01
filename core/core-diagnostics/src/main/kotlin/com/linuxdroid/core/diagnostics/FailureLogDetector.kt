@@ -160,27 +160,7 @@ class FailureLogDetector(
             )
         }
 
-        // 2. EXECVE Enter
-        EXECVE_ENTER_PATTERN.find(line)?.let { m ->
-            val pid = m.groupValues[1].toIntOrNull()
-            val sysnum = m.groupValues[2].toIntOrNull()
-            val rawPath = m.groupValues[3]
-            val normPath = m.groupValues[4]
-            return FailureEvent(
-                id = "",
-                correlationId = "",
-                category = FailureCategory.EXECVE_FAILURE,
-                message = "[EXECVE_ENTER] pid=$pid, sysnum=$sysnum, raw_path=$rawPath, normalized=$normPath",
-                source = "PRoot:execve",
-                pid = pid,
-                syscallNumber = sysnum,
-                syscallName = "execve",
-                rawAddress = rawPath,
-                normalizedAddress = normPath,
-            )
-        }
-
-        // 3. EXECVE Path Failure
+        // 2. EXECVE Path Failure
         EXECVE_PATH_FAIL_PATTERN.find(line)?.let { m ->
             val detail = m.groupValues[1]
             val errnoVal = extractErrno(detail) ?: 14

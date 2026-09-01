@@ -91,6 +91,17 @@ class DiagnosticsViewModel @Inject constructor(
         }
     }
 
+    suspend fun getLogContent(exportType: LogExportType, asJson: Boolean = false): String {
+        val envId = _selectedEnvironmentId.value ?: return "No environment selected."
+        return try {
+            val entity = dao.getById(envId) ?: return "Environment not found."
+            val env = EnvironmentMapper.toDomain(entity)
+            logExporter.generateLogContent(env, exportType, asJson)
+        } catch (e: Exception) {
+            "Failed to generate log: ${e.message}"
+        }
+    }
+
     fun getFailureReportText(asJson: Boolean = false): String {
         val fail = _failureReport.value ?: return "No failures detected."
         return if (asJson) {
@@ -98,5 +109,25 @@ class DiagnosticsViewModel @Inject constructor(
         } else {
             com.linuxdroid.core.diagnostics.FailureReportExporter().buildPlainTextReport(fail, false)
         }
+    }
+
+    fun getSubsystemsReportText(): String {
+        val rep = _report.value ?: return "No report available."
+        val sb = StringBuilder()
+        sb.appendLine("=== LINUXDROID SUBSYSTEM HEALTH AUDIT ===")
+        sb.appendLine("Environment: ${rep.environmentId?.value ?: "N/A"}")
+        rep.sessionId?.let { sb.appendLine("Session: $it") }
+        sb.appendLine()
+        val checks = listOf(
+            rep.runtime, rep.filesystem, rep.linuxUserspace, rep.wayland,
+            rep.xwayland, rep.gpu, rep.audio, rep.network, rep.sharedStorage, rep.resources
+        )
+        for (check in checks) {
+            sb.appendLine("[${check.status.name}] ${check.name}")
+            sb.appendLine("  Detail: ${check.detail}")
+            check.recommendation?.let { sb.appendLine("  Recommendation: $it") }
+            sb.appendLine()
+        }
+        return sb.toString()
     }
 }
