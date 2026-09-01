@@ -378,7 +378,7 @@ class RootfsBootstrapper(
         }
         resolvConf.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\nnameserver 1.1.1.1\n")
 
-        // 2. Hostname
+        // 2. Hostname and Hosts
         val hostname = File(rootfsDir, "etc/hostname")
         hostname.parentFile?.mkdirs()
         try {
@@ -387,6 +387,15 @@ class RootfsBootstrapper(
             hostname.delete()
         }
         hostname.writeText("linuxdroid\n")
+
+        val hostsFile = File(rootfsDir, "etc/hosts")
+        hostsFile.parentFile?.mkdirs()
+        try {
+            Files.deleteIfExists(hostsFile.toPath())
+        } catch (_: Exception) {
+            hostsFile.delete()
+        }
+        hostsFile.writeText("127.0.0.1 localhost linuxdroid\n::1 localhost ip6-localhost ip6-loopback\n")
 
         // 3. Environment Variables
         val envFile = File(rootfsDir, "etc/environment")
