@@ -27,6 +27,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.linuxdroid.app.ui.navigation.Screen
 import com.linuxdroid.app.ui.viewmodel.EnvironmentViewModel
+import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.core.model.Architecture
 import com.linuxdroid.core.model.Distribution
 import com.linuxdroid.core.model.Environment
@@ -43,6 +44,7 @@ fun EnvironmentListScreen(
     val installProgress by viewModel.installProgress.collectAsState()
     val installStatusText by viewModel.installStatusText.collectAsState()
     val installerLogs by viewModel.installerLogs.collectAsState()
+    val neuColors = NeuTheme.colors
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var envToDelete by remember { mutableStateOf<Environment?>(null) }
@@ -59,29 +61,46 @@ fun EnvironmentListScreen(
     }
 
     Scaffold(
+        containerColor = neuColors.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Environments") },
+                title = { Text("Environments", color = neuColors.textPrimary) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = neuColors.background,
+                    titleContentColor = neuColors.textPrimary,
+                ),
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    NeuIconButton(
+                        onClick = { navController.popBackStack() },
+                        size = 38.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(18.dp))
                     }
                 },
                 actions = {
-                    IconButton(onClick = { navController.navigate(Screen.Diagnostics.route) }) {
-                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostics")
+                    NeuIconButton(
+                        onClick = { navController.navigate(Screen.Diagnostics.route) },
+                        size = 38.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostics", modifier = Modifier.size(18.dp))
                     }
+                    Spacer(Modifier.width(12.dp))
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
+            NeuButton(
                 onClick = { showCreateDialog = true },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                isAccent = true,
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
             ) {
-                Icon(Icons.Default.Add, contentDescription = "New Environment")
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("New Environment", fontSize = 14.sp, fontWeight = FontWeight.Bold)
             }
         }
     ) { padding ->
@@ -89,6 +108,7 @@ fun EnvironmentListScreen(
             EmptyEnvironmentsPlaceholder(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(neuColors.background)
                     .padding(padding),
                 onCreateClick = { showCreateDialog = true }
             )
@@ -96,6 +116,7 @@ fun EnvironmentListScreen(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(neuColors.background)
                     .padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -228,32 +249,50 @@ private fun EmptyEnvironmentsPlaceholder(
     modifier: Modifier = Modifier,
     onCreateClick: () -> Unit,
 ) {
+    val neuColors = NeuTheme.colors
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(32.dp)
+        NeuCard(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .padding(16.dp),
         ) {
-            Icon(
-                imageVector = Icons.Default.Storage,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = "No Linux Environments",
-                style = MaterialTheme.typography.titleLarge,
-            )
-            Text(
-                text = "Create a persistent Debian or Ubuntu Linux environment to run packages and terminal tools directly on your device.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(onClick = onCreateClick) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Create Environment")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(24.dp)
+            ) {
+                NeuIconButton(
+                    onClick = {},
+                    enabled = false,
+                    size = 72.dp,
+                    tint = neuColors.primaryAccent,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Storage,
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+                Text(
+                    text = "No Linux Environments",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = neuColors.textPrimary,
+                )
+                Text(
+                    text = "Create a persistent Debian or Ubuntu Linux environment to run packages and terminal tools directly on your device.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = neuColors.textSecondary,
+                )
+                Spacer(Modifier.height(4.dp))
+                NeuButton(
+                    onClick = onCreateClick,
+                    isAccent = true,
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Create Environment", fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -276,7 +315,8 @@ private fun EnvironmentCard(
     onDiagnosticsClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
-    ElevatedCard(
+    val neuColors = NeuTheme.colors
+    NeuCard(
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -289,22 +329,26 @@ private fun EnvironmentCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = environment.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = neuColors.textPrimary,
                     )
                     Text(
                         text = "${environment.distribution.displayName} • ${environment.architecture.abiName}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = neuColors.textSecondary,
                     )
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StateChip(state = environment.state)
-                    IconButton(onClick = onDeleteClick, modifier = Modifier.size(24.dp)) {
+                    NeuIconButton(
+                        onClick = onDeleteClick,
+                        size = 32.dp,
+                        tint = neuColors.error,
+                    ) {
                         Icon(
                             Icons.Default.DeleteOutline,
                             contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
@@ -316,15 +360,21 @@ private fun EnvironmentCard(
                     LinearProgressIndicator(
                         progress = { progress },
                         modifier = Modifier.fillMaxWidth(),
+                        color = neuColors.primaryAccent,
+                        trackColor = neuColors.surfacePressed,
                     )
                 } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = neuColors.primaryAccent,
+                        trackColor = neuColors.surfacePressed,
+                    )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = statusText ?: "Downloading and setting up rootfs…",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = neuColors.primaryAccent,
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -336,20 +386,20 @@ private fun EnvironmentCard(
             environment.failureMessage?.let { error ->
                 Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = MaterialTheme.shapes.small,
+                    color = neuColors.error.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = error,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        color = neuColors.error,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Primary State Action Buttons
             Row(
@@ -361,77 +411,105 @@ private fun EnvironmentCard(
             ) {
                 when (environment.state) {
                     EnvironmentState.CREATED -> {
-                        Button(onClick = onInstallClick) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                        NeuButton(
+                            onClick = onInstallClick,
+                            isAccent = true,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("INSTALL")
+                            Text("INSTALL", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     EnvironmentState.READY, EnvironmentState.STOPPED -> {
-                        Button(onClick = onStartClick) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                        NeuButton(
+                            onClick = onStartClick,
+                            isAccent = true,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("START")
+                            Text("START", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                        OutlinedButton(onClick = onShellClick) {
-                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                        NeuButton(
+                            onClick = onShellClick,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("OPEN SHELL")
+                            Text("OPEN SHELL", fontSize = 12.sp)
                         }
                     }
                     EnvironmentState.RUNNING -> {
-                        Button(
+                        NeuButton(
                             onClick = onShellClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            isAccent = true,
                         ) {
-                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("OPEN SHELL")
+                            Text("OPEN SHELL", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                        Button(
+                        NeuButton(
                             onClick = onDesktopClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
                         ) {
-                            Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("OPEN DESKTOP")
+                            Text("OPEN DESKTOP", fontSize = 12.sp)
                         }
-                        OutlinedButton(onClick = onRestartClick) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        NeuButton(
+                            onClick = onRestartClick,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("RESTART")
+                            Text("RESTART", fontSize = 12.sp)
                         }
-                        OutlinedButton(
+                        NeuButton(
                             onClick = onStopClick,
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                         ) {
-                            Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(15.dp), tint = neuColors.error)
                             Spacer(Modifier.width(6.dp))
-                            Text("STOP")
+                            Text("STOP", fontSize = 12.sp, color = neuColors.error)
                         }
                     }
                     EnvironmentState.STARTING, EnvironmentState.STOPPING -> {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = neuColors.primaryAccent)
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = if (environment.state == EnvironmentState.STARTING) "Starting…" else "Stopping…",
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = neuColors.textSecondary,
                         )
                     }
                     EnvironmentState.FAILED -> {
-                        Button(onClick = onRestartClick) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        NeuButton(
+                            onClick = onRestartClick,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                            isAccent = true,
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("RETRY")
+                            Text("RETRY", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                     else -> {}
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(color = neuColors.borderHighlight.copy(alpha = 0.3f))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Subsystem actions: Settings, Storage, Logs/Diagnostics
             Row(
@@ -440,21 +518,21 @@ private fun EnvironmentCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 TextButton(onClick = onSettingsClick) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
                     Spacer(Modifier.width(4.dp))
-                    Text("Settings", fontSize = 12.sp)
+                    Text("Settings", fontSize = 12.sp, color = neuColors.textPrimary)
                 }
 
                 TextButton(onClick = onStorageClick) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
                     Spacer(Modifier.width(4.dp))
-                    Text("Storage", fontSize = 12.sp)
+                    Text("Storage", fontSize = 12.sp, color = neuColors.textPrimary)
                 }
 
                 TextButton(onClick = onDiagnosticsClick) {
-                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
                     Spacer(Modifier.width(4.dp))
-                    Text("Logs / Diagnostics", fontSize = 12.sp)
+                    Text("Diagnostics", fontSize = 12.sp, color = neuColors.textPrimary)
                 }
             }
         }
@@ -463,76 +541,29 @@ private fun EnvironmentCard(
 
 @Composable
 private fun StateChip(state: EnvironmentState) {
-    val (containerColor, contentColor, label) = when (state) {
-        EnvironmentState.RUNNING -> Triple(
-            Color(0xFFE8F5E9),
-            Color(0xFF2E7D32),
-            "Running"
-        )
-        EnvironmentState.STARTING -> Triple(
-            Color(0xFFFFF3E0),
-            Color(0xFFE65100),
-            "Starting"
-        )
-        EnvironmentState.STOPPING -> Triple(
-            Color(0xFFFFF3E0),
-            Color(0xFFE65100),
-            "Stopping"
-        )
-        EnvironmentState.INSTALLING -> Triple(
-            Color(0xFFE3F2FD),
-            Color(0xFF1565C0),
-            "Installing"
-        )
-        EnvironmentState.FAILED -> Triple(
-            MaterialTheme.colorScheme.errorContainer,
-            MaterialTheme.colorScheme.onErrorContainer,
-            "Failed"
-        )
-        EnvironmentState.READY -> Triple(
-            Color(0xFFF3E5F5),
-            Color(0xFF6A1B9A),
-            "Ready"
-        )
-        EnvironmentState.STOPPED -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "Stopped"
-        )
-        EnvironmentState.CREATED -> Triple(
-            MaterialTheme.colorScheme.surfaceVariant,
-            MaterialTheme.colorScheme.onSurfaceVariant,
-            "Created"
-        )
-        EnvironmentState.RECOVERING -> Triple(
-            Color(0xFFFFF3E0),
-            Color(0xFFE65100),
-            "Recovering"
-        )
-        EnvironmentState.DELETING -> Triple(
-            Color(0xFFFFEBEE),
-            Color(0xFFC62828),
-            "Deleting"
-        )
-        EnvironmentState.CLONING -> Triple(
-            Color(0xFFE0F7FA),
-            Color(0xFF00838F),
-            "Cloning"
-        )
-        EnvironmentState.RESETTING -> Triple(
-            Color(0xFFFFF8E1),
-            Color(0xFFF57F17),
-            "Resetting"
-        )
+    val neuColors = NeuTheme.colors
+    val (bgColor, textColor, label) = when (state) {
+        EnvironmentState.RUNNING -> Triple(neuColors.success.copy(alpha = 0.15f), neuColors.success, "Running")
+        EnvironmentState.STARTING -> Triple(neuColors.warning.copy(alpha = 0.15f), neuColors.warning, "Starting")
+        EnvironmentState.STOPPING -> Triple(neuColors.warning.copy(alpha = 0.15f), neuColors.warning, "Stopping")
+        EnvironmentState.INSTALLING -> Triple(neuColors.primaryAccent.copy(alpha = 0.15f), neuColors.primaryAccent, "Installing")
+        EnvironmentState.FAILED -> Triple(neuColors.error.copy(alpha = 0.15f), neuColors.error, "Failed")
+        EnvironmentState.READY -> Triple(neuColors.primaryAccent.copy(alpha = 0.15f), neuColors.primaryAccent, "Ready")
+        EnvironmentState.STOPPED -> Triple(neuColors.surfacePressed, neuColors.textSecondary, "Stopped")
+        EnvironmentState.CREATED -> Triple(neuColors.surfacePressed, neuColors.textSecondary, "Created")
+        EnvironmentState.RECOVERING -> Triple(neuColors.warning.copy(alpha = 0.15f), neuColors.warning, "Recovering")
+        EnvironmentState.DELETING -> Triple(neuColors.error.copy(alpha = 0.15f), neuColors.error, "Deleting")
+        EnvironmentState.CLONING -> Triple(neuColors.secondaryAccent.copy(alpha = 0.15f), neuColors.secondaryAccent, "Cloning")
+        EnvironmentState.RESETTING -> Triple(neuColors.warning.copy(alpha = 0.15f), neuColors.warning, "Resetting")
     }
     Surface(
-        color = containerColor,
-        contentColor = contentColor,
-        shape = MaterialTheme.shapes.small,
+        color = bgColor,
+        shape = RoundedCornerShape(8.dp),
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
     }
@@ -548,10 +579,12 @@ private fun CreateEnvironmentDialog(
     var selectedDist by remember { mutableStateOf(Distribution.DEBIAN) }
     val detectedArch = remember { Architecture.current() }
     var selectedArch by remember { mutableStateOf(detectedArch) }
+    val neuColors = NeuTheme.colors
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Linux Environment") },
+        containerColor = neuColors.background,
+        title = { Text("New Linux Environment", color = neuColors.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -562,59 +595,83 @@ private fun CreateEnvironmentDialog(
                     onValueChange = { name = it },
                     label = { Text("Environment Name") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = neuColors.textPrimary,
+                        unfocusedTextColor = neuColors.textPrimary,
+                        focusedBorderColor = neuColors.primaryAccent,
+                        unfocusedBorderColor = neuColors.borderHighlight,
+                        focusedLabelColor = neuColors.primaryAccent,
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 Column {
-                    Text("Distribution", style = MaterialTheme.typography.labelMedium)
+                    Text("Distribution", style = MaterialTheme.typography.labelMedium, color = neuColors.textSecondary)
                     Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI).forEach { dist ->
-                            FilterChip(
-                                selected = selectedDist == dist,
+                            val isSelected = selectedDist == dist
+                            NeuButton(
                                 onClick = {
                                     selectedDist = dist
-                                    if (name.isBlank() || name == "Debian Linux" || name == "Ubuntu Linux" || name == "Kali Linux Linux") {
+                                    if (name.isBlank() || name == "Debian Linux" || name == "Ubuntu Linux" || name == "Kali Linux") {
                                         name = if (dist == Distribution.KALI) "Kali Linux" else "${dist.displayName} Linux"
                                     }
                                 },
-                                label = { Text(dist.displayName) }
-                            )
+                                isAccent = isSelected,
+                                elevation = if (isSelected) 2.dp else 4.dp,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(dist.displayName, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            }
                         }
                     }
                 }
 
                 Column {
-                    Text("Architecture", style = MaterialTheme.typography.labelMedium)
+                    Text("Architecture", style = MaterialTheme.typography.labelMedium, color = neuColors.textSecondary)
                     Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(Architecture.ARM64, Architecture.X86_64).forEach { arch ->
-                            FilterChip(
-                                selected = selectedArch == arch,
+                            val isSelected = selectedArch == arch
+                            NeuButton(
                                 onClick = { selectedArch = arch },
-                                label = { Text(arch.abiName) }
-                            )
+                                isAccent = isSelected,
+                                elevation = if (isSelected) 2.dp else 4.dp,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(arch.abiName, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            }
                         }
                     }
                 }
             }
         },
         confirmButton = {
-            Button(
+            NeuButton(
                 onClick = { onCreate(name, selectedDist, selectedArch) },
                 enabled = name.isNotBlank(),
+                isAccent = true,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text("Create & Install")
+                Text("Create & Install", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            NeuButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
                 Text("Cancel")
             }
         }
@@ -630,10 +687,12 @@ private fun EnvironmentSettingsDialog(
     var linuxUser by remember { mutableStateOf(environment.configuration.linuxUser) }
     var homeDir by remember { mutableStateOf(environment.configuration.homeDir) }
     var sharedStorage by remember { mutableStateOf(environment.configuration.runtime.sharedStorageEnabled) }
+    val neuColors = NeuTheme.colors
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Environment Settings") },
+        containerColor = neuColors.background,
+        title = { Text("Environment Settings", color = neuColors.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -644,6 +703,12 @@ private fun EnvironmentSettingsDialog(
                     onValueChange = { linuxUser = it },
                     label = { Text("Linux User") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = neuColors.textPrimary,
+                        unfocusedTextColor = neuColors.textPrimary,
+                        focusedBorderColor = neuColors.primaryAccent,
+                        unfocusedBorderColor = neuColors.borderHighlight,
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -652,6 +717,12 @@ private fun EnvironmentSettingsDialog(
                     onValueChange = { homeDir = it },
                     label = { Text("Home Directory") },
                     singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = neuColors.textPrimary,
+                        unfocusedTextColor = neuColors.textPrimary,
+                        focusedBorderColor = neuColors.primaryAccent,
+                        unfocusedBorderColor = neuColors.borderHighlight,
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -660,7 +731,7 @@ private fun EnvironmentSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Enable Shared Storage", style = MaterialTheme.typography.bodyMedium)
+                    Text("Enable Shared Storage", style = MaterialTheme.typography.bodyMedium, color = neuColors.textPrimary)
                     Switch(
                         checked = sharedStorage,
                         onCheckedChange = { sharedStorage = it }
@@ -669,21 +740,30 @@ private fun EnvironmentSettingsDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val newConfig = environment.configuration.copy(
-                    linuxUser = linuxUser.trim().ifEmpty { "root" },
-                    homeDir = homeDir.trim().ifEmpty { "/root" },
-                    runtime = environment.configuration.runtime.copy(
-                        sharedStorageEnabled = sharedStorage
+            NeuButton(
+                onClick = {
+                    val newConfig = environment.configuration.copy(
+                        linuxUser = linuxUser.trim().ifEmpty { "root" },
+                        homeDir = homeDir.trim().ifEmpty { "/root" },
+                        runtime = environment.configuration.runtime.copy(
+                            sharedStorageEnabled = sharedStorage
+                        )
                     )
-                )
-                onSave(newConfig)
-            }) {
-                Text("Save")
+                    onSave(newConfig)
+                },
+                isAccent = true,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Save", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            NeuButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
                 Text("Cancel")
             }
         }
@@ -695,53 +775,60 @@ private fun EnvironmentStorageDialog(
     environment: Environment,
     onDismiss: () -> Unit,
 ) {
+    val neuColors = NeuTheme.colors
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Storage & Shared Directory") },
+        containerColor = neuColors.background,
+        title = { Text("Storage & Shared Directory", color = neuColors.textPrimary, fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("Rootfs Location:", style = MaterialTheme.typography.labelMedium)
-                Surface(
-                    color = Color(0xFF1E1E1E),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Text("Rootfs Location:", style = MaterialTheme.typography.labelMedium, color = neuColors.textSecondary)
+                NeuCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    isInset = true,
                 ) {
                     Text(
                         text = environment.rootfsPath,
-                        color = Color(0xFFE0E0E0),
+                        color = neuColors.textPrimary,
                         fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
 
                 Spacer(Modifier.height(4.dp))
 
-                Text("Shared Android Directory:", style = MaterialTheme.typography.labelMedium)
-                Surface(
-                    color = Color(0xFF1E1E1E),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                Text("Shared Android Directory:", style = MaterialTheme.typography.labelMedium, color = neuColors.textSecondary)
+                NeuCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    isInset = true,
                 ) {
                     Text(
                         text = "/sdcard/LinuxDroid -> /home/user/Android",
-                        color = Color(0xFF81C784),
+                        color = neuColors.primaryAccent,
                         fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
                 Text(
                     text = "Files placed in /sdcard/LinuxDroid on your device are safely accessible inside the Linux environment.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = neuColors.textMuted
                 )
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss) {
-                Text("OK")
+            NeuButton(
+                onClick = onDismiss,
+                isAccent = true,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("OK", fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -754,6 +841,7 @@ private fun InstallerTerminalConsole(
 ) {
     val clipboardManager = LocalClipboardManager.current
     val listState = rememberLazyListState()
+    val neuColors = NeuTheme.colors
 
     LaunchedEffect(logs.size) {
         if (logs.isNotEmpty()) {
@@ -761,19 +849,16 @@ private fun InstallerTerminalConsole(
         }
     }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp)),
-        color = Color(0xFF0F172A),
-        shape = RoundedCornerShape(8.dp)
+    NeuCard(
+        modifier = modifier.fillMaxWidth(),
+        isInset = true,
     ) {
         Column {
             // Header toolbar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF1E293B))
+                    .background(neuColors.surfacePressed)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -785,11 +870,11 @@ private fun InstallerTerminalConsole(
                     Box(
                         modifier = Modifier
                             .size(8.dp)
-                            .background(Color(0xFF22C55E), shape = RoundedCornerShape(4.dp))
+                            .background(neuColors.success, shape = RoundedCornerShape(4.dp))
                     )
                     Text(
                         text = "INSTALLER TERMINAL OUTPUT",
-                        color = Color(0xFF94A3B8),
+                        color = neuColors.textSecondary,
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
@@ -801,29 +886,29 @@ private fun InstallerTerminalConsole(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Surface(
-                        color = Color(0xFF334155),
+                        color = neuColors.surface,
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
                             text = "${logs.size} lines",
-                            color = Color(0xFFCBD5E1),
+                            color = neuColors.textSecondary,
                             fontSize = 10.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
 
-                    IconButton(
+                    NeuIconButton(
                         onClick = {
                             clipboardManager.setText(AnnotatedString(logs.joinToString("\n")))
                         },
-                        modifier = Modifier.size(22.dp)
+                        size = 24.dp,
+                        tint = neuColors.textSecondary,
                     ) {
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = "Copy installer logs",
-                            tint = Color(0xFF94A3B8),
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
@@ -842,7 +927,7 @@ private fun InstallerTerminalConsole(
                     item {
                         Text(
                             text = ">>> Initializing bootstrap daemon...",
-                            color = Color(0xFF64748B),
+                            color = neuColors.textMuted,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp
                         )
@@ -855,8 +940,8 @@ private fun InstallerTerminalConsole(
                             line.contains("[WARN]") -> Color(0xFFFBBF24)
                             line.contains("[DOWNLOAD]") || line.contains("[EXTRACT]") || line.contains("[INIT]") || line.contains("[SOURCE]") -> Color(0xFF38BDF8)
                             line.contains("[CONFIG]") || line.contains("[VERIFY]") || line.contains("[VALIDATE]") || line.contains("[PROMOTE]") -> Color(0xFFFDE047)
-                            line.startsWith("extract:") -> Color(0xFF94A3B8)
-                            else -> Color(0xFFE2E8F0)
+                            line.startsWith("extract:") -> neuColors.textMuted
+                            else -> neuColors.textPrimary
                         }
 
                         Text(
@@ -875,7 +960,7 @@ private fun InstallerTerminalConsole(
                         ) {
                             Text(
                                 text = "▋",
-                                color = Color(0xFF4ADE80),
+                                color = neuColors.primaryAccent,
                                 fontSize = 12.sp,
                                 fontFamily = FontFamily.Monospace
                             )

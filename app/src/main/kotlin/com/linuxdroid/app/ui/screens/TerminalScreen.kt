@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.app.ui.viewmodel.TerminalViewModel
 import com.linuxdroid.core.model.LogExportType
 
@@ -62,6 +63,7 @@ fun TerminalScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val keyboardController = LocalSoftwareKeyboardController.current
+    val neuColors = NeuTheme.colors
 
     val environment by viewModel.environment.collectAsState()
     val lines by viewModel.lines.collectAsState()
@@ -127,42 +129,64 @@ fun TerminalScreen(
 
     Scaffold(
         contentWindowInsets = WindowInsets.statusBars,
+        containerColor = neuColors.background,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text(
                             text = environment?.name ?: "Linux Shell",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = neuColors.textPrimary,
                         )
                         Text(
                             text = if (isShellActive) "Interactive Shell (PTY)" else if (isStarting) "Connecting Shell…" else "Disconnected",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (isShellActive) Color(0xFF81C784) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isShellActive) neuColors.success else neuColors.textSecondary,
                         )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    NeuIconButton(
+                        onClick = { navController.popBackStack() },
+                        size = 38.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(18.dp))
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showExportOptions = true }) {
-                        Icon(Icons.Default.Share, contentDescription = "Export Terminal & Failure Logs")
+                    NeuIconButton(
+                        onClick = { showExportOptions = true },
+                        size = 38.dp,
+                        tint = neuColors.primaryAccent,
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Export Terminal & Failure Logs", modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = { viewModel.clear() }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear Terminal")
+                    Spacer(Modifier.width(6.dp))
+                    NeuIconButton(
+                        onClick = { viewModel.clear() },
+                        size = 38.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear Terminal", modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = {
-                        focusRequester.requestFocus()
-                        keyboardController?.show()
-                    }) {
-                        Icon(Icons.Default.Keyboard, contentDescription = "Show Keyboard")
+                    Spacer(Modifier.width(6.dp))
+                    NeuIconButton(
+                        onClick = {
+                            focusRequester.requestFocus()
+                            keyboardController?.show()
+                        },
+                        size = 38.dp,
+                        tint = neuColors.primaryAccent,
+                    ) {
+                        Icon(Icons.Default.Keyboard, contentDescription = "Show Keyboard", modifier = Modifier.size(18.dp))
                     }
+                    Spacer(Modifier.width(10.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    containerColor = neuColors.background,
+                    titleContentColor = neuColors.textPrimary,
                 ),
             )
         }
@@ -173,7 +197,7 @@ fun TerminalScreen(
                 .padding(padding)
                 .imePadding()
                 .navigationBarsPadding()
-                .background(Color(0xFF080C14))
+                .background(neuColors.background)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
@@ -184,12 +208,10 @@ fun TerminalScreen(
         ) {
             // Disconnected / Exit status and quick export banner
             if (!isShellActive && !isStarting) {
-                Surface(
-                    color = Color(0xFF1E293B),
+                NeuCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -198,26 +220,30 @@ fun TerminalScreen(
                     ) {
                         Text(
                             text = if (shellExitCode != null && shellExitCode != 0) "Session exited (code $shellExitCode)" else "Session inactive",
-                            color = Color(0xFFF87171),
+                            color = neuColors.error,
                             fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(
+                            NeuButton(
                                 onClick = { showExportOptions = true },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = "Export Logs", modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(4.dp))
                                 Text("Export Log", fontSize = 11.sp)
                             }
-                            Button(
+                            NeuButton(
                                 onClick = { viewModel.restartShell() },
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                isAccent = true,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = "Restart", modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Restart", fontSize = 11.sp)
+                                Text("Restart", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -228,13 +254,14 @@ fun TerminalScreen(
             if (showExportOptions) {
                 AlertDialog(
                     onDismissRequest = { showExportOptions = false },
+                    containerColor = neuColors.background,
                     title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text("Export Terminal & Failure Logs")
+                            Icon(Icons.Default.BugReport, contentDescription = null, tint = neuColors.primaryAccent)
+                            Text("Export Terminal & Logs", color = neuColors.textPrimary, fontWeight = FontWeight.Bold)
                         }
                     },
                     text = {
@@ -245,30 +272,33 @@ fun TerminalScreen(
                             Text(
                                 "Choose the export type for the current terminal session and runtime environment:",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = neuColors.textSecondary
                             )
 
                             Spacer(Modifier.height(4.dp))
 
                             // Primary: Terminal Session & Failure Log
-                            Button(
+                            NeuButton(
                                 onClick = {
                                     showExportOptions = false
                                     viewModel.exportLogs(context, LogExportType.TERMINAL_FAILURE_LOG, asJson = false)
                                 },
+                                isAccent = true,
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Terminal Session & Failure Log", fontSize = 13.sp)
+                                Text("Terminal Session & Failure Log", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
 
                             // Secondary: Compact Failure Report
-                            OutlinedButton(
+                            NeuButton(
                                 onClick = {
                                     showExportOptions = false
                                     viewModel.exportLogs(context, LogExportType.FAILURE_REPORT_COMPACT, asJson = false)
                                 },
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -277,11 +307,12 @@ fun TerminalScreen(
                             }
 
                             // Full Raw Logs Archive (.zip)
-                            OutlinedButton(
+                            NeuButton(
                                 onClick = {
                                     showExportOptions = false
                                     viewModel.exportLogs(context, LogExportType.FULL_LOGS, asJson = false)
                                 },
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.FolderZip, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -290,7 +321,7 @@ fun TerminalScreen(
                             }
 
                             // Copy Raw Terminal Scrollback
-                            OutlinedButton(
+                            NeuButton(
                                 onClick = {
                                     showExportOptions = false
                                     val text = viewModel.getTerminalPlainText()
@@ -298,6 +329,7 @@ fun TerminalScreen(
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Scrollback", text))
                                     Toast.makeText(context, "Terminal scrollback copied to clipboard", Toast.LENGTH_SHORT).show()
                                 },
+                                shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -307,7 +339,11 @@ fun TerminalScreen(
                         }
                     },
                     confirmButton = {
-                        TextButton(onClick = { showExportOptions = false }) {
+                        NeuButton(
+                            onClick = { showExportOptions = false },
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
                             Text("Cancel")
                         }
                     }
@@ -323,18 +359,18 @@ fun TerminalScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 quickCommands.forEach { cmd ->
-                    SuggestionChip(
+                    NeuButton(
                         onClick = {
                             viewModel.runCommand(cmd)
                             focusRequester.requestFocus()
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         },
-                        label = { Text(cmd, fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = Color(0xFF1E293B),
-                            labelColor = Color(0xFF38BDF8),
-                        ),
-                    )
+                        shape = RoundedCornerShape(8.dp),
+                        elevation = 2.dp,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(cmd, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = neuColors.primaryAccent)
+                    }
                 }
             }
 
@@ -423,24 +459,17 @@ fun TerminalScreen(
             }
 
             // Streamlined, Ergonomic Extra Keyboard Button Bar (Always positioned directly above IME)
-            Surface(
-                color = Color(0xFF0B111E),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        width = 1.dp,
-                        color = Color(0xFF1E293B),
-                        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
-                    ),
-                shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
-                tonalElevation = 8.dp
+            NeuCard(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = 4.dp,
+                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TerminalKeyButton(
@@ -666,41 +695,20 @@ private fun TerminalKeyButton(
     highlight: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val bgColor = when {
-        isActive -> Color(0xFF22C55E)
-        highlight -> Color(0xFF1E293B)
-        else -> Color(0xFF151F30)
-    }
-    val textColor = when {
-        isActive -> Color.Black
-        highlight -> Color(0xFF38BDF8)
-        else -> Color(0xFFF1F5F9)
-    }
-    val borderColor = when {
-        isActive -> Color(0xFF4ADE80)
-        highlight -> Color(0xFF0284C7)
-        else -> Color(0xFF2B3A52)
-    }
-
-    Surface(
+    val neuColors = NeuTheme.colors
+    NeuButton(
         onClick = onClick,
-        shape = RoundedCornerShape(6.dp),
-        color = bgColor,
-        modifier = Modifier
-            .height(36.dp)
-            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(6.dp))
+        isAccent = isActive || highlight,
+        elevation = if (isActive) 1.dp else 3.dp,
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
     ) {
-        Box(
-            modifier = Modifier.padding(horizontal = 11.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = text,
-                color = textColor,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = if (isActive || highlight) FontWeight.Bold else FontWeight.Medium
-            )
-        }
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = if (isActive || highlight) FontWeight.Bold else FontWeight.Medium,
+            color = if (isActive) Color.White else if (highlight) neuColors.primaryAccent else neuColors.textPrimary
+        )
     }
 }

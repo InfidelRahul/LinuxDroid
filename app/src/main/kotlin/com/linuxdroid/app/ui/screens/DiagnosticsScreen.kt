@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.app.ui.viewmodel.DiagnosticsViewModel
 import com.linuxdroid.core.model.DiagnosticCheck
 import com.linuxdroid.core.model.DiagnosticStatus
@@ -50,25 +51,38 @@ fun DiagnosticsScreen(
 
     var showExportDialog by remember { mutableStateOf(false) }
 
+    val neuColors = NeuTheme.colors
+
     Scaffold(
+        containerColor = neuColors.background,
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics & Failure Reports") },
+                title = { Text("Diagnostics & Reports", color = neuColors.textPrimary) },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = neuColors.background,
+                    titleContentColor = neuColors.textPrimary,
+                ),
                 actions = {
                     if (selectedEnvId != null) {
-                        IconButton(
+                        NeuIconButton(
                             onClick = { showExportDialog = true },
                             enabled = !isLoading,
+                            size = 38.dp,
+                            tint = neuColors.primaryAccent,
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = "Export Diagnostics")
+                            Icon(Icons.Default.Share, contentDescription = "Export Diagnostics", modifier = Modifier.size(18.dp))
                         }
+                        Spacer(Modifier.width(8.dp))
                     }
-                    IconButton(
+                    NeuIconButton(
                         onClick = { viewModel.refreshDiagnostics() },
                         enabled = !isLoading && selectedEnvId != null,
+                        size = 38.dp,
+                        tint = neuColors.textPrimary,
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
                     }
+                    Spacer(Modifier.width(12.dp))
                 }
             )
         }
@@ -76,6 +90,7 @@ fun DiagnosticsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(neuColors.background)
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
@@ -84,11 +99,11 @@ fun DiagnosticsScreen(
                     Text(
                         "No environments created yet.\nCreate an environment to view diagnostics.",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = neuColors.textSecondary
                     )
                 }
             } else {
-                Text("Select Environment", style = MaterialTheme.typography.labelMedium)
+                Text("Target Environment", style = MaterialTheme.typography.labelMedium, color = neuColors.textSecondary)
                 Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
@@ -97,30 +112,36 @@ fun DiagnosticsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     environments.forEach { env ->
-                        FilterChip(
-                            selected = selectedEnvId == env.id.value,
+                        val isSelected = selectedEnvId == env.id.value
+                        NeuButton(
                             onClick = { viewModel.selectEnvironment(env.id.value) },
-                            label = { Text(env.name) }
-                        )
+                            isAccent = isSelected,
+                            elevation = if (isSelected) 2.dp else 4.dp,
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text(env.name, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(14.dp))
 
-                TabRow(selectedTabIndex = selectedTabIndex) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = { Text(title, fontSize = 12.sp) }
-                        )
-                    }
-                }
+                NeuSegmentedControl(
+                    items = (0 until tabs.size).toList(),
+                    selectedItem = selectedTabIndex,
+                    onItemSelected = { selectedTabIndex = it },
+                    itemLabel = { tabs[it] },
+                )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
 
                 if (isLoading) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = neuColors.primaryAccent,
+                        trackColor = neuColors.surfacePressed,
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
 
@@ -154,7 +175,7 @@ fun DiagnosticsScreen(
                                 Text(
                                     "Tap an environment above to run diagnostics.",
                                     style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = neuColors.textSecondary
                                 )
                             }
                         }
@@ -168,59 +189,60 @@ fun DiagnosticsScreen(
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 item {
-                                    ElevatedCard(
+                                    NeuCard(
                                         modifier = Modifier.fillMaxWidth(),
-                                        colors = CardDefaults.elevatedCardColors(
-                                            containerColor = if (fail.totalFailures > 0) Color(0xFF1E1B2E) else Color(0xFF13231B)
-                                        )
                                     ) {
                                         Column(modifier = Modifier.padding(16.dp)) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
                                                 Icon(
                                                     if (fail.totalFailures > 0) Icons.Default.Warning else Icons.Default.CheckCircle,
                                                     contentDescription = null,
-                                                    tint = if (fail.totalFailures > 0) Color(0xFFF87171) else Color(0xFF4ADE80)
+                                                    tint = if (fail.totalFailures > 0) neuColors.error else neuColors.success,
+                                                    modifier = Modifier.size(24.dp)
                                                 )
                                                 Text(
                                                     text = if (fail.totalFailures > 0) "Failure Root Cause Analysis" else "All Subsystems Nominal",
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold
+                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = neuColors.textPrimary
                                                 )
                                             }
                                             Spacer(Modifier.height(8.dp))
                                             Text(
                                                 text = fail.rootCauseSummary,
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
+                                                color = neuColors.textSecondary
                                             )
                                             Spacer(Modifier.height(10.dp))
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
-                                                Text("Failures: ${fail.totalFailures}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                                                Text("Unique Signatures: ${fail.uniqueSignaturesCount}", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                                                Text("Failures: ${fail.totalFailures}", fontSize = 12.sp, color = neuColors.error, fontWeight = FontWeight.SemiBold)
+                                                Text("Unique Signatures: ${fail.uniqueSignaturesCount}", fontSize = 12.sp, color = neuColors.primaryAccent, fontWeight = FontWeight.SemiBold)
                                             }
                                             Spacer(Modifier.height(12.dp))
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(
+                                                NeuButton(
                                                     onClick = { viewModel.exportLog(context, LogExportType.FAILURE_REPORT_COMPACT, false) },
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    isAccent = true,
                                                 ) {
-                                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("Export Report (Text)", fontSize = 12.sp)
+                                                    Text("Share Text", fontSize = 12.sp)
                                                 }
-                                                OutlinedButton(
+                                                NeuButton(
                                                     onClick = { viewModel.exportLog(context, LogExportType.FAILURE_REPORT_COMPACT, true) },
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    shape = RoundedCornerShape(10.dp),
                                                 ) {
-                                                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("Export JSON", fontSize = 12.sp)
+                                                    Text("Share JSON", fontSize = 12.sp)
                                                 }
                                             }
                                         }
@@ -229,19 +251,19 @@ fun DiagnosticsScreen(
 
                                 if (fail.causalChains.isNotEmpty()) {
                                     item {
-                                        Text("Correlated Failure Chains", style = MaterialTheme.typography.titleSmall)
+                                        Text("Correlated Failure Chains", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
                                     }
                                     items(fail.causalChains) { chain ->
-                                        Card(
+                                        NeuCard(
                                             modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A))
+                                            isInset = true,
                                         ) {
                                             Column(modifier = Modifier.padding(12.dp)) {
                                                 Text(
                                                     "Chain: ${chain.firstOrNull()?.correlationId ?: "unknown"}",
                                                     fontFamily = FontFamily.Monospace,
                                                     fontSize = 11.sp,
-                                                    color = Color(0xFF38BDF8)
+                                                    color = neuColors.primaryAccent
                                                 )
                                                 Spacer(Modifier.height(6.dp))
                                                 chain.forEachIndexed { i, ev ->
@@ -249,7 +271,7 @@ fun DiagnosticsScreen(
                                                         "${i + 1}. [${ev.category.name}] ${ev.message}",
                                                         fontFamily = FontFamily.Monospace,
                                                         fontSize = 11.sp,
-                                                        color = Color(0xFFE2E8F0)
+                                                        color = neuColors.textPrimary
                                                     )
                                                 }
                                             }
@@ -259,12 +281,11 @@ fun DiagnosticsScreen(
 
                                 if (fail.aggregatedFailures.isNotEmpty()) {
                                     item {
-                                        Text("Deduplicated Error Counts", style = MaterialTheme.typography.titleSmall)
+                                        Text("Deduplicated Error Counts", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
                                     }
                                     items(fail.aggregatedFailures) { agg ->
-                                        Card(
+                                        NeuCard(
                                             modifier = Modifier.fillMaxWidth(),
-                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
                                         ) {
                                             Row(
                                                 modifier = Modifier
@@ -278,17 +299,17 @@ fun DiagnosticsScreen(
                                                         text = "[${agg.category.name}] ${agg.source}",
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 12.sp,
-                                                        color = Color(0xFFF87171)
+                                                        color = neuColors.error
                                                     )
                                                     Text(
                                                         text = agg.message.take(80),
                                                         fontSize = 11.sp,
                                                         fontFamily = FontFamily.Monospace,
-                                                        color = Color(0xFFCBD5E1)
+                                                        color = neuColors.textSecondary
                                                     )
                                                 }
                                                 Surface(
-                                                    color = Color(0xFF334155),
+                                                    color = neuColors.surfacePressed,
                                                     shape = RoundedCornerShape(12.dp)
                                                 ) {
                                                     Text(
@@ -296,7 +317,7 @@ fun DiagnosticsScreen(
                                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = Color(0xFFF8FAFC)
+                                                        color = neuColors.primaryAccent
                                                     )
                                                 }
                                             }
@@ -314,39 +335,41 @@ fun DiagnosticsScreen(
                             modifier = Modifier.fillMaxSize()
                         ) {
                             item {
-                                Text("Select Log or Report Type to Export", style = MaterialTheme.typography.titleSmall)
+                                Text("Select Log or Report Type to Export", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
                             }
                             items(LogExportType.values()) { exportType ->
-                                Card(
+                                NeuCard(
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
                                 ) {
                                     Column(modifier = Modifier.padding(14.dp)) {
-                                        Text(exportType.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(exportType.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = neuColors.textPrimary)
                                         Spacer(Modifier.height(4.dp))
                                         Text(
                                             exportType.description,
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = neuColors.textSecondary
                                         )
                                         Spacer(Modifier.height(10.dp))
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Button(
+                                            NeuButton(
                                                 onClick = { viewModel.exportLog(context, exportType, false) },
-                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                shape = RoundedCornerShape(10.dp),
+                                                isAccent = true,
                                             ) {
-                                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
                                                 Spacer(Modifier.width(4.dp))
                                                 Text("Share Text", fontSize = 11.sp)
                                             }
                                             if (exportType == LogExportType.FAILURE_REPORT_COMPACT ||
                                                 exportType == LogExportType.FAILURE_REPORT_DEVELOPER ||
                                                 exportType == LogExportType.TERMINAL_FAILURE_LOG) {
-                                                OutlinedButton(
+                                                NeuButton(
                                                     onClick = { viewModel.exportLog(context, exportType, true) },
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    shape = RoundedCornerShape(10.dp),
                                                 ) {
-                                                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(Modifier.width(4.dp))
                                                     Text("Share JSON", fontSize = 11.sp)
                                                 }
@@ -366,9 +389,9 @@ fun DiagnosticsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Full Diagnostic Trace", style = MaterialTheme.typography.titleSmall)
+                                Text("Full Diagnostic Trace", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
+                                    NeuButton(
                                         onClick = {
                                             detailedLogs?.let { text ->
                                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -377,18 +400,21 @@ fun DiagnosticsScreen(
                                             }
                                         },
                                         enabled = detailedLogs != null,
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                     ) {
-                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(15.dp))
                                         Spacer(Modifier.width(4.dp))
                                         Text("Copy", fontSize = 12.sp)
                                     }
-                                    Button(
+                                    NeuButton(
                                         onClick = { viewModel.exportLog(context, LogExportType.FULL_LOGS, false) },
                                         enabled = detailedLogs != null,
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        isAccent = true,
                                     ) {
-                                        Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(15.dp))
                                         Spacer(Modifier.width(4.dp))
                                         Text("Export All", fontSize = 12.sp)
                                     }
@@ -397,8 +423,8 @@ fun DiagnosticsScreen(
 
                             Spacer(Modifier.height(8.dp))
 
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                            NeuCard(
+                                isInset = true,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .weight(1f)
@@ -415,7 +441,7 @@ fun DiagnosticsScreen(
                                                 fontFamily = FontFamily.Monospace,
                                                 fontSize = 11.sp,
                                                 lineHeight = 15.sp,
-                                                color = Color(0xFF94A3B8),
+                                                color = neuColors.textSecondary,
                                             )
                                         }
                                     }
@@ -431,15 +457,17 @@ fun DiagnosticsScreen(
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text("Export Diagnostics & Logs") },
+            containerColor = neuColors.background,
+            title = { Text("Export Diagnostics & Logs", color = neuColors.textPrimary) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     LogExportType.values().forEach { exportType ->
-                        OutlinedButton(
+                        NeuButton(
                             onClick = {
                                 showExportDialog = false
                                 viewModel.exportLog(context, exportType, false)
                             },
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(exportType.displayName, fontSize = 13.sp)
@@ -448,7 +476,11 @@ fun DiagnosticsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showExportDialog = false }) {
+                NeuButton(
+                    onClick = { showExportDialog = false },
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
                     Text("Close")
                 }
             }
@@ -458,20 +490,27 @@ fun DiagnosticsScreen(
 
 @Composable
 fun DiagnosticCheckCard(check: DiagnosticCheck) {
-    ElevatedCard(
+    NeuCard(
         modifier = Modifier.fillMaxWidth()
     ) {
-        DiagnosticCheckRow(check = check, modifier = Modifier.padding(12.dp))
+        DiagnosticCheckRow(check = check, modifier = Modifier.padding(14.dp))
     }
 }
 
 @Composable
 fun DiagnosticCheckRow(check: DiagnosticCheck, modifier: Modifier = Modifier) {
-    val (icon, tint) = when (check.status) {
-        DiagnosticStatus.OK -> Icons.Default.CheckCircle to Color(0xFF4CAF50)
-        DiagnosticStatus.WARNING -> Icons.Default.Warning to Color(0xFFFFC107)
-        DiagnosticStatus.ERROR -> Icons.Default.Error to MaterialTheme.colorScheme.error
-        DiagnosticStatus.UNKNOWN, DiagnosticStatus.NOT_APPLICABLE -> Icons.AutoMirrored.Filled.Help to MaterialTheme.colorScheme.onSurfaceVariant
+    val neuColors = NeuTheme.colors
+    val icon = when (check.status) {
+        DiagnosticStatus.OK -> Icons.Default.CheckCircle
+        DiagnosticStatus.WARNING -> Icons.Default.Warning
+        DiagnosticStatus.ERROR -> Icons.Default.Error
+        DiagnosticStatus.UNKNOWN, DiagnosticStatus.NOT_APPLICABLE -> Icons.AutoMirrored.Filled.Help
+    }
+    val tint = when (check.status) {
+        DiagnosticStatus.OK -> neuColors.success
+        DiagnosticStatus.WARNING -> neuColors.warning
+        DiagnosticStatus.ERROR -> neuColors.error
+        DiagnosticStatus.UNKNOWN, DiagnosticStatus.NOT_APPLICABLE -> neuColors.textMuted
     }
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -480,12 +519,12 @@ fun DiagnosticCheckRow(check: DiagnosticCheck, modifier: Modifier = Modifier) {
     ) {
         Icon(icon, contentDescription = check.status.name, tint = tint, modifier = Modifier.size(28.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(check.name, style = MaterialTheme.typography.titleSmall)
+            Text(check.name, style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
             if (check.detail.isNotBlank()) {
                 Text(
                     check.detail,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = neuColors.textSecondary,
                 )
             }
             check.recommendation?.let { rec ->
@@ -493,7 +532,7 @@ fun DiagnosticCheckRow(check: DiagnosticCheck, modifier: Modifier = Modifier) {
                 Text(
                     "Recommendation: $rec",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = neuColors.primaryAccent,
                 )
             }
         }

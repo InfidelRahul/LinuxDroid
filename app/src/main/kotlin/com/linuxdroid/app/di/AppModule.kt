@@ -85,6 +85,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideThemePreferences(
+        @ApplicationContext context: Context,
+    ): com.linuxdroid.core.storage.ThemePreferences = com.linuxdroid.core.storage.ThemePreferences(context)
+
+    @Provides
+    @Singleton
     fun provideDisplayManager(): DisplayManager = DefaultDisplayManager()
 
     @Provides
