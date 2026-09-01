@@ -203,12 +203,15 @@ data class NetworkConfig(
  */
 @Serializable
 data class DesktopConfig(
-    /** Desktop environment to start (e.g. "xfce4", "gnome", "none"). */
-    val desktopEnvironment: String = "xfce4",
-    /** Wayland compositor to use (e.g. "cage", "weston"). */
-    val waylandCompositor: String = "cage",
-    /** Whether to start XWayland for X11 app compatibility. */
-    val xwaylandEnabled: Boolean = true,
+    /** Desktop shell to start above the compositor. "none" = compositor only. */
+    val desktopEnvironment: String = "linuxdroid-shell",
+    /** Wayland compositor to use. Weston is the approved initial compositor. */
+    val waylandCompositor: String = "weston",
+    /**
+     * Whether to start XWayland for legacy X11 application compatibility.
+     * Optional by design: it is never a prerequisite for the Wayland session.
+     */
+    val xwaylandEnabled: Boolean = false,
     /** Whether to automatically log in without prompting at display manager. */
     val autoLogin: Boolean = false,
 )
