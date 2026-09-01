@@ -375,86 +375,98 @@ fun TerminalScreen(
             }
 
             // Terminal Canvas / Output Stream (Dynamically resizes with IME)
-            BoxWithConstraints(
+            NeuCard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                isInset = true,
+                shape = RoundedCornerShape(12.dp),
+                elevation = 3.dp
             ) {
-                val fontSizeSp = 12.sp
-                val lineHeightSp = 16.sp
-                val charWidthDp = with(density) { (fontSizeSp * 0.6f).toDp() }
-                val lineHeightDp = with(density) { lineHeightSp.toDp() }
-
-                val calculatedCols = (maxWidth / charWidthDp).toInt().coerceIn(20, 240)
-                val calculatedRows = (maxHeight / lineHeightDp).toInt().coerceIn(5, 120)
-
-                LaunchedEffect(calculatedRows, calculatedCols) {
-                    viewModel.resize(calculatedRows, calculatedCols)
-                }
-
-                SelectionContainer(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
+                    val fontSizeSp = 12.sp
+                    val lineHeightSp = 16.sp
+                    val charWidthDp = with(density) { (fontSizeSp * 0.6f).toDp() }
+                    val lineHeightDp = with(density) { lineHeightSp.toDp() }
+
+                    val calculatedCols = (maxWidth / charWidthDp).toInt().coerceIn(20, 240)
+                    val calculatedRows = (maxHeight / lineHeightDp).toInt().coerceIn(5, 120)
+
+                    LaunchedEffect(calculatedRows, calculatedCols) {
+                        viewModel.resize(calculatedRows, calculatedCols)
+                    }
+
+                    SelectionContainer(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        itemsIndexed(lines) { index, lineData ->
-                            val isLastLine = index == lines.size - 1
-                            val annotatedString = buildAnnotatedString {
-                                for (span in lineData.spans) {
-                                    val spanColor = Color(span.color)
-                                    val style = SpanStyle(
-                                        color = spanColor,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (span.isBold) FontWeight.Bold else FontWeight.Normal,
-                                        textDecoration = if (span.isUnderline) TextDecoration.Underline else TextDecoration.None,
-                                    )
-                                    withStyle(style) {
-                                        append(span.text)
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            itemsIndexed(lines) { index, lineData ->
+                                val isLastLine = index == lines.size - 1
+                                val annotatedString = buildAnnotatedString {
+                                    for (span in lineData.spans) {
+                                        val spanColor = getAdaptiveTerminalColor(
+                                            rawColor = span.color,
+                                            isDarkTheme = neuColors.isDark,
+                                            textPrimary = neuColors.textPrimary
+                                        )
+                                        val style = SpanStyle(
+                                            color = spanColor,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (span.isBold) FontWeight.Bold else FontWeight.Normal,
+                                            textDecoration = if (span.isUnderline) TextDecoration.Underline else TextDecoration.None,
+                                        )
+                                        withStyle(style) {
+                                            append(span.text)
+                                        }
                                     }
                                 }
-                            }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = annotatedString,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp,
-                                )
-                                // Blinking block cursor rendered at active prompt
-                                if (isLastLine && isShellActive) {
-                                    Spacer(Modifier.width(1.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .width(7.dp)
-                                            .height(14.dp)
-                                            .background(
-                                                color = Color(0xFF22C55E).copy(alpha = cursorAlpha),
-                                                shape = RoundedCornerShape(1.dp)
-                                            )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = annotatedString,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
                                     )
+                                    // Blinking block cursor rendered at active prompt
+                                    if (isLastLine && isShellActive) {
+                                        Spacer(Modifier.width(1.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .width(7.dp)
+                                                .height(14.dp)
+                                                .background(
+                                                    color = (if (neuColors.isDark) Color(0xFF22C55E) else neuColors.primaryAccent).copy(alpha = cursorAlpha),
+                                                    shape = RoundedCornerShape(1.dp)
+                                                )
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                if (isStarting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(36.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        strokeWidth = 2.dp
-                    )
+                    if (isStarting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .size(36.dp),
+                            color = neuColors.primaryAccent,
+                            strokeWidth = 2.dp
+                        )
+                    }
                 }
             }
 
@@ -712,3 +724,33 @@ private fun TerminalKeyButton(
         )
     }
 }
+
+/**
+ * Maps raw ANSI terminal colors to high-contrast legible palette based on Light/Dark theme.
+ */
+private fun getAdaptiveTerminalColor(rawColor: Long, isDarkTheme: Boolean, textPrimary: Color): Color {
+    return if (isDarkTheme) {
+        when (rawColor) {
+            0xFF1E1E1E, 0xFF000000 -> Color(0xFF94A3B8)
+            0xFFE0E0E0 -> Color(0xFFF1F5F9)
+            else -> Color(rawColor)
+        }
+    } else {
+        when (rawColor) {
+            0xFFE0E0E0, 0xFFFFFFFF, 0xFFF1F5F9 -> textPrimary
+            0xFF757575, 0xFF1E1E1E, 0xFF000000 -> Color(0xFF0F172A)
+            0xFFE57373, 0xFFFF8A80 -> Color(0xFFDC2626) // Crisp Red
+            0xFF81C784, 0xFFA5D6A7 -> Color(0xFF15803D) // Crisp Green
+            0xFFFFD54F, 0xFFFFE082 -> Color(0xFFB45309) // Crisp Amber/Yellow
+            0xFF64B5F6, 0xFF90CAF9 -> Color(0xFF1D4ED8) // Crisp Blue
+            0xFFBA68C8, 0xFFCE93D8 -> Color(0xFF7E22CE) // Crisp Magenta/Purple
+            0xFF4DD0E1, 0xFF80DEEA -> Color(0xFF0E7490) // Crisp Cyan/Teal
+            else -> {
+                val c = Color(rawColor)
+                val luminance = 0.299f * c.red + 0.587f * c.green + 0.114f * c.blue
+                if (luminance > 0.65f) textPrimary else c
+            }
+        }
+    }
+}
+

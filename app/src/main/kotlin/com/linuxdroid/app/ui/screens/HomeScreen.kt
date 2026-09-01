@@ -128,7 +128,7 @@ fun HomeScreen(
                                 color = neuColors.textPrimary,
                             )
                             Text(
-                                text = "Rootless Linux on Android",
+                                text = "Linux on Android",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = neuColors.textSecondary,
                             )
@@ -240,7 +240,7 @@ private fun SharedStorageAccessDialog(
                         }
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.Security, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(16.dp))
-                            Text("Rootless, secure, and isolated execution", fontSize = 13.sp, color = neuColors.textPrimary)
+                            Text("Secure and isolated execution", fontSize = 13.sp, color = neuColors.textPrimary)
                         }
                     }
                 }

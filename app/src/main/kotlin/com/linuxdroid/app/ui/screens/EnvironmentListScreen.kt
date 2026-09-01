@@ -934,14 +934,26 @@ private fun InstallerTerminalConsole(
                     }
                 } else {
                     items(logs) { line ->
-                        val lineColor = when {
-                            line.contains("[PASS]") || line.contains("[OK]") || line.contains("[SUCCESS]") || line.contains("[READY]") -> Color(0xFF4ADE80)
-                            line.contains("[ERROR]") || line.contains("[FATAL]") || line.contains("[VALIDATE_FAIL]") -> Color(0xFFF87171)
-                            line.contains("[WARN]") -> Color(0xFFFBBF24)
-                            line.contains("[DOWNLOAD]") || line.contains("[EXTRACT]") || line.contains("[INIT]") || line.contains("[SOURCE]") -> Color(0xFF38BDF8)
-                            line.contains("[CONFIG]") || line.contains("[VERIFY]") || line.contains("[VALIDATE]") || line.contains("[PROMOTE]") -> Color(0xFFFDE047)
-                            line.startsWith("extract:") -> neuColors.textMuted
-                            else -> neuColors.textPrimary
+                        val lineColor = if (neuColors.isDark) {
+                            when {
+                                line.contains("[PASS]") || line.contains("[OK]") || line.contains("[SUCCESS]") || line.contains("[READY]") -> Color(0xFF4ADE80)
+                                line.contains("[ERROR]") || line.contains("[FATAL]") || line.contains("[VALIDATE_FAIL]") -> Color(0xFFF87171)
+                                line.contains("[WARN]") -> Color(0xFFFBBF24)
+                                line.contains("[DOWNLOAD]") || line.contains("[EXTRACT]") || line.contains("[INIT]") || line.contains("[SOURCE]") -> Color(0xFF38BDF8)
+                                line.contains("[CONFIG]") || line.contains("[VERIFY]") || line.contains("[VALIDATE]") || line.contains("[PROMOTE]") -> Color(0xFFFDE047)
+                                line.startsWith("extract:") -> neuColors.textMuted
+                                else -> neuColors.textPrimary
+                            }
+                        } else {
+                            when {
+                                line.contains("[PASS]") || line.contains("[OK]") || line.contains("[SUCCESS]") || line.contains("[READY]") -> Color(0xFF15803D)
+                                line.contains("[ERROR]") || line.contains("[FATAL]") || line.contains("[VALIDATE_FAIL]") -> Color(0xFFDC2626)
+                                line.contains("[WARN]") -> Color(0xFFB45309)
+                                line.contains("[DOWNLOAD]") || line.contains("[EXTRACT]") || line.contains("[INIT]") || line.contains("[SOURCE]") -> Color(0xFF1D4ED8)
+                                line.contains("[CONFIG]") || line.contains("[VERIFY]") || line.contains("[VALIDATE]") || line.contains("[PROMOTE]") -> Color(0xFF7E22CE)
+                                line.startsWith("extract:") -> neuColors.textMuted
+                                else -> neuColors.textPrimary
+                            }
                         }
 
                         Text(
@@ -949,7 +961,7 @@ private fun InstallerTerminalConsole(
                             color = lineColor,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
-                            lineHeight = 14.sp
+                            lineHeight = 15.sp,
                         )
                     }
 
