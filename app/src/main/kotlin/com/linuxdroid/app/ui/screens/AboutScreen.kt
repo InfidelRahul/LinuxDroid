@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -73,7 +75,7 @@ fun AboutScreen(
         containerColor = neuColors.background,
         topBar = {
             TopAppBar(
-                title = { Text("About", color = neuColors.textPrimary) },
+                title = { Text("About", color = neuColors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = neuColors.background,
                     titleContentColor = neuColors.textPrimary,
@@ -283,15 +285,20 @@ private fun AboutLinkItem(
             label,
             style = MaterialTheme.typography.bodyMedium,
             color = neuColors.textSecondary,
+            modifier = Modifier.weight(1f, fill = false)
         )
+        Spacer(Modifier.width(8.dp))
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.wrapContentWidth()
         ) {
             Text(
                 value,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = neuColors.primaryAccent
+                color = neuColors.primaryAccent,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Icon(
                 Icons.AutoMirrored.Filled.OpenInNew,
@@ -315,12 +322,17 @@ private fun AboutItem(label: String, value: String) {
             label,
             style = MaterialTheme.typography.bodyMedium,
             color = neuColors.textSecondary,
+            modifier = Modifier.weight(1f, fill = false)
         )
         Spacer(Modifier.width(12.dp))
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-            color = neuColors.textPrimary
+            color = neuColors.textPrimary,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1.5f, fill = false),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

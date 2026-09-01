@@ -12,6 +12,7 @@ import android.os.StatFs
 import android.text.format.Formatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -117,11 +119,15 @@ fun HomeScreen(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             stringResource(R.string.app_name),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = neuColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         if (activeEnv != null && hasInstalledRootfs) {
                             val (badgeColor, textColor) = when (activeEnv.state) {
@@ -141,6 +147,7 @@ fun HomeScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = textColor,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    maxLines = 1,
                                 )
                             }
                         }
@@ -1045,7 +1052,9 @@ private fun ActiveEnvironmentHeroCard(environment: Environment) {
 
                 // Telemetry status pills
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1061,6 +1070,7 @@ private fun ActiveEnvironmentHeroCard(environment: Environment) {
                             fontWeight = FontWeight.Medium,
                             color = neuColors.primaryAccent,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1,
                         )
                     }
 
@@ -1076,6 +1086,7 @@ private fun ActiveEnvironmentHeroCard(environment: Environment) {
                             fontWeight = FontWeight.Medium,
                             color = neuColors.secondaryAccent,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1,
                         )
                     }
 
@@ -1091,6 +1102,7 @@ private fun ActiveEnvironmentHeroCard(environment: Environment) {
                             fontWeight = FontWeight.Medium,
                             color = if (environment.state == EnvironmentState.RUNNING) neuColors.success else neuColors.textSecondary,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            maxLines = 1,
                         )
                     }
                 }
@@ -1149,6 +1161,9 @@ private fun NeuLaunchCard(
                             text = title,
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
                             color = neuColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                         Surface(
                             color = neuColors.surfacePressed,
@@ -1162,6 +1177,7 @@ private fun NeuLaunchCard(
                                 fontWeight = FontWeight.Bold,
                                 color = accentColor,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1,
                             )
                         }
                     }
@@ -1170,6 +1186,8 @@ private fun NeuLaunchCard(
                         text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = neuColors.textSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -1183,7 +1201,7 @@ private fun NeuLaunchCard(
             ) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(buttonText, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Text(buttonText, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

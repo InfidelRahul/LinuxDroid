@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -250,17 +252,33 @@ fun SettingsScreen(
                             StorageAuthorizationState.Unknown -> "Checking…" to neuColors.textMuted
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
                             Icon(
                                 imageVector = if (authState is StorageAuthorizationState.Authorized) Icons.Default.CheckCircle else Icons.Default.Warning,
                                 contentDescription = null,
                                 tint = statusColor,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Text(statusText, color = statusColor, style = MaterialTheme.typography.labelMedium)
+                            Text(
+                                statusText,
+                                color = statusColor,
+                                style = MaterialTheme.typography.labelMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.width(8.dp))
+
+                        Row(
+                            modifier = Modifier.wrapContentWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             if (authState !is StorageAuthorizationState.Authorized) {
                                 NeuButton(
                                     onClick = {
@@ -274,7 +292,7 @@ fun SettingsScreen(
                                 ) {
                                     Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(15.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Grant", fontSize = 13.sp)
+                                    Text("Grant", fontSize = 13.sp, maxLines = 1)
                                 }
                             }
 
@@ -285,7 +303,7 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Verify", fontSize = 13.sp)
+                                Text("Verify", fontSize = 13.sp, maxLines = 1)
                             }
                         }
                     }
@@ -318,7 +336,7 @@ fun SettingsScreen(
                     SettingInfoRow("Supported ABIs", android.os.Build.SUPPORTED_ABIS.joinToString(", "))
                     SettingInfoRow("Device Model", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                     SettingInfoRow("Android API", "${android.os.Build.VERSION.SDK_INT} (${android.os.Build.VERSION.RELEASE})")
-                    SettingInfoRow("Runtime Engine", "PRoot (Rootless syscall translation via ptrace)")
+                    SettingInfoRow("Runtime Engine", "PRoot (Rootless ptrace syscall translation)")
                 }
             }
         }
@@ -368,6 +386,9 @@ private fun NeuSettingsActionCard(
                         title,
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
                         color = neuColors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Surface(
                         color = neuColors.surfacePressed,
@@ -381,6 +402,7 @@ private fun NeuSettingsActionCard(
                             fontWeight = FontWeight.Medium,
                             color = neuColors.primaryAccent,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1,
                         )
                     }
                 }
@@ -389,6 +411,8 @@ private fun NeuSettingsActionCard(
                     subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = neuColors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 
@@ -410,11 +434,21 @@ private fun SettingInfoRow(title: String, value: String) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = MaterialTheme.typography.bodyMedium, color = neuColors.textPrimary)
+        Text(
+            title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = neuColors.textPrimary,
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        Spacer(Modifier.width(12.dp))
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
             color = neuColors.textSecondary,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1.5f, fill = false),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

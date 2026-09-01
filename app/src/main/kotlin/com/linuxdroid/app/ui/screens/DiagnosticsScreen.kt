@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -63,7 +64,7 @@ fun DiagnosticsScreen(
         containerColor = neuColors.background,
         topBar = {
             TopAppBar(
-                title = { Text("Diagnostics & Reports", color = neuColors.textPrimary) },
+                title = { Text("Diagnostics & Reports", color = neuColors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = neuColors.background,
                     titleContentColor = neuColors.textPrimary,
@@ -193,8 +194,20 @@ fun DiagnosticsScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Subsystem Health Audit", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            "Subsystem Health Audit",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = neuColors.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Row(
+                                            modifier = Modifier.wrapContentWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             NeuButton(
                                                 onClick = {
                                                     val text = viewModel.getSubsystemsReportText()
@@ -207,7 +220,7 @@ fun DiagnosticsScreen(
                                             ) {
                                                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(13.dp))
                                                 Spacer(Modifier.width(4.dp))
-                                                Text("Copy", fontSize = 11.sp)
+                                                Text("Copy", fontSize = 11.sp, maxLines = 1)
                                             }
                                             NeuButton(
                                                 onClick = {
@@ -219,7 +232,7 @@ fun DiagnosticsScreen(
                                             ) {
                                                 Icon(Icons.Default.Code, contentDescription = "Editor", modifier = Modifier.size(13.dp))
                                                 Spacer(Modifier.width(4.dp))
-                                                Text("Editor", fontSize = 11.sp)
+                                                Text("Editor", fontSize = 11.sp, maxLines = 1)
                                             }
                                         }
                                     }
@@ -298,8 +311,11 @@ fun DiagnosticsScreen(
                                             }
                                             Spacer(Modifier.height(12.dp))
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 NeuButton(
                                                     onClick = {
@@ -311,7 +327,7 @@ fun DiagnosticsScreen(
                                                 ) {
                                                     Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("Open Editor", fontSize = 11.sp)
+                                                    Text("Open Editor", fontSize = 11.sp, maxLines = 1)
                                                 }
                                                 NeuButton(
                                                     onClick = {
@@ -325,7 +341,7 @@ fun DiagnosticsScreen(
                                                 ) {
                                                     Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("Copy Text", fontSize = 11.sp)
+                                                    Text("Copy Text", fontSize = 11.sp, maxLines = 1)
                                                 }
                                                 NeuButton(
                                                     onClick = {
@@ -339,14 +355,16 @@ fun DiagnosticsScreen(
                                                 ) {
                                                     Icon(Icons.Default.DataObject, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("Copy JSON", fontSize = 11.sp)
+                                                    Text("Copy JSON", fontSize = 11.sp, maxLines = 1)
                                                 }
                                                 NeuButton(
                                                     onClick = { viewModel.exportLog(context, LogExportType.FAILURE_REPORT_COMPACT, false) },
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                                     shape = RoundedCornerShape(10.dp),
                                                 ) {
                                                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("Share", fontSize = 11.sp, maxLines = 1)
                                                 }
                                             }
                                         }
@@ -502,8 +520,11 @@ fun DiagnosticsScreen(
                                         )
                                         Spacer(Modifier.height(10.dp))
                                         Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             // 1. Open in Editor
                                             NeuButton(
@@ -519,7 +540,7 @@ fun DiagnosticsScreen(
                                             ) {
                                                 Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(14.dp))
                                                 Spacer(Modifier.width(4.dp))
-                                                Text("Editor", fontSize = 11.sp)
+                                                Text("Editor", fontSize = 11.sp, maxLines = 1)
                                             }
 
                                             // 2. Copy Plain Text
@@ -537,7 +558,7 @@ fun DiagnosticsScreen(
                                             ) {
                                                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
                                                 Spacer(Modifier.width(4.dp))
-                                                Text("Copy", fontSize = 11.sp)
+                                                Text("Copy", fontSize = 11.sp, maxLines = 1)
                                             }
 
                                             // 3. Copy JSON (for supported formats)
@@ -558,17 +579,19 @@ fun DiagnosticsScreen(
                                                 ) {
                                                     Icon(Icons.Default.DataObject, contentDescription = null, modifier = Modifier.size(14.dp))
                                                     Spacer(Modifier.width(4.dp))
-                                                    Text("JSON", fontSize = 11.sp)
+                                                    Text("JSON", fontSize = 11.sp, maxLines = 1)
                                                 }
                                             }
 
                                             // 4. Share Intent
                                             NeuButton(
                                                 onClick = { viewModel.exportLog(context, exportType, false) },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                                 shape = RoundedCornerShape(10.dp),
                                             ) {
                                                 Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(14.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("Share", fontSize = 11.sp, maxLines = 1)
                                             }
                                         }
                                     }
@@ -585,8 +608,22 @@ fun DiagnosticsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("Full Diagnostic Trace", style = MaterialTheme.typography.titleSmall, color = neuColors.textPrimary)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    "Full Diagnostic Trace",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = neuColors.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .wrapContentWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     NeuButton(
                                         onClick = {
                                             detailedLogs?.let { text ->
@@ -600,7 +637,7 @@ fun DiagnosticsScreen(
                                     ) {
                                         Icon(Icons.Default.Code, contentDescription = "Editor", modifier = Modifier.size(14.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Editor", fontSize = 11.sp)
+                                        Text("Editor", fontSize = 11.sp, maxLines = 1)
                                     }
                                     NeuButton(
                                         onClick = {
@@ -616,12 +653,12 @@ fun DiagnosticsScreen(
                                     ) {
                                         Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Copy", fontSize = 11.sp)
+                                        Text("Copy", fontSize = 11.sp, maxLines = 1)
                                     }
                                     NeuButton(
                                         onClick = { viewModel.exportLog(context, LogExportType.FULL_LOGS, false) },
                                         enabled = detailedLogs != null,
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                                         shape = RoundedCornerShape(8.dp),
                                     ) {
                                         Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(14.dp))

@@ -90,7 +90,11 @@ fun LogEditorViewerDialog(
                         subtitle = "Editor View",
                         onClose = onDismiss,
                         actions = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.wrapContentWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 NeuIconButton(
                                     onClick = { isSearchActive = !isSearchActive },
                                     size = 28.dp,
@@ -133,11 +137,16 @@ fun LogEditorViewerDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(16.dp))
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = neuColors.primaryAccent,
+                                    modifier = Modifier.size(16.dp)
+                                )
 
                                 BasicTextField(
                                     value = searchQuery,
@@ -150,13 +159,24 @@ fun LogEditorViewerDialog(
                                             }
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = neuColors.textPrimary, fontFamily = SfMono),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 4.dp),
+                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                        color = neuColors.textPrimary,
+                                        fontFamily = SfMono,
+                                        fontSize = 12.sp,
+                                    ),
                                     cursorBrush = SolidColor(neuColors.primaryAccent),
                                     singleLine = true,
                                     decorationBox = { innerTextField ->
                                         if (searchQuery.isEmpty()) {
-                                            Text("Search in log...", style = MaterialTheme.typography.bodyMedium, color = neuColors.textMuted)
+                                            Text(
+                                                "Search log...",
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                                                color = neuColors.textMuted,
+                                                maxLines = 1,
+                                            )
                                         }
                                         innerTextField()
                                     }
@@ -165,9 +185,10 @@ fun LogEditorViewerDialog(
                                 if (searchMatchLines.isNotEmpty()) {
                                     Text(
                                         text = "${currentMatchIndex + 1}/${searchMatchLines.size}",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         color = neuColors.textSecondary,
-                                        fontFamily = SfMono
+                                        fontFamily = SfMono,
+                                        maxLines = 1,
                                     )
 
                                     NeuIconButton(

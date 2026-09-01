@@ -27,6 +27,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -516,18 +517,25 @@ fun MacosWindowHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Traffic Lights
-        MacosTrafficLights(
-            onClose = onClose,
-            onMinimize = onMinimize,
-            onMaximize = onMaximize
-        )
+        // Left Traffic Lights (Non-shrinkable)
+        Row(
+            modifier = Modifier.wrapContentWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            MacosTrafficLights(
+                onClose = onClose,
+                onMinimize = onMinimize,
+                onMaximize = onMaximize
+            )
+        }
 
-        // Centered Window Title & Badge
+        // Centered Window Title & Badge with flex weight protection
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 8.dp)
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp)
         ) {
             Text(
                 text = title,
@@ -535,9 +543,13 @@ fun MacosWindowHeader(
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
                 ),
-                color = neuColors.textPrimary
+                color = neuColors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
             if (badgeText != null) {
+                Spacer(Modifier.width(6.dp))
                 Surface(
                     color = neuColors.surfacePressed,
                     shape = RoundedCornerShape(6.dp),
@@ -547,21 +559,26 @@ fun MacosWindowHeader(
                         text = badgeText,
                         color = neuColors.primaryAccent,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        maxLines = 1,
                     )
                 }
             }
             if (subtitle != null) {
+                Spacer(Modifier.width(6.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = neuColors.textMuted
+                    color = neuColors.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        // Right Actions Slot
+        // Right Actions Slot (Non-shrinkable)
         Row(
+            modifier = Modifier.wrapContentWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
