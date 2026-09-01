@@ -10,6 +10,11 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.StatFs
 import android.text.format.Formatter
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -113,71 +118,16 @@ fun HomeScreen(
 
     Scaffold(
         containerColor = neuColors.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = neuColors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (activeEnv != null && hasInstalledRootfs) {
-                            val (badgeColor, textColor) = when (activeEnv.state) {
-                                EnvironmentState.RUNNING -> neuColors.success to Color.White
-                                EnvironmentState.STARTING -> neuColors.primaryAccent to Color.White
-                                EnvironmentState.READY -> neuColors.surfacePressed to neuColors.success
-                                else -> neuColors.surfacePressed to neuColors.textSecondary
-                            }
-                            Surface(
-                                color = badgeColor,
-                                shape = RoundedCornerShape(8.dp),
-                            ) {
-                                Text(
-                                    text = activeEnv.state.name,
-                                    fontFamily = SfMono,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = textColor,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = neuColors.background,
-                    titleContentColor = neuColors.textPrimary,
-                ),
-                actions = {
-                    NeuIconButton(
-                        onClick = { navController.navigate(Screen.Settings.route) },
-                        size = 40.dp,
-                        tint = neuColors.textPrimary,
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(20.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                }
-            )
-        },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(neuColors.background)
                 .padding(padding)
+                .statusBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (!hasInstalledRootfs || installingEnv != null) {
                 // NO Rootfs Present -> Show Rootfs Installation Screen
@@ -186,6 +136,7 @@ fun HomeScreen(
                     progress = installingEnv?.let { installProgress[it.id.value] },
                     statusText = installingEnv?.let { installStatusText[it.id.value] },
                     logs = installingEnv?.let { installerLogs[it.id.value] } ?: emptyList(),
+                    onSettingsClick = { navController.navigate(Screen.Settings.route) },
                     onInstall = { distro, name ->
                         val detectedArch = Architecture.current()
                         environmentViewModel.createEnvironment(
@@ -198,11 +149,14 @@ fun HomeScreen(
                 )
             } else {
                 // Rootfs IS Present -> Show Front Screen Dashboard with 2 Main Action Icons
-                ActiveEnvironmentHeroCard(environment = activeEnv)
+                ActiveEnvironmentHeroCard(
+                    environment = activeEnv,
+                    onSettingsClick = { navController.navigate(Screen.Settings.route) }
+                )
 
                 Text(
                     "Launch Mode",
-                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold),
                     color = neuColors.textPrimary,
                 )
 
@@ -213,9 +167,9 @@ fun HomeScreen(
                     badge = "Wayland / X11",
                     description = "Boot into graphical Linux desktop environment with full window management",
                     accentColor = neuColors.secondaryAccent,
-                    buttonText = "Boot into GUI",
+                    buttonText = if (activeEnv.state == EnvironmentState.RUNNING) "Open Desktop GUI" else "Boot into GUI",
                     onClick = {
-                        if (activeEnv.state == EnvironmentState.STOPPED || activeEnv.state == EnvironmentState.READY) {
+                        if (activeEnv.state != EnvironmentState.RUNNING) {
                             environmentViewModel.startEnvironment(activeEnv)
                         }
                         showDesktopInfoDialog = activeEnv
@@ -229,87 +183,46 @@ fun HomeScreen(
                     badge = "Bash Shell",
                     description = "Launch interactive rootless Linux bash shell with isolated rootfs filesystem",
                     accentColor = neuColors.primaryAccent,
-                    buttonText = "Open Terminal Shell",
+                    buttonText = if (activeEnv.state == EnvironmentState.RUNNING) "Resume Terminal Shell" else "Open Terminal Shell",
                     onClick = {
-                        if (activeEnv.state == EnvironmentState.STOPPED || activeEnv.state == EnvironmentState.READY) {
+                        if (activeEnv.state != EnvironmentState.RUNNING) {
                             environmentViewModel.startEnvironment(activeEnv)
                         }
                         navController.navigate(Screen.Terminal.route(activeEnv.id.value))
                     }
                 )
 
-                // Live System Telemetry Card (RAM & Storage Bars, Network, CPU, Battery)
-                SystemOverviewCard(context = context)
-
-                // Quick Runtime Control Card
-                NeuCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                // Stop Session Button (Visible only when RUNNING)
+                AnimatedVisibility(
+                    visible = activeEnv.state == EnvironmentState.RUNNING,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically(),
                 ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    NeuButton(
+                        onClick = { environmentViewModel.stopEnvironment(activeEnv) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        contentPadding = PaddingValues(vertical = 12.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Runtime Controls",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = neuColors.textPrimary,
-                            )
-                            Text(
-                                "User: ${activeEnv.configuration.linuxUser}",
-                                fontFamily = SfMono,
-                                fontSize = 12.sp,
-                                color = neuColors.textSecondary,
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            if (activeEnv.state == EnvironmentState.RUNNING) {
-                                NeuButton(
-                                    onClick = { environmentViewModel.stopEnvironment(activeEnv) },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(vertical = 10.dp),
-                                ) {
-                                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(16.dp), tint = neuColors.error)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Stop", fontSize = 13.sp, color = neuColors.error, fontWeight = FontWeight.Bold)
-                                }
-
-                                NeuButton(
-                                    onClick = { environmentViewModel.restartEnvironment(activeEnv) },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(vertical = 10.dp),
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Restart", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                }
-                            } else {
-                                NeuButton(
-                                    onClick = { environmentViewModel.startEnvironment(activeEnv) },
-                                    modifier = Modifier.weight(1f),
-                                    isAccent = true,
-                                    shape = RoundedCornerShape(12.dp),
-                                    contentPadding = PaddingValues(vertical = 10.dp),
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Start Environment", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        Icon(
+                            Icons.Default.Stop,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = neuColors.error
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Stop Linux Session",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = neuColors.error,
+                            maxLines = 1,
+                        )
                     }
                 }
+
+                // Live System Telemetry Card (RAM & Storage Bars, Network, CPU, Battery)
+                SystemOverviewCard(context = context)
             }
         }
 
@@ -776,6 +689,7 @@ private fun RootfsInstallationCard(
     progress: Float?,
     statusText: String?,
     logs: List<String>,
+    onSettingsClick: () -> Unit,
     onInstall: (Distribution, String) -> Unit,
 ) {
     val neuColors = NeuTheme.colors
@@ -797,7 +711,16 @@ private fun RootfsInstallationCard(
             MacosWindowHeader(
                 title = "Setup Linux Environment",
                 badgeText = detectedArch.abiName,
-                subtitle = "Rootless PRoot Installer"
+                subtitle = "Rootless PRoot Installer",
+                actions = {
+                    NeuIconButton(
+                        onClick = onSettingsClick,
+                        size = 30.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
+                    }
+                }
             )
 
             HorizontalDivider(
@@ -1001,8 +924,18 @@ private fun RootfsInstallationCard(
  * Hero card displaying the active environment telemetry.
  */
 @Composable
-private fun ActiveEnvironmentHeroCard(environment: Environment) {
+private fun ActiveEnvironmentHeroCard(
+    environment: Environment,
+    onSettingsClick: () -> Unit,
+) {
     val neuColors = NeuTheme.colors
+    val (badgeColor, textColor) = when (environment.state) {
+        EnvironmentState.RUNNING -> neuColors.success to Color.White
+        EnvironmentState.STARTING -> neuColors.primaryAccent to Color.White
+        EnvironmentState.READY -> neuColors.surfacePressed to neuColors.success
+        else -> neuColors.surfacePressed to neuColors.textSecondary
+    }
+
     NeuCard(
         modifier = Modifier.fillMaxWidth(),
         elevation = 6.dp,
@@ -1013,6 +946,30 @@ private fun ActiveEnvironmentHeroCard(environment: Environment) {
                 title = environment.name,
                 badgeText = environment.architecture.linuxArch,
                 subtitle = environment.distribution.displayName,
+                actions = {
+                    Surface(
+                        color = badgeColor,
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            text = environment.state.name,
+                            fontFamily = SfMono,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1,
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    NeuIconButton(
+                        onClick = onSettingsClick,
+                        size = 30.dp,
+                        tint = neuColors.textPrimary,
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
+                    }
+                }
             )
 
             HorizontalDivider(
