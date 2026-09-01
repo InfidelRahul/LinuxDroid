@@ -15,12 +15,14 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -30,12 +32,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,51 +66,29 @@ import com.linuxdroid.core.storage.StorageAuthorizationState
 /**
  * Home screen:
  * - If NO rootfs is installed: Shows Rootfs Installation screen with automatic architecture detection.
- * - If rootfs IS installed: Shows Dashboard with 2 primary action cards: OS GUI Mode & Terminal CLI Mode,
- *   followed by a Live System Telemetry Card (RAM & Storage usage bars, Network, CPU, Battery).
+ * - If rootfs IS installed: Shows clean dashboard with OS Hero Card (status & settings in header),
+ *   Launch Mode cards (GUI & CLI with authentic distro square box icons), active session Resume/Start, reactive Stop button,
+ *   and live system telemetry overview.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    navController: NavController,
+    navController: NavController = rememberNavController(),
     environmentViewModel: EnvironmentViewModel = hiltViewModel(),
     settingsViewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val authState by settingsViewModel.authorizationState.collectAsState()
     val environments by environmentViewModel.environments.collectAsState()
     val installProgress by environmentViewModel.installProgress.collectAsState()
     val installStatusText by environmentViewModel.installStatusText.collectAsState()
     val installerLogs by environmentViewModel.installerLogs.collectAsState()
-    val neuColors = NeuTheme.colors
+    val authorizationState by settingsViewModel.authorizationState.collectAsState()
 
-    var showStorageDialog by remember {
-        mutableStateOf(!settingsViewModel.hasPromptedStorageAccess() && authState !is StorageAuthorizationState.Authorized)
-    }
-
+    var showStorageDialog by remember { mutableStateOf(false) }
     var showDesktopInfoDialog by remember { mutableStateOf<Environment?>(null) }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                settingsViewModel.checkStorageAccess()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
+    val neuColors = NeuTheme.colors
 
-    // Find the primary/active installed environment
-    val activeEnv = environments.firstOrNull {
-        it.state == EnvironmentState.READY ||
-        it.state == EnvironmentState.RUNNING ||
-        it.state == EnvironmentState.STARTING ||
-        it.state == EnvironmentState.STOPPED ||
-        it.state == EnvironmentState.STOPPING
-    } ?: environments.firstOrNull()
+    val activeEnv = environments.firstOrNull()
 
     val installingEnv = environments.firstOrNull {
         it.state == EnvironmentState.INSTALLING || (installProgress[it.id.value] != null)
@@ -115,6 +101,26 @@ fun HomeScreen(
         activeEnv.state == EnvironmentState.STOPPED ||
         activeEnv.state == EnvironmentState.STOPPING
     )
+
+    // Check shared storage permission on first launch
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                settingsViewModel.checkStorageAccess()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(Unit) {
+        if (!settingsViewModel.hasPromptedStorageAccess()) {
+            if (authorizationState !is StorageAuthorizationState.Authorized) {
+                showStorageDialog = true
+            }
+        }
+    }
 
     Scaffold(
         containerColor = neuColors.background,
@@ -161,13 +167,8 @@ fun HomeScreen(
                 )
 
                 // OS / GUI Mode Primary Card
-                NeuLaunchCard(
-                    icon = Icons.Default.DesktopWindows,
-                    title = "Desktop GUI Mode",
-                    badge = "Wayland / X11",
-                    description = "Boot into graphical Linux desktop environment with full window management",
-                    accentColor = neuColors.secondaryAccent,
-                    buttonText = if (activeEnv.state == EnvironmentState.RUNNING) "Open Desktop GUI" else "Boot into GUI",
+                NeuGuiLaunchCard(
+                    environment = activeEnv,
                     onClick = {
                         if (activeEnv.state != EnvironmentState.RUNNING) {
                             environmentViewModel.startEnvironment(activeEnv)
@@ -177,13 +178,8 @@ fun HomeScreen(
                 )
 
                 // Terminal / CLI Mode Primary Card
-                NeuLaunchCard(
-                    icon = Icons.Default.Terminal,
-                    title = "Terminal CLI Mode",
-                    badge = "Bash Shell",
-                    description = "Launch interactive rootless Linux bash shell with isolated rootfs filesystem",
-                    accentColor = neuColors.primaryAccent,
-                    buttonText = if (activeEnv.state == EnvironmentState.RUNNING) "Resume Terminal Shell" else "Open Terminal Shell",
+                NeuCliLaunchCard(
+                    environment = activeEnv,
                     onClick = {
                         if (activeEnv.state != EnvironmentState.RUNNING) {
                             environmentViewModel.startEnvironment(activeEnv)
@@ -323,6 +319,516 @@ fun HomeScreen(
 }
 
 /**
+ * Shared storage dialog informing user about /sdcard bridge.
+ */
+@Composable
+private fun SharedStorageAccessDialog(
+    onDismiss: () -> Unit,
+    onGrant: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = neuColors.background,
+        icon = {
+            NeuIconButton(
+                onClick = {},
+                enabled = false,
+                size = 52.dp,
+                tint = neuColors.primaryAccent,
+            ) {
+                Icon(
+                    Icons.Default.FolderShared,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Android Shared Storage",
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                color = neuColors.textPrimary,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "LinuxDroid allows you to share files seamlessly between Android and your Linux environments.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = neuColors.textSecondary,
+                )
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Shared Path in Linux:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = neuColors.textPrimary,
+                        )
+                        Text(
+                            text = "/sdcard or ~/storage/shared",
+                            fontFamily = SfMono,
+                            fontSize = 11.sp,
+                            color = neuColors.primaryAccent,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            NeuButton(
+                onClick = onGrant,
+                isAccent = true,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text("Grant Storage Access", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            NeuButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text("Later", fontSize = 13.sp)
+            }
+        }
+    )
+}
+
+/**
+ * Square box showing the authentic installed OS distribution logo.
+ */
+@Composable
+private fun DistroIcon(
+    distribution: Distribution,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 56.dp,
+) {
+    val neuColors = NeuTheme.colors
+    val (bgColor, brandColor) = when (distribution) {
+        Distribution.DEBIAN -> Color(0xFFD70A53) to Color(0xFFFF4081)
+        Distribution.UBUNTU -> Color(0xFFE95420) to Color(0xFFFF7043)
+        Distribution.KALI -> Color(0xFF2C3E50) to Color(0xFF3498DB)
+        Distribution.ARCH_LINUX -> Color(0xFF1793D1) to Color(0xFF4FC3F7)
+        Distribution.ALPINE -> Color(0xFF0D597F) to Color(0xFF29B6F6)
+    }
+
+    Surface(
+        modifier = modifier.size(size),
+        shape = RoundedCornerShape(14.dp),
+        color = neuColors.surfacePressed,
+        border = androidx.compose.foundation.BorderStroke(1.dp, brandColor.copy(alpha = 0.45f)),
+        shadowElevation = 2.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(size * 0.65f)) {
+                val canvasWidth = size.toPx() * 0.65f
+                val canvasHeight = size.toPx() * 0.65f
+                when (distribution) {
+                    Distribution.DEBIAN -> drawDebianLogo(bgColor, canvasWidth, canvasHeight)
+                    Distribution.UBUNTU -> drawUbuntuLogo(bgColor, canvasWidth, canvasHeight)
+                    Distribution.KALI -> drawKaliLogo(brandColor, canvasWidth, canvasHeight)
+                    Distribution.ARCH_LINUX -> drawArchLogo(brandColor, canvasWidth, canvasHeight)
+                    Distribution.ALPINE -> drawAlpineLogo(brandColor, canvasWidth, canvasHeight)
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawDebianLogo(color: Color, width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+    val path = Path().apply {
+        moveTo(cx + width * 0.05f, cy + height * 0.35f)
+        cubicTo(
+            cx - width * 0.35f, cy + height * 0.35f,
+            cx - width * 0.42f, cy - height * 0.15f,
+            cx - width * 0.15f, cy - height * 0.35f
+        )
+        cubicTo(
+            cx + width * 0.15f, cy - height * 0.45f,
+            cx + width * 0.42f, cy - height * 0.22f,
+            cx + width * 0.38f, cy + height * 0.10f
+        )
+        cubicTo(
+            cx + width * 0.34f, cy + height * 0.30f,
+            cx + width * 0.12f, cy + height * 0.32f,
+            cx - width * 0.05f, cy + height * 0.18f
+        )
+        cubicTo(
+            cx - width * 0.18f, cy + height * 0.05f,
+            cx - width * 0.12f, cy - height * 0.18f,
+            cx + width * 0.05f, cy - height * 0.15f
+        )
+        cubicTo(
+            cx + width * 0.15f, cy - height * 0.12f,
+            cx + width * 0.18f, cy + height * 0.02f,
+            cx + width * 0.08f, cy + height * 0.08f
+        )
+    }
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(
+            width = width * 0.14f,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
+    )
+}
+
+private fun DrawScope.drawUbuntuLogo(color: Color, width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+    val r = width * 0.34f
+    val strokeW = width * 0.10f
+    val gap = 24f
+    val sweep = (360f - 3f * gap) / 3f
+
+    for (i in 0..2) {
+        val startAngle = i * (sweep + gap) + gap / 2f
+        drawArc(
+            color = color,
+            startAngle = startAngle,
+            sweepAngle = sweep,
+            useCenter = false,
+            topLeft = Offset(cx - r, cy - r),
+            size = Size(r * 2f, r * 2f),
+            style = Stroke(width = strokeW, cap = StrokeCap.Round)
+        )
+        val dotAngleRad = Math.toRadians((i * (sweep + gap) + sweep / 2f + gap / 2f).toDouble())
+        val dotR = r * 1.25f
+        val dotX = cx + (dotR * Math.cos(dotAngleRad)).toFloat()
+        val dotY = cy + (dotR * Math.sin(dotAngleRad)).toFloat()
+        drawCircle(
+            color = color,
+            radius = width * 0.07f,
+            center = Offset(dotX, dotY)
+        )
+    }
+}
+
+private fun DrawScope.drawKaliLogo(color: Color, width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+    val path = Path().apply {
+        moveTo(cx, cy - height * 0.42f)
+        cubicTo(cx + width * 0.38f, cy - height * 0.35f, cx + width * 0.42f, cy + height * 0.05f, cx, cy + height * 0.42f)
+        cubicTo(cx - width * 0.42f, cy + height * 0.05f, cx - width * 0.38f, cy - height * 0.35f, cx, cy - height * 0.42f)
+        close()
+    }
+    drawPath(path = path, color = color.copy(alpha = 0.25f))
+    drawPath(path = path, color = color, style = Stroke(width = width * 0.08f))
+    val dragonPath = Path().apply {
+        moveTo(cx - width * 0.15f, cy + height * 0.15f)
+        lineTo(cx + width * 0.10f, cy - height * 0.15f)
+        lineTo(cx - width * 0.02f, cy - height * 0.12f)
+        lineTo(cx + width * 0.15f, cy - height * 0.25f)
+    }
+    drawPath(path = dragonPath, color = color, style = Stroke(width = width * 0.07f, cap = StrokeCap.Round))
+}
+
+private fun DrawScope.drawArchLogo(color: Color, width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+    val path = Path().apply {
+        moveTo(cx, cy - height * 0.42f)
+        lineTo(cx + width * 0.40f, cy + height * 0.38f)
+        cubicTo(cx + width * 0.15f, cy + height * 0.25f, cx - width * 0.15f, cy + height * 0.25f, cx - width * 0.40f, cy + height * 0.38f)
+        close()
+    }
+    drawPath(path = path, color = color)
+    val innerPath = Path().apply {
+        moveTo(cx, cy - height * 0.15f)
+        lineTo(cx + width * 0.22f, cy + height * 0.32f)
+        lineTo(cx - width * 0.22f, cy + height * 0.32f)
+        close()
+    }
+    drawPath(path = innerPath, color = Color(0xFF1E222B))
+}
+
+private fun DrawScope.drawAlpineLogo(color: Color, width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+    val path1 = Path().apply {
+        moveTo(cx - width * 0.05f, cy - height * 0.38f)
+        lineTo(cx + width * 0.42f, cy + height * 0.38f)
+        lineTo(cx - width * 0.42f, cy + height * 0.38f)
+        close()
+    }
+    drawPath(path = path1, color = color)
+    val snowPath = Path().apply {
+        moveTo(cx - width * 0.05f, cy - height * 0.38f)
+        lineTo(cx + width * 0.12f, cy - height * 0.08f)
+        lineTo(cx + width * 0.02f, cy - height * 0.05f)
+        lineTo(cx - width * 0.08f, cy - height * 0.08f)
+        lineTo(cx - width * 0.22f, cy - height * 0.08f)
+        close()
+    }
+    drawPath(path = snowPath, color = Color.White)
+}
+
+/**
+ * GUI Launch card with installed OS icon box, distribution info, and active session status.
+ */
+@Composable
+private fun NeuGuiLaunchCard(
+    environment: Environment,
+    onClick: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    val isRunning = environment.state == EnvironmentState.RUNNING
+
+    NeuCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        elevation = 4.dp,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                // Square Box with Installed OS Icon
+                DistroIcon(
+                    distribution = environment.distribution,
+                    size = 56.dp,
+                )
+
+                // Right Side: Distribution info and status
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "Desktop GUI Mode",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+                            color = neuColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Surface(
+                            color = neuColors.surfacePressed,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
+                        ) {
+                            Text(
+                                text = "Wayland / X11",
+                                fontFamily = SfMono,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = neuColors.secondaryAccent,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "${environment.distribution.displayName} • Graphical Desktop",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = neuColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (isRunning) neuColors.success else neuColors.textMuted)
+                        )
+                        Text(
+                            text = if (isRunning) "Active Session Running" else "Ready to Launch",
+                            fontSize = 11.sp,
+                            color = if (isRunning) neuColors.success else neuColors.textSecondary,
+                            fontFamily = SfMono,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+
+            NeuButton(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth(),
+                isAccent = true,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(vertical = 11.dp),
+            ) {
+                Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isRunning) "Go to GUI Session" else "Start GUI Session",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * CLI Launch card with Terminal prompt box, distribution info, and active session status.
+ */
+@Composable
+private fun NeuCliLaunchCard(
+    environment: Environment,
+    onClick: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    val isRunning = environment.state == EnvironmentState.RUNNING
+
+    NeuCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        elevation = 4.dp,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                // Square Box with Terminal Shell Emblem
+                Surface(
+                    modifier = Modifier.size(56.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = neuColors.surfacePressed,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, neuColors.primaryAccent.copy(alpha = 0.45f)),
+                    shadowElevation = 2.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            ">_",
+                            fontFamily = SfMono,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = neuColors.primaryAccent,
+                        )
+                    }
+                }
+
+                // Right Side: Distribution info and status
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = "Terminal CLI Mode",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+                            color = neuColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        Surface(
+                            color = neuColors.surfacePressed,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
+                        ) {
+                            Text(
+                                text = "Bash Shell",
+                                fontFamily = SfMono,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = neuColors.primaryAccent,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "${environment.distribution.displayName} • Interactive Shell",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = neuColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(if (isRunning) neuColors.success else neuColors.textMuted)
+                        )
+                        Text(
+                            text = if (isRunning) "Active Session Running" else "Ready to Launch",
+                            fontSize = 11.sp,
+                            color = if (isRunning) neuColors.success else neuColors.textSecondary,
+                            fontFamily = SfMono,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+
+            NeuButton(
+                onClick = onClick,
+                modifier = Modifier.fillMaxWidth(),
+                isAccent = true,
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(vertical = 11.dp),
+            ) {
+                Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(17.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isRunning) "Resume CLI Session" else "Start CLI Session",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/**
  * Live System Telemetry Card with RAM and Storage progress bars, Network, CPU and Battery.
  */
 @Composable
@@ -362,159 +868,122 @@ private fun SystemOverviewCard(context: Context) {
 
                 Surface(
                     color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(6.dp),
-                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                ) {
-                    Text(
-                        text = "LIVE",
-                        fontFamily = SfMono,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = neuColors.success,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                }
-            }
-
-            // RAM Memory Bar
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Memory,
-                            contentDescription = null,
-                            tint = neuColors.primaryAccent,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Text(
-                            "RAM Memory",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                            color = neuColors.textPrimary,
-                        )
-                    }
-
-                    Text(
-                        text = "${stats.memUsedFormatted} / ${stats.memTotalFormatted} (${(stats.memFraction * 100).toInt()}%)",
-                        fontFamily = SfMono,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = neuColors.primaryAccent,
-                    )
-                }
-
-                LinearProgressIndicator(
-                    progress = { stats.memFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = neuColors.primaryAccent,
-                    trackColor = neuColors.surfacePressed,
-                )
-            }
-
-            // Storage Space Bar
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.Storage,
-                            contentDescription = null,
-                            tint = neuColors.secondaryAccent,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Text(
-                            "Internal Storage",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                            color = neuColors.textPrimary,
-                        )
-                    }
-
-                    Text(
-                        text = "${stats.storageUsedFormatted} / ${stats.storageTotalFormatted} (${(stats.storageFraction * 100).toInt()}%)",
-                        fontFamily = SfMono,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = neuColors.secondaryAccent,
-                    )
-                }
-
-                LinearProgressIndicator(
-                    progress = { stats.storageFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(7.dp)
-                        .clip(RoundedCornerShape(4.dp)),
-                    color = neuColors.secondaryAccent,
-                    trackColor = neuColors.surfacePressed,
-                )
-            }
-
-            HorizontalDivider(color = neuColors.borderHighlight.copy(alpha = 0.2f), thickness = 0.5.dp)
-
-            // Network, CPU, Battery Status Pills
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Network Pill
-                Surface(
-                    color = neuColors.surfacePressed,
                     shape = RoundedCornerShape(8.dp),
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.3f)),
-                    modifier = Modifier.weight(1f),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(
-                            if (stats.isOnline) Icons.Default.Wifi else Icons.Default.WifiOff,
-                            contentDescription = null,
-                            tint = if (stats.isOnline) neuColors.success else neuColors.error,
-                            modifier = Modifier.size(14.dp),
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (stats.isOnline) neuColors.success else neuColors.error)
                         )
                         Text(
-                            text = stats.networkType,
+                            text = "${stats.networkType} • ${stats.networkStatus}",
                             fontFamily = SfMono,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
-                            color = neuColors.textPrimary,
+                            color = neuColors.textSecondary,
                             maxLines = 1,
                         )
                     }
                 }
+            }
 
-                // CPU Pill
+            // RAM Usage Bar
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Memory, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
+                        Text("RAM Usage", style = MaterialTheme.typography.labelSmall, color = neuColors.textSecondary)
+                    }
+                    Text(
+                        "${stats.memUsedFormatted} / ${stats.memTotalFormatted} (${(stats.memFraction * 100).toInt()}%)",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = neuColors.textPrimary,
+                    )
+                }
                 Surface(
                     color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = stats.memFraction.coerceIn(0.01f, 1f))
+                            .background(neuColors.primaryAccent, shape = RoundedCornerShape(6.dp))
+                    )
+                }
+            }
+
+            // Storage Usage Bar
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.secondaryAccent)
+                        Text("Internal Storage", style = MaterialTheme.typography.labelSmall, color = neuColors.textSecondary)
+                    }
+                    Text(
+                        "${stats.storageUsedFormatted} / ${stats.storageTotalFormatted} (${(stats.storageFraction * 100).toInt()}%)",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = neuColors.textPrimary,
+                    )
+                }
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = stats.storageFraction.coerceIn(0.01f, 1f))
+                            .background(neuColors.secondaryAccent, shape = RoundedCornerShape(6.dp))
+                    )
+                }
+            }
+
+            HorizontalDivider(color = neuColors.borderHighlight.copy(alpha = 0.2f), thickness = 0.5.dp)
+
+            // CPU & Battery Telemetry row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(10.dp),
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.3f)),
                     modifier = Modifier.weight(1f),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
-                            Icons.Default.DeveloperBoard,
+                            Icons.Default.Speed,
                             contentDescription = null,
                             tint = neuColors.primaryAccent,
                             modifier = Modifier.size(14.dp),
@@ -530,15 +999,14 @@ private fun SystemOverviewCard(context: Context) {
                     }
                 }
 
-                // Battery Pill
                 Surface(
                     color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(10.dp),
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.3f)),
-                    modifier = Modifier.weight(0.9f),
+                    modifier = Modifier.weight(1f),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -846,13 +1314,13 @@ private fun RootfsInstallationCard(
                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Install ${selectedDistro.displayName} Rootfs",
+                            "Install & Bootstrap Environment",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
                 } else {
-                    // Installation in progress
+                    // Installing State with Progress and Logs
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -985,14 +1453,10 @@ private fun ActiveEnvironmentHeroCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    NeuIconButton(
-                        onClick = {},
-                        enabled = false,
+                    DistroIcon(
+                        distribution = environment.distribution,
                         size = 48.dp,
-                        tint = neuColors.primaryAccent,
-                    ) {
-                        Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(26.dp))
-                    }
+                    )
                     Column {
                         Text(
                             text = environment.distribution.displayName,
@@ -1065,198 +1529,5 @@ private fun ActiveEnvironmentHeroCard(
                 }
             }
         }
-    }
-}
-
-/**
- * Large, beautiful launch card for OS GUI Mode and Terminal CLI Mode.
- */
-@Composable
-private fun NeuLaunchCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    badge: String,
-    description: String,
-    accentColor: Color,
-    buttonText: String,
-    onClick: () -> Unit,
-) {
-    val neuColors = NeuTheme.colors
-    NeuCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
-        elevation = 4.dp,
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                NeuIconButton(
-                    onClick = onClick,
-                    size = 50.dp,
-                    tint = accentColor,
-                ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp))
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp),
-                            color = neuColors.textPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Surface(
-                            color = neuColors.surfacePressed,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                        ) {
-                            Text(
-                                text = badge,
-                                fontFamily = SfMono,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = accentColor,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = neuColors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            NeuButton(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth(),
-                isAccent = true,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 12.dp),
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(buttonText, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SharedStorageAccessDialog(
-    onDismiss: () -> Unit,
-    onGrant: () -> Unit,
-) {
-    val neuColors = NeuTheme.colors
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = neuColors.background,
-        icon = {
-            NeuIconButton(
-                onClick = {},
-                enabled = false,
-                size = 52.dp,
-                tint = neuColors.primaryAccent,
-            ) {
-                Icon(
-                    Icons.Default.FolderShared,
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        title = {
-            Text(
-                text = "Android Shared Storage",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = neuColors.textPrimary,
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "LinuxDroid allows you to share files seamlessly between Android and your Linux environments.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = neuColors.textSecondary,
-                )
-                NeuCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = 2.dp,
-                    isInset = true,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(16.dp))
-                            Text("Access Downloads & Documents in Linux", fontSize = 13.sp, color = neuColors.textPrimary)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Storage, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(16.dp))
-                            Text("Mounted at /sdcard and /home/user/Android", fontSize = 13.sp, color = neuColors.textPrimary)
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Security, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(16.dp))
-                            Text("Secure and isolated execution", fontSize = 13.sp, color = neuColors.textPrimary)
-                        }
-                    }
-                }
-                Text(
-                    text = "Grant storage access to enable full file sharing, or configure it later in Settings.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = neuColors.textMuted
-                )
-            }
-        },
-        confirmButton = {
-            NeuButton(
-                onClick = onGrant,
-                shape = RoundedCornerShape(12.dp),
-                isAccent = true,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Grant Access", fontSize = 14.sp)
-            }
-        },
-        dismissButton = {
-            NeuButton(
-                onClick = onDismiss,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Text("Maybe Later", fontSize = 14.sp)
-            }
-        }
-    )
-}
-
-@Preview
-@Composable
-fun HomeScreenPreview() {
-    LinuxDroidTheme {
-        HomeScreen(navController = rememberNavController())
     }
 }
