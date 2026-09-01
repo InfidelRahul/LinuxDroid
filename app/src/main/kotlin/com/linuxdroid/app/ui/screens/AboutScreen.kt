@@ -4,17 +4,22 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment as AndroidEnvironment
 import android.os.StatFs
 import android.text.format.Formatter
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Terminal
@@ -22,6 +27,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -187,6 +193,94 @@ fun AboutScreen(
                     AboutItem("Linux Kernel", kernelRelease)
                 }
             }
+
+            // Developer & Open Source
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Code, contentDescription = null, tint = neuColors.primaryAccent, modifier = Modifier.size(20.dp))
+                Text(
+                    "Developer & Open Source",
+                    style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
+                    color = neuColors.textPrimary,
+                )
+            }
+            NeuCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AboutLinkItem(
+                        label = "Developer",
+                        value = "InfidelRahul",
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/InfidelRahul"))
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = neuColors.borderHighlight.copy(alpha = 0.2f), thickness = 0.5.dp)
+                    AboutLinkItem(
+                        label = "GitHub Repository",
+                        value = "InfidelRahul/LinuxDroid",
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/InfidelRahul/LinuxDroid"))
+                            context.startActivity(intent)
+                        }
+                    )
+                    HorizontalDivider(color = neuColors.borderHighlight.copy(alpha = 0.2f), thickness = 0.5.dp)
+                    AboutLinkItem(
+                        label = "Issue Tracker",
+                        value = "Report Bug / Feature",
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/InfidelRahul/LinuxDroid/issues"))
+                            context.startActivity(intent)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutLinkItem(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = neuColors.textSecondary,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = neuColors.primaryAccent
+            )
+            Icon(
+                Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = null,
+                tint = neuColors.primaryAccent,
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }
