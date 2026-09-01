@@ -175,4 +175,33 @@ class FailureLogDetectorTest {
         assertFalse(ev.isExpectedProbe)
         assertTrue(ev.category.isCritical)
     }
+
+    @Test
+    fun testStandardFstatatAndOpenatProbeClassification() {
+        val logs = listOf(
+            "proot info: [SYSCALL_EXIT_ERR] pid=22493: sysnum=88 (fstatat64) tracee_status=-2 -> result=-2",
+            "proot info: [SYSCALL_EXIT_ERR] pid=22504: sysnum=216 (openat) tracee_status=-2 -> result=-2"
+        )
+        val events = detector.detectFailures(logs)
+        assertEquals(2, events.size)
+
+        val fstatatEv = events[0]
+        assertEquals(22493, fstatatEv.pid)
+        assertEquals(88, fstatatEv.syscallNumber)
+        assertEquals("fstatat64", fstatatEv.syscallName)
+        assertEquals(2, fstatatEv.errno)
+        assertEquals("ENOENT", fstatatEv.errnoName)
+        assertEquals(FailureCategory.EXPECTED_PROBE, fstatatEv.category)
+        assertTrue(fstatatEv.isExpectedProbe)
+
+        val openatEv = events[1]
+        assertEquals(22504, openatEv.pid)
+        assertEquals(216, openatEv.syscallNumber)
+        assertEquals("openat", openatEv.syscallName)
+        assertEquals(2, openatEv.errno)
+        assertEquals("ENOENT", openatEv.errnoName)
+        assertEquals(FailureCategory.EXPECTED_PROBE, openatEv.category)
+        assertTrue(openatEv.isExpectedProbe)
+    }
 }
+

@@ -52,31 +52,31 @@ class RuntimeLogExporter(
         }
 
         val detectedEvents = detector.detectFailures(logLines, environment, contextBefore, contextAfter)
-        val aggregated = detector.aggregateFailures(detectedEvents)
-        val chains = detector.correlateChains(detectedEvents)
-
         val nonProbeEvents = detectedEvents.filter { !it.isExpectedProbe }
+        val aggregated = detector.aggregateFailures(nonProbeEvents)
+        val chains = detector.correlateChains(nonProbeEvents)
+
         val primaryCategory = nonProbeEvents.firstOrNull { it.category.isCritical }?.category
             ?: nonProbeEvents.firstOrNull()?.category
             ?: if (detectedEvents.isNotEmpty()) FailureCategory.EXPECTED_PROBE else FailureCategory.UNKNOWN
 
         val rootCause = when {
-            detectedEvents.any { it.category == FailureCategory.PTRACE_PEEKDATA } ->
+            nonProbeEvents.any { it.category == FailureCategory.PTRACE_PEEKDATA } ->
                 "PTRACE_PEEKDATA memory read failure: Android Bionic ptrace ABI mismatch / memory fault."
-            detectedEvents.any { it.category == FailureCategory.SIGSYS } ->
+            nonProbeEvents.any { it.category == FailureCategory.SIGSYS } ->
                 "SIGSYS trapped: Seccomp filter denied a guest syscall (unsupported or blocked syscall)."
-            detectedEvents.any { it.category == FailureCategory.ENOSYS } ->
+            nonProbeEvents.any { it.category == FailureCategory.ENOSYS } ->
                 "ENOSYS returned: Executable interpreter / dynamic linker missing or unimplemented kernel syscall."
-            detectedEvents.any { it.category == FailureCategory.EFAULT } ->
+            nonProbeEvents.any { it.category == FailureCategory.EFAULT } ->
                 "EFAULT memory fault: PRoot failed to access tracee memory address."
-            detectedEvents.any { it.category == FailureCategory.PROOT_STARTUP } ->
+            nonProbeEvents.any { it.category == FailureCategory.PROOT_STARTUP } ->
                 "PRoot native engine startup failed: binary missing, not executable, or platform denied execution."
-            detectedEvents.any { it.category == FailureCategory.MISSING_ROOTFS_FILE } ->
-                "Missing essential rootfs dependency: ${detectedEvents.first { it.category == FailureCategory.MISSING_ROOTFS_FILE }.guestPath ?: "critical binary"}"
-            detectedEvents.isEmpty() ->
-                "No active runtime failures detected in recent log streams."
+            nonProbeEvents.any { it.category == FailureCategory.MISSING_ROOTFS_FILE } ->
+                "Missing essential rootfs dependency: ${nonProbeEvents.first { it.category == FailureCategory.MISSING_ROOTFS_FILE }.guestPath ?: "critical binary"}"
+            nonProbeEvents.isEmpty() && detectedEvents.isNotEmpty() ->
+                "Nominal runtime state: userspace processes operating normally. All recent file lookup probes were handled gracefully by Linux applications."
             nonProbeEvents.isEmpty() ->
-                "Nominal runtime state: only benign userspace probes detected (e.g. ld.so preload/cache, shell config, nscd fallback)."
+                "No active runtime failures detected in recent log streams."
             else ->
                 nonProbeEvents.first().message
         }
@@ -99,7 +99,7 @@ class RuntimeLogExporter(
             environmentInfo = envInfo,
             primaryCategory = primaryCategory,
             rootCauseSummary = rootCause,
-            totalFailures = detectedEvents.size,
+            totalFailures = nonProbeEvents.size,
             uniqueSignaturesCount = aggregated.size,
             causalChains = chains,
             aggregatedFailures = aggregated,

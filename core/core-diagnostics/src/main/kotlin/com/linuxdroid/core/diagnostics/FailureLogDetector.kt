@@ -49,6 +49,7 @@ class FailureLogDetector(
         63 to "read",
         64 to "write",
         117 to "ptrace",
+        78 to "readlinkat",
 
         // x86_64 standard Linux syscall numbers:
         257 to "openat",
@@ -63,8 +64,10 @@ class FailureLogDetector(
         0 to "read",
         1 to "write",
         101 to "ptrace",
+        267 to "readlinkat",
 
         // PRoot canonical enum mappings:
+        88 to "fstatat64",
         216 to "openat",
     )
 
@@ -460,6 +463,22 @@ class FailureLogDetector(
 
         val target = (guestPath ?: socketInfo ?: hostPath ?: "").trim()
 
+        // Critical rootfs missing binaries/files
+        if (target.isNotBlank() && (
+            target == "/bin/sh" ||
+            target == "/bin/bash" ||
+            target == "/etc/passwd" ||
+            target.contains("ld-linux")
+        )) {
+            return Pair(FailureCategory.MISSING_ROOTFS_FILE, "Missing essential rootfs binary or configuration")
+        }
+
+        val probeSyscalls = setOf(
+            "fstatat64", "newfstatat", "stat", "fstat", "lstat",
+            "openat", "faccessat", "faccessat2", "access",
+            "statfs", "statfs64", "readlinkat", "readlink", "connect"
+        )
+
         val isBenignProbe = when {
             target.contains("ld.so.preload") -> true
             target.contains("ld.so.cache") -> true
@@ -469,6 +488,9 @@ class FailureLogDetector(
             target.contains(".bashrc") || target.contains("bash.bashrc") || target.contains(".profile") || target.contains(".inputrc") -> true
             target.contains("locale-archive") || target.contains("/usr/share/locale") -> true
             target.contains("nsswitch.conf") -> true
+            target.contains("/terminfo/") || target.contains("terminfo") -> true
+            // Standard POSIX file/path lookup probe syscalls returning ENOENT
+            sysname == null || sysname in probeSyscalls -> true
             else -> false
         }
 
@@ -479,13 +501,10 @@ class FailureLogDetector(
                 target.contains("nscd") -> "Glibc NSS daemon socket probe (falling back gracefully to /etc/passwd)"
                 target.contains(".bashrc") || target.contains("bash.bashrc") || target.contains(".profile") -> "Shell startup optional config probe"
                 target.contains("locale") -> "Glibc locale probe (defaulting to C.UTF-8)"
-                else -> "Standard Linux probe; fallback handled gracefully"
+                target.contains("terminfo") -> "Terminal database probe (falling back to built-in entries)"
+                else -> "Standard POSIX file/path lookup probe; non-existent path handled gracefully by application"
             }
             return Pair(FailureCategory.EXPECTED_PROBE, explanation)
-        }
-
-        if (target.contains("/bin/sh") || target.contains("ld-linux") || target.contains("/etc/passwd")) {
-            return Pair(FailureCategory.MISSING_ROOTFS_FILE, "Missing essential rootfs binary or configuration")
         }
 
         return Pair(FailureCategory.ENOENT, null)
