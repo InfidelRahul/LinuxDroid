@@ -294,7 +294,7 @@ fun TerminalScreen(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = neuColors.textPrimary, fontFamily = FontFamily.Monospace),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(color = neuColors.textPrimary, fontFamily = SfMono),
                             cursorBrush = SolidColor(neuColors.primaryAccent),
                             singleLine = true,
                             decorationBox = { innerTextField ->
@@ -310,7 +310,7 @@ fun TerminalScreen(
                                 text = "${currentMatchIndex + 1}/${searchMatchLines.size}",
                                 fontSize = 11.sp,
                                 color = neuColors.textSecondary,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = SfMono
                             )
 
                             NeuIconButton(
@@ -370,7 +370,7 @@ fun TerminalScreen(
                             text = if (shellExitCode != null && shellExitCode != 0) "Session exited (code $shellExitCode)" else "Session inactive",
                             color = neuColors.error,
                             fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = SfMono,
                             fontWeight = FontWeight.Bold
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -517,7 +517,7 @@ fun TerminalScreen(
                         elevation = 2.dp,
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     ) {
-                        Text(cmd, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = neuColors.primaryAccent)
+                        Text(cmd, fontSize = 11.sp, fontFamily = SfMono, color = neuColors.primaryAccent)
                     }
                 }
             }
@@ -598,7 +598,7 @@ fun TerminalScreen(
                                             )
                                             val style = SpanStyle(
                                                 color = spanColor,
-                                                fontFamily = FontFamily.Monospace,
+                                                fontFamily = SfMono,
                                                 fontSize = 12.sp,
                                                 fontWeight = if (span.isBold) FontWeight.Bold else FontWeight.Normal,
                                                 textDecoration = if (span.isUnderline) TextDecoration.Underline else TextDecoration.None,
@@ -616,7 +616,7 @@ fun TerminalScreen(
                                     ) {
                                         Text(
                                             text = annotatedString,
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = SfMono,
                                             fontSize = 12.sp,
                                             lineHeight = 16.sp,
                                         )
@@ -932,7 +932,7 @@ private fun TerminalKeyButton(
             Text(
                 text = text,
                 fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
+                fontFamily = SfMono,
                 fontWeight = if (isActive || highlight) FontWeight.Bold else FontWeight.Medium,
                 color = if (isActive) Color.White else if (highlight) neuColors.primaryAccent else neuColors.textPrimary
             )

@@ -794,7 +794,7 @@ private fun EnvironmentStorageDialog(
                         text = environment.rootfsPath,
                         color = neuColors.textPrimary,
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = SfMono,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
@@ -810,7 +810,7 @@ private fun EnvironmentStorageDialog(
                         text = "/sdcard/LinuxDroid -> /home/user/Android",
                         color = neuColors.primaryAccent,
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
+                        fontFamily = SfMono,
                         modifier = Modifier.padding(8.dp)
                     )
                 }
@@ -896,7 +896,7 @@ private fun InstallerTerminalConsole(
                         Text(
                             text = ">>> Initializing bootstrap daemon...",
                             color = neuColors.textMuted,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = SfMono,
                             fontSize = 11.sp
                         )
                     }
@@ -927,7 +927,7 @@ private fun InstallerTerminalConsole(
                         Text(
                             text = line,
                             color = lineColor,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = SfMono,
                             fontSize = 11.sp,
                             lineHeight = 15.sp,
                         )
@@ -942,7 +942,7 @@ private fun InstallerTerminalConsole(
                                 text = "▋",
                                 color = neuColors.primaryAccent,
                                 fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = SfMono
                             )
                         }
                     }

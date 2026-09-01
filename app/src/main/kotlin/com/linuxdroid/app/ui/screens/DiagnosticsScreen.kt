@@ -261,7 +261,7 @@ fun DiagnosticsScreen(
                                             Column(modifier = Modifier.padding(12.dp)) {
                                                 Text(
                                                     "Chain: ${chain.firstOrNull()?.correlationId ?: "unknown"}",
-                                                    fontFamily = FontFamily.Monospace,
+                                                    fontFamily = SfMono,
                                                     fontSize = 11.sp,
                                                     color = neuColors.primaryAccent
                                                 )
@@ -269,7 +269,7 @@ fun DiagnosticsScreen(
                                                 chain.forEachIndexed { i, ev ->
                                                     Text(
                                                         "${i + 1}. [${ev.category.name}] ${ev.message}",
-                                                        fontFamily = FontFamily.Monospace,
+                                                        fontFamily = SfMono,
                                                         fontSize = 11.sp,
                                                         color = neuColors.textPrimary
                                                     )
@@ -304,7 +304,7 @@ fun DiagnosticsScreen(
                                                     Text(
                                                         text = agg.message.take(80),
                                                         fontSize = 11.sp,
-                                                        fontFamily = FontFamily.Monospace,
+                                                        fontFamily = SfMono,
                                                         color = neuColors.textSecondary
                                                     )
                                                 }
@@ -438,7 +438,7 @@ fun DiagnosticsScreen(
                                         item {
                                             Text(
                                                 text = detailedLogs ?: "No logs available. Run diagnostics to populate.",
-                                                fontFamily = FontFamily.Monospace,
+                                                fontFamily = SfMono,
                                                 fontSize = 11.sp,
                                                 lineHeight = 15.sp,
                                                 color = neuColors.textSecondary,
