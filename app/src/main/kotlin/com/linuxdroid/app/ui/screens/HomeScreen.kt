@@ -171,7 +171,8 @@ fun HomeScreen(
                 NeuGuiLaunchCard(
                     environment = activeEnv,
                     onClick = {
-                        navController.navigate(Screen.Desktop.route(activeEnv.id.value))
+                        environmentViewModel.startEnvironment(activeEnv)
+                        navController.navigate(Screen.Terminal.route(activeEnv.id.value))
                     }
                 )
 
@@ -179,9 +180,7 @@ fun HomeScreen(
                 NeuCliLaunchCard(
                     environment = activeEnv,
                     onClick = {
-                        if (activeEnv.state != EnvironmentState.RUNNING) {
-                            environmentViewModel.startEnvironment(activeEnv)
-                        }
+                        environmentViewModel.startEnvironment(activeEnv)
                         navController.navigate(Screen.Terminal.route(activeEnv.id.value))
                     },
                     onStop = {
@@ -387,74 +386,103 @@ private fun NeuGuiLaunchCard(
     val isRunning = environment.state == EnvironmentState.RUNNING
 
     NeuCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+        modifier = Modifier.fillMaxWidth(),
         elevation = 4.dp,
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
         ) {
+            val iconWidth = maxWidth * 0.40f
+            val infoWidth = maxWidth * 0.60f
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Square Box with Installed OS Icon
-                DistroIcon(
-                    distribution = environment.distribution,
-                    size = 56.dp,
-                )
+                // ── Left 40%: Big clickable square distro icon ─────────────
+                Surface(
+                    modifier = Modifier
+                        .width(iconWidth)
+                        .aspectRatio(1f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onClick,
+                        ),
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isRunning) neuColors.primaryAccent.copy(alpha = 0.10f)
+                            else neuColors.surfacePressed,
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isRunning) 1.5.dp else 1.dp,
+                        color = neuColors.primaryAccent.copy(alpha = if (isRunning) 0.70f else 0.35f),
+                    ),
+                    shadowElevation = if (isRunning) 6.dp else 2.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        DistroIcon(
+                            distribution = environment.distribution,
+                            size = iconWidth * 0.65f,
+                        )
+                    }
+                }
 
-                // Right Side: Distribution info and status
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
+                // ── Right 60%: Info column ──────────────────────────────────
+                Column(
+                    modifier = Modifier.width(infoWidth - 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "Desktop GUI",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                        ),
+                        color = neuColors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    Text(
+                        text = environment.distribution.displayName,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = neuColors.primaryAccent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+
+                    Surface(
+                        color = neuColors.surfacePressed,
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f),
+                        ),
                     ) {
                         Text(
-                            text = "Desktop GUI Mode",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
-                            color = neuColors.textPrimary,
+                            text = "Wayland / X11",
+                            fontFamily = SfMono,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = neuColors.secondaryAccent,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
                         )
-                        Surface(
-                            color = neuColors.surfacePressed,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                        ) {
-                            Text(
-                                text = "Wayland / X11",
-                                fontFamily = SfMono,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = neuColors.secondaryAccent,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                maxLines = 1,
-                            )
-                        }
                     }
-                    Spacer(Modifier.height(3.dp))
+
                     Text(
-                        text = "${environment.distribution.displayName} • Graphical Desktop",
+                        text = "${environment.architecture.linuxArch} · PRoot",
                         style = MaterialTheme.typography.bodySmall,
                         color = neuColors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.height(4.dp))
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         Box(
                             modifier = Modifier
@@ -463,32 +491,15 @@ private fun NeuGuiLaunchCard(
                                 .background(if (isRunning) neuColors.success else neuColors.textMuted)
                         )
                         Text(
-                            text = if (isRunning) "Active Session Running" else "Ready to Launch",
-                            fontSize = 11.sp,
-                            color = if (isRunning) neuColors.success else neuColors.textSecondary,
+                            text = if (isRunning) "Session active" else "Tap icon to launch",
+                            fontSize = 10.sp,
                             fontFamily = SfMono,
+                            color = if (isRunning) neuColors.success else neuColors.textSecondary,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
-            }
-
-            NeuButton(
-                onClick = onClick,
-                modifier = Modifier.fillMaxWidth(),
-                isAccent = true,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 11.dp),
-            ) {
-                Icon(Icons.Default.DesktopWindows, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (isRunning) "Go to GUI Session" else "Start GUI Session",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
     }
@@ -1009,20 +1020,40 @@ private fun RootfsInstallationCard(
         shape = RoundedCornerShape(18.dp),
     ) {
         Column {
-            MacosWindowHeader(
-                title = "Setup Linux Environment",
-                badgeText = detectedArch.abiName,
-                subtitle = "Rootless PRoot Installer",
-                actions = {
-                    NeuIconButton(
-                        onClick = onSettingsClick,
-                        size = 30.dp,
-                        tint = neuColors.textPrimary,
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
-                    }
+            // ── Custom Header: Penguin + App name + big settings icon ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(text = "🐧", fontSize = 22.sp)
+                    Text(
+                        text = "LinuxDroid",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                        ),
+                        color = neuColors.textPrimary,
+                    )
                 }
-            )
+                NeuIconButton(
+                    onClick = onSettingsClick,
+                    size = 42.dp,
+                    tint = neuColors.primaryAccent,
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
 
             HorizontalDivider(
                 color = neuColors.borderHighlight.copy(alpha = 0.2f),
@@ -1243,11 +1274,38 @@ private fun ActiveEnvironmentHeroCard(
         shape = RoundedCornerShape(18.dp),
     ) {
         Column {
-            MacosWindowHeader(
-                title = environment.name,
-                badgeText = environment.architecture.linuxArch,
-                subtitle = environment.distribution.displayName,
-                actions = {
+            // ── Custom Header: Penguin + App name + state badge + big settings ──
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Left: Linux penguin emoji + "LinuxDroid" app name
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "🐧",
+                        fontSize = 22.sp,
+                    )
+                    Text(
+                        text = "LinuxDroid",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                        ),
+                        color = neuColors.textPrimary,
+                    )
+                }
+
+                // Right: state badge + big settings icon
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Surface(
                         color = badgeColor,
                         shape = RoundedCornerShape(6.dp),
@@ -1262,16 +1320,19 @@ private fun ActiveEnvironmentHeroCard(
                             maxLines = 1,
                         )
                     }
-                    Spacer(Modifier.width(4.dp))
                     NeuIconButton(
                         onClick = onSettingsClick,
-                        size = 30.dp,
-                        tint = neuColors.textPrimary,
+                        size = 42.dp,
+                        tint = neuColors.primaryAccent,
                     ) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            modifier = Modifier.size(22.dp),
+                        )
                     }
                 }
-            )
+            }
 
             HorizontalDivider(
                 color = neuColors.borderHighlight.copy(alpha = 0.2f),
