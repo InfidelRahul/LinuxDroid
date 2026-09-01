@@ -234,24 +234,41 @@ class FailureLogDetector(
         }
 
         // 6. Syscall Exit Error
-        SYSCALL_EXIT_ERR_PATTERN.find(line)?.let { m ->
-            val pid = m.groupValues[1].toIntOrNull()
-            val sysnum = m.groupValues[2].toIntOrNull()
-            val sysname = m.groupValues[3]
-            val traceeStatus = m.groupValues[4]
-            val result = m.groupValues[5].toIntOrNull() ?: -14
-            val errnoVal = kotlin.math.abs(result)
+        if (line.contains("[SYSCALL_EXIT_ERR]", ignoreCase = true)) {
+            val pid = Regex("pid=(\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull()
+            val sysnum = Regex("sysnum=(\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull()
+            val sysname = Regex("sysnum=\\d+ \\(([^)]+)\\)").find(line)?.groupValues?.get(1)
+            val result = Regex("result=(-?\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull() ?: -14
+            val errnoVal = Regex("errno=(\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull() ?: kotlin.math.abs(result)
+            val dirfd = Regex("dirfd=(-?\\d+)").find(line)?.groupValues?.get(1)?.toIntOrNull()
+            val guestPath = Regex("guest_path='([^']*)'").find(line)?.groupValues?.get(1)
+            val hostPath = Regex("host_path='([^']*)'").find(line)?.groupValues?.get(1)
+
+            val category = when (errnoVal) {
+                2 -> FailureCategory.ENOENT
+                13 -> FailureCategory.EACCES
+                1 -> FailureCategory.EPERM
+                14 -> FailureCategory.EFAULT
+                22 -> FailureCategory.EINVAL
+                38 -> FailureCategory.ENOSYS
+                else -> FailureCategory.SYSCALL_FAILURE
+            }
+
             return FailureEvent(
                 id = "",
                 correlationId = "",
-                category = FailureCategory.SYSCALL_FAILURE,
-                message = "[SYSCALL_EXIT_ERR] pid=$pid: sysnum=$sysnum ($sysname) tracee_status=$traceeStatus -> result=$result",
+                category = category,
+                message = line.trim(),
                 source = "PRoot:syscall",
                 pid = pid,
                 syscallNumber = sysnum,
                 syscallName = sysname,
                 errno = errnoVal,
-                errnoName = errnoNames[errnoVal],
+                errnoName = errnoNames[errnoVal] ?: "ERRNO_$errnoVal",
+                hostResult = result.toString(),
+                dirfd = dirfd,
+                guestPath = guestPath,
+                hostPath = hostPath,
             )
         }
 

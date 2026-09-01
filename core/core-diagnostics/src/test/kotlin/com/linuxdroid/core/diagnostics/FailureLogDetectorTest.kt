@@ -111,5 +111,23 @@ class FailureLogDetectorTest {
         assertTrue(jsonReport.contains("\"primaryCategory\": \"PTRACE_PEEKDATA\""))
         assertTrue(jsonReport.contains("\"aggregatedFailures\""))
     }
+
+    @Test
+    fun testRichSyscallExitErrorParsing() {
+        val line = "[SYSCALL_EXIT_ERR] pid=1234: sysnum=216 (openat) result=-2 (errno=2), dirfd=-100, guest_path='/etc/ld.so.preload', host_path='/data/data/com.linuxdroid/rootfs/etc/ld.so.preload', orig_args=(0xffffff9c, 0x7ffffff120, 0x80000, 0x0)"
+        val events = detector.detectFailures(listOf(line))
+        assertEquals(1, events.size)
+
+        val ev = events.first()
+        assertEquals(1234, ev.pid)
+        assertEquals(216, ev.syscallNumber)
+        assertEquals("openat", ev.syscallName)
+        assertEquals(2, ev.errno)
+        assertEquals("ENOENT", ev.errnoName)
+        assertEquals(FailureCategory.ENOENT, ev.category)
+        assertEquals(-100, ev.dirfd)
+        assertEquals("/etc/ld.so.preload", ev.guestPath)
+        assertEquals("/data/data/com.linuxdroid/rootfs/etc/ld.so.preload", ev.hostPath)
+    }
 }
 

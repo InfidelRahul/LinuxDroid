@@ -69,9 +69,9 @@ data class FailureEvent(
     val seccompSignal: Int? = null,
     val seccompCode: Int? = null,
     val seccompSyscall: Int? = null,
-    val seccompArch: String? = null,
-    val seccompErrno: Int? = null,
-    val emulatedResult: String? = null,
+    val dirfd: Int? = null,
+    val guestPath: String? = null,
+    val hostPath: String? = null,
     val contextBefore: List<String> = emptyList(),
     val contextAfter: List<String> = emptyList(),
 ) {
