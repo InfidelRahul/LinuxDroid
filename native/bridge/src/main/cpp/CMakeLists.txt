@@ -26,7 +26,7 @@ add_library(
     process_manager.cpp
     filesystem_utils.cpp
     gpu_detector.cpp
-    display_bridge.cpp
+    gui_host.cpp
     input_bridge.cpp
     audio_bridge.cpp
 )

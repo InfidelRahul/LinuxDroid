@@ -59,6 +59,11 @@ object NativeBridge {
 
     fun waitpid(pid: Int, block: Boolean = false): Int = nativeWaitpid(pid, block)
 
+    // ─── Native GUI host lifecycle ─────────────────────────────────────────────────
+
+    fun onGuiHostCreated() = nativeOnGuiHostCreated()
+    fun onGuiHostDestroyed() = nativeOnGuiHostDestroyed()
+
     // ─── Display & Surface ─────────────────────────────────────────────────────────
 
     fun onSurfaceCreated(surface: Surface, width: Int, height: Int) =
@@ -114,6 +119,9 @@ object NativeBridge {
     @JvmStatic external fun nativeReadFd(fd: Int, buffer: ByteArray, offset: Int, length: Int): Int
     @JvmStatic external fun nativeCloseFd(fd: Int)
     @JvmStatic external fun nativeWaitpid(pid: Int, block: Boolean): Int
+
+    @JvmStatic external fun nativeOnGuiHostCreated()
+    @JvmStatic external fun nativeOnGuiHostDestroyed()
 
     @JvmStatic external fun nativeOnSurfaceCreated(surface: Surface, width: Int, height: Int)
     @JvmStatic external fun nativeOnSurfaceChanged(surface: Surface, width: Int, height: Int, format: Int)

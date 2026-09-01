@@ -63,6 +63,15 @@ JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWaitpid(
     JNIEnv* env, jclass clazz, jint pid, jboolean block);
 
+// Native GUI host lifecycle
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnGuiHostCreated(
+    JNIEnv* env, jclass clazz);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnGuiHostDestroyed(
+    JNIEnv* env, jclass clazz);
+
 // Display & Surface
 JNIEXPORT void JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceCreated(

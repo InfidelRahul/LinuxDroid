@@ -19,6 +19,7 @@ enum class LogSubsystem {
     SESSION,
     WAYLAND,
     DISPLAY,
+    GUI_HOST,
     GPU,
     INPUT,
     AUDIO,

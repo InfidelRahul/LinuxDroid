@@ -1,5 +1,5 @@
 #include "linuxdroid_bridge.h"
-#include "display_bridge.h"
+#include "gui_host.h"
 #include "gpu_detector.h"
 #include "input_bridge.h"
 #include "audio_bridge.h"
@@ -346,24 +346,38 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeWaitpid(
     return -1; // still running or error
 }
 
+// ─── Native GUI host lifecycle ───────────────────────────────────────────────────
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnGuiHostCreated(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    linuxdroid::GuiHost::getInstance().onGuiHostCreated();
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnGuiHostDestroyed(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    linuxdroid::GuiHost::getInstance().onGuiHostDestroyed();
+}
+
 // ─── Display & Surface ──────────────────────────────────────────────────────────
 
 JNIEXPORT void JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceCreated(
     JNIEnv* env, [[maybe_unused]] jclass clazz, jobject surface, jint width, jint height) {
-    linuxdroid::DisplayBridge::getInstance().onSurfaceCreated(env, surface, width, height);
+    linuxdroid::GuiHost::getInstance().onSurfaceCreated(env, surface, width, height);
 }
 
 JNIEXPORT void JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceChanged(
     JNIEnv* env, [[maybe_unused]] jclass clazz, jobject surface, jint width, jint height, jint format) {
-    linuxdroid::DisplayBridge::getInstance().onSurfaceChanged(env, surface, width, height, format);
+    linuxdroid::GuiHost::getInstance().onSurfaceChanged(env, surface, width, height, format);
 }
 
 JNIEXPORT void JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeOnSurfaceDestroyed(
     [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
-    linuxdroid::DisplayBridge::getInstance().onSurfaceDestroyed();
+    linuxdroid::GuiHost::getInstance().onSurfaceDestroyed();
 }
 
 // ─── GPU ──────────────────────────────────────────────────────────────────────
