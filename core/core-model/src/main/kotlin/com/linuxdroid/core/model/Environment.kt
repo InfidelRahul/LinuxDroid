@@ -209,6 +209,8 @@ data class DesktopConfig(
     val waylandCompositor: String = "cage",
     /** Whether to start XWayland for X11 app compatibility. */
     val xwaylandEnabled: Boolean = true,
+    /** Whether to automatically log in without prompting at display manager. */
+    val autoLogin: Boolean = false,
 )
 
 /**

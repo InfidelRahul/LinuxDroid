@@ -18,6 +18,9 @@ sealed class Screen(val route: String) {
     object Terminal : Screen("terminal/{environmentId}") {
         fun route(environmentId: String) = "terminal/$environmentId"
     }
+    object Desktop : Screen("desktop/{environmentId}") {
+        fun route(environmentId: String) = "desktop/$environmentId"
+    }
     object Settings : Screen("settings")
     object Diagnostics : Screen("diagnostics")
     object About : Screen("about")
@@ -45,6 +48,12 @@ fun LinuxDroidNavGraph(
             arguments = listOf(navArgument("environmentId") { type = NavType.StringType })
         ) {
             TerminalScreen(navController = navController)
+        }
+        composable(
+            route = Screen.Desktop.route,
+            arguments = listOf(navArgument("environmentId") { type = NavType.StringType })
+        ) {
+            DesktopScreen(navController = navController)
         }
         composable(Screen.Settings.route) {
             SettingsScreen(navController = navController)
