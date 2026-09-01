@@ -96,6 +96,16 @@ userspace; it is never the mechanism that supplies Weston/libweston.)
 packaging step can fail-fast if it tries to introduce an unsupported stack
 component. Milestone 1 does not add any GUI runtime.
 
+## Phase 3: embedded compositor consumption
+
+Phase 3 (`native/bridge`) consumes this pinned libweston. The native bridge
+CMake auto-detects the libweston installed here (`native/weston/dist`) and, when
+present, compiles the compositor host (`weston_host.cpp`) + the LinuxDroid
+custom backend (`linuxdroid_backend.c`) and links `libweston` +
+`libwayland-server`. When the install is absent (default checkout / CI) it
+builds a no-libweston fallback so the app and CLI/runtime are unaffected. See
+[`docs/display/libweston-compositor.md`](../../docs/display/libweston-compositor.md).
+
 ## Usage
 
 ```bash

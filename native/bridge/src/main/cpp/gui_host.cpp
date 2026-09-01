@@ -1,4 +1,5 @@
 #include "gui_host.h"
+#include "weston_host.h"
 
 #include <android/log.h>
 
@@ -21,12 +22,26 @@ GuiHost::~GuiHost() {
 }
 
 void GuiHost::onGuiHostCreated() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    hostActive_ = true;
-    LOGI("GUI host created (surface generation=%u)", surfaceGeneration_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hostActive_ = true;
+        LOGI("GUI host created (surface generation=%u)", surfaceGeneration_);
+    }
+    // Initialize and run the embedded libweston compositor. This is the Phase 3
+    // lifecycle boundary: GUI host created -> compositor started. Failure to
+    // start (e.g. libweston not built) is non-fatal and logged — the host still
+    // tracks its surface lifecycle for later phases.
+    if (!WestonHost::getInstance().start()) {
+        LOGW("GUI host created, but the embedded compositor did not start.");
+    }
 }
 
 void GuiHost::onGuiHostDestroyed() {
+    // Shut the compositor down cleanly BEFORE releasing the surface/window so
+    // no compositor callback can observe a torn-down window. This is done
+    // outside the lock (stop() joins the event-loop thread).
+    WestonHost::getInstance().stop();
+
     std::lock_guard<std::mutex> lock(mutex_);
     if (window_ != nullptr) {
         LOGI("GUI host destroyed: releasing ANativeWindow");
