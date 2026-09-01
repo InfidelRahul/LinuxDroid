@@ -55,6 +55,13 @@ class DisplayError(
     cause: Throwable? = null,
 ) : LinuxDroidError("[Display] $message", cause)
 
+// ─── GUI ─────────────────────────────────────────────────────────────────────
+
+class GuiError(
+    message: String,
+    cause: Throwable? = null,
+) : LinuxDroidError("[GUI] $message", cause)
+
 // ─── GPU ──────────────────────────────────────────────────────────────────────
 
 class GpuError(
