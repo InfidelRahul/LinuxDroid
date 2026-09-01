@@ -17,4 +17,5 @@ if (localPropertiesFile.exists()) {
 }
 
 apply(from = "gradle/proot-currency.gradle.kts")
+apply(from = "gradle/weston-dependency.gradle.kts")
 

@@ -28,3 +28,9 @@ signing.properties
 
 # NDK generated
 .cxx/
+
+# Weston/libweston pinned-dependency build artifacts
+native/weston/src/
+native/weston/build/
+native/weston/dist/
+native/weston/.fetch-work/

@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "project": "LinuxDroid",
+  "subsystem": "native/weston",
+  "description": "Pinned Weston / libweston dependency for the LinuxDroid Android GUI.",
+  "platform": {
+    "os": "android",
+    "abi": "arm64-v8a",
+    "apiLevel": 36,
+    "archComment": "Only arm64-v8a / API 36+ is supported. No x86, x86_64, or ARM32 targets are built or packaged."
+  },
+  "toolchain": {
+    "ndk": "29.0.14206865",
+    "buildTool": "meson",
+    "buildToolComment": "libweston is built with Meson. Meson is the upstream, authoritative build system for Weston/libweston; the Android Gradle/CMake externalNativeBuild path cannot build the upstream Meson tree, so an isolated Meson cross-build is used for this dependency (see README.md).",
+    "cmake": "3.22.1"
+  },
+  "weston": {
+    "version": "16.0.0",
+    "commit": "d1882b0a544ae2197b597a6e39478e719bc54302",
+    "archive": {
+      "source": "https://gitlab.freedesktop.org/wayland/weston/-/archive/16.0.0/weston-16.0.0.tar.gz",
+      "sha256": "dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f"
+    }
+  },
+  "libweston": {
+    "version": "16.0.0",
+    "source": "same-pinned-weston-source",
+    "engine": "pixman",
+    "rendererComment": "Milestone 1 establishes the libweston dependency only. The renderer strategy for later milestones is Pixman (bring-up) then GLES/EGL (production) then Vulkan (future/optional)."
+  },
+  "dependencies": {
+    "minimumRequired": [
+      "libwayland-server",
+      "wayland-protocols",
+      "pixman"
+    ],
+    "policyComment": "Minimum dependency set required by libweston for the future custom Android backend only. The full Weston desktop stack is NOT built."
+  },
+  "disallowedDependencies": [
+    "cage",
+    "xfce",
+    "gnome",
+    "kde",
+    "x11",
+    "xwayland",
+    "vnc",
+    "pipewire",
+    "libweston-from-another-release",
+    "distro-weston"
+  ],
+  "versionVerification": {
+    "mechanism": "native/weston/verify-weston.sh",
+    "required": {
+      "westonVersion": "16.0.0",
+      "pinnedCommit": "d1882b0a544ae2197b597a6e39478e719bc54302"
+    }
+  }
+}

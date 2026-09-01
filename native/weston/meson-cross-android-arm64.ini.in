@@ -1,0 +1,34 @@
+# LinuxDroid — Meson cross file for building libweston on Android.
+# Target: arm64-v8a (aarch64), Android API level 36+.
+#
+# This file is a template; the @...@ placeholders are substituted by
+# native/weston/build-libweston.sh using the configured Android NDK.
+#
+# Only arm64-v8a is supported. No x86/x86_64/ARM32 host or target variants are
+# produced by LinuxDroid.
+
+[binaries]
+c       = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/aarch64-linux-android@API@-clang'
+cpp     = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/aarch64-linux-android@API@-clang++'
+ar      = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-ar'
+strip   = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-strip'
+ranlib  = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-ranlib'
+pkg-config = 'pkg-config'
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'arm64-v8a'
+endian = 'little'
+
+[built-in options]
+b_lundef = true
+b_pie = true
+
+# libweston requires EPollId, memfd, and other features present in Android 12+.
+# We pin the platform to the Android NDK's API 36 sysroot.
+c_args = ['-DANDROID', '-D__ANDROID__', '-fPIC']
+cpp_args = ['-DANDROID', '-D__ANDROID__', '-fPIC']
+
+[properties]
+needs_exe_wrapper = true

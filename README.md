@@ -148,6 +148,7 @@ Explore our comprehensive technical documentation:
 | 📱 [Android Integration](docs/architecture/android.md) | Lifecycle management, Foreground Services, and Jetpack Compose |
 | 🔌 [Native JNI Bridge](docs/architecture/native.md) | POSIX PTY handoff, termios control, and native error boundaries |
 | 🖥️ [Wayland Display](docs/display/wayland.md) | Direct Wayland compositor implementation and client rendering |
+| 🧱 [Weston / libweston Dependency](docs/display/weston.md) | Pinned Weston 16.0.0 + matching libweston ARM64 Android build dependency (Milestone 1) |
 | 🪟 [XWayland Integration](docs/display/xwayland.md) | Running legacy X11 GUI applications inside Wayland |
 | 🎮 [GPU Acceleration](docs/display/gpu.md) | VirGL / Mesa Zink Vulkan passthrough architecture |
 | 📁 [Storage & Shared Folders](docs/storage/storage.md) | Scoped storage, SAF permissions, and bind-mount rules |

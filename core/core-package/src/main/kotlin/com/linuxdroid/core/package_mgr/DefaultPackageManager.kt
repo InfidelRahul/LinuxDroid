@@ -116,12 +116,16 @@ class DefaultPackageManager(
         onProgress("Updating package sources…")
         update(environment)
 
-        onProgress("Installing lightweight Wayland compositor & terminal…")
-        // Minimal GUI package set: cage/weston, xwayland, foot/xterm, dbus, libwayland-client0
+        onProgress("Installing lightweight Wayland client runtime & terminal…")
+        // Milestone 1 dependency policy: the compositor (Weston 16.0.0) and
+        // libweston are supplied by the pinned native build (native/weston/),
+        // NOT by a distro package. So we do NOT install "cage"/"weston" from
+        // the distro here. We only install the guest-side Wayland client
+        // runtime and a terminal for the guest apps.
         val packages = when (environment.distribution) {
-            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "libwayland-client0")
-            Distribution.ARCH_LINUX -> listOf("cage", "xorg-xwayland", "foot", "xterm", "dbus", "wayland")
-            Distribution.ALPINE -> listOf("cage", "xwayland", "foot", "xterm", "dbus", "wayland")
+            Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("xwayland", "foot", "xterm", "dbus", "libwayland-client0")
+            Distribution.ARCH_LINUX -> listOf("xorg-xwayland", "foot", "xterm", "dbus", "wayland")
+            Distribution.ALPINE -> listOf("xwayland", "foot", "xterm", "dbus", "wayland")
         }
         val cmd = when (environment.distribution) {
             Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> listOf("apt-get", "install", "-y", "--no-install-recommends") + packages
@@ -132,7 +136,23 @@ class DefaultPackageManager(
         val result = runtimeBackend.executeAndWait(environment, cmd, workingDirectory = "/root", extraEnv = extraEnv, timeoutMs = 120_000)
         val success = result.exitCode == 0
         if (success) {
-            log.info("Minimal Wayland GUI installed successfully for ${environment.id}")
+            log.info("Minimal Wayland GUI client runtime installed successfully for ${environment.id}")
+            // Secondary safeguard only: ensure a distro-provided Weston can
+            // never become the authoritative compositor dependency. The pinned
+            // build (native/weston/) is authoritative. Failures are ignored
+            // because in a clean guest weston is not installed at all.
+            when (environment.distribution) {
+                Distribution.DEBIAN, Distribution.UBUNTU, Distribution.KALI -> {
+                    runtimeBackend.executeAndWait(
+                        environment,
+                        listOf("apt-mark", "hold", "weston"),
+                        workingDirectory = "/root",
+                        extraEnv = extraEnv,
+                        timeoutMs = 30_000,
+                    )
+                }
+                else -> Unit
+            }
         } else {
             log.warn("Minimal GUI install notice (exit=${result.exitCode}): ${result.stderr.ifBlank { result.stdout }}")
         }

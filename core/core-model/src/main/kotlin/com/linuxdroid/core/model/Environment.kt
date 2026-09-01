@@ -203,10 +203,16 @@ data class NetworkConfig(
  */
 @Serializable
 data class DesktopConfig(
-    /** Desktop environment to start (e.g. "xfce4", "gnome", "none"). */
+    /**
+     * Desktop environment to start (e.g. "xfce4", "gnome", "none").
+     */
     val desktopEnvironment: String = "xfce4",
-    /** Wayland compositor to use (e.g. "cage", "weston"). */
-    val waylandCompositor: String = "cage",
+    /**
+     * Wayland compositor to use. The frozen architecture pins Weston 16.0.0
+     * and builds libweston from that same source; the compositor is never a
+     * distro-package substitute. (See native/weston/.)
+     */
+    val waylandCompositor: String = "weston",
     /** Whether to start XWayland for X11 app compatibility. */
     val xwaylandEnabled: Boolean = true,
     /** Whether to automatically log in without prompting at display manager. */
