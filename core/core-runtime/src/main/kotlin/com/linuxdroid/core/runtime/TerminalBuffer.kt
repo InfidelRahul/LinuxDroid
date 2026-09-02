@@ -52,6 +52,9 @@ class TerminalBuffer(
     private val _lines = MutableStateFlow<List<TerminalLineData>>(emptyList())
     val lines: StateFlow<List<TerminalLineData>> = _lines.asStateFlow()
 
+    private val _activeCursorCol = MutableStateFlow(0)
+    val activeCursorCol: StateFlow<Int> = _activeCursorCol.asStateFlow()
+
     private val linesList = ArrayList<ArrayList<TerminalChar>>()
 
     private var cursorCol = 0
@@ -90,6 +93,7 @@ class TerminalBuffer(
         linesList.clear()
         linesList.add(ArrayList())
         cursorCol = 0
+        _activeCursorCol.value = 0
         publishLines()
     }
 
@@ -302,6 +306,7 @@ class TerminalBuffer(
             result.add(TerminalLineData(spans))
         }
         _lines.value = result
+        _activeCursorCol.value = cursorCol
     }
 
     /**

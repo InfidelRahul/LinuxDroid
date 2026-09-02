@@ -10,9 +10,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -63,7 +65,7 @@ import com.linuxdroid.app.ui.viewmodel.TerminalViewModel
 import com.linuxdroid.core.model.LogExportType
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TerminalScreen(
     navController: NavController,
@@ -77,6 +79,7 @@ fun TerminalScreen(
 
     val environment by viewModel.environment.collectAsState()
     val lines by viewModel.lines.collectAsState()
+    val cursorCol by viewModel.cursorCol.collectAsState()
     val isShellActive by viewModel.isShellActive.collectAsState()
     val isStarting by viewModel.isStarting.collectAsState()
     val shellExitCode by viewModel.shellExitCode.collectAsState()
@@ -94,8 +97,9 @@ fun TerminalScreen(
     var searchQuery by remember { mutableStateOf("") }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
 
-    // Export options dialog
+    // Export and text selection dialogs
     var showExportOptions by remember { mutableStateOf(false) }
+    var showTextSelectionDialog by remember { mutableStateOf(false) }
 
     // Blinking terminal cursor animation
     val infiniteTransition = rememberInfiniteTransition(label = "terminalCursor")
@@ -208,7 +212,16 @@ fun TerminalScreen(
                         Icon(Icons.Default.Search, contentDescription = "Find in Terminal", modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.width(4.dp))
-                    // Copy scrollback
+                    // Select & Copy Text viewer
+                    NeuIconButton(
+                        onClick = { showTextSelectionDialog = true },
+                        size = 38.dp,
+                        tint = neuColors.textSecondary,
+                    ) {
+                        Icon(Icons.Default.SelectAll, contentDescription = "Select & Copy", modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                    // Quick Copy all scrollback
                     NeuIconButton(
                         onClick = {
                             val text = viewModel.getTerminalPlainText()
@@ -503,6 +516,88 @@ fun TerminalScreen(
                     }
                 )
             }
+            // Interactive Text Selection & Copy Modal Dialog (Safe Drag-and-Select without Live List Mutations)
+            if (showTextSelectionDialog) {
+                AlertDialog(
+                    onDismissRequest = { showTextSelectionDialog = false },
+                    containerColor = neuColors.background,
+                    title = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.SelectAll, contentDescription = null, tint = neuColors.primaryAccent)
+                            Text("Select & Copy Terminal Text", color = neuColors.textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 420.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Drag selection handles across the text below to select and copy:",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = neuColors.textSecondary
+                            )
+                            NeuCard(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f, fill = false)
+                                    .heightIn(min = 180.dp, max = 320.dp),
+                                isInset = true,
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                SelectionContainer(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(10.dp)
+                                ) {
+                                    val plainText = remember { viewModel.getTerminalPlainText() }
+                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                        item {
+                                            Text(
+                                                text = plainText.ifBlank { "(No terminal output recorded)" },
+                                                fontFamily = SfMono,
+                                                fontSize = 11.sp,
+                                                lineHeight = 15.sp,
+                                                color = neuColors.textPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        NeuButton(
+                            onClick = {
+                                val text = viewModel.getTerminalPlainText()
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Output", text))
+                                Toast.makeText(context, "Full terminal output copied", Toast.LENGTH_SHORT).show()
+                                showTextSelectionDialog = false
+                            },
+                            isAccent = true,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text("Copy All", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    },
+                    dismissButton = {
+                        NeuButton(
+                            onClick = { showTextSelectionDialog = false },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text("Close", fontSize = 12.sp)
+                        }
+                    }
+                )
+            }
 
             // Quick Command Chips (Spotlight Style)
             Row(
@@ -581,21 +676,49 @@ fun TerminalScreen(
                             thickness = 0.5.dp
                         )
 
-                        SelectionContainer(
+                        LazyColumn(
+                            state = listState,
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
                         ) {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxSize(),
-                            ) {
-                                itemsIndexed(lines) { index, lineData ->
-                                    val isLastLine = index == lines.size - 1
-                                    val hasSearchMatch = searchQuery.isNotBlank() && lineData.rawText.contains(searchQuery, ignoreCase = true)
+                            itemsIndexed(lines) { index, lineData ->
+                                val isLastLine = index == lines.size - 1
+                                val hasSearchMatch = searchQuery.isNotBlank() && lineData.rawText.contains(searchQuery, ignoreCase = true)
 
-                                    val annotatedString = buildAnnotatedString {
+                                val annotatedString = buildAnnotatedString {
+                                    if (isLastLine && isShellActive && cursorCol < lineData.rawText.length) {
+                                        var charIdx = 0
+                                        for (span in lineData.spans) {
+                                            val spanColor = getAdaptiveTerminalColor(
+                                                rawColor = span.color,
+                                                isDarkTheme = neuColors.isDark,
+                                                textPrimary = neuColors.textPrimary
+                                            )
+                                            for (ch in span.text) {
+                                                val isAtCursor = charIdx == cursorCol
+                                                val style = SpanStyle(
+                                                    color = if (isAtCursor) (if (neuColors.isDark) Color.Black else Color.White) else spanColor,
+                                                    fontFamily = SfMono,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = if (span.isBold || isAtCursor) FontWeight.Bold else FontWeight.Normal,
+                                                    textDecoration = if (span.isUnderline) TextDecoration.Underline else TextDecoration.None,
+                                                    background = if (isAtCursor) {
+                                                        (if (neuColors.isDark) Color(0xFF22C55E) else neuColors.primaryAccent).copy(alpha = cursorAlpha)
+                                                    } else if (hasSearchMatch) {
+                                                        neuColors.warning.copy(alpha = 0.25f)
+                                                    } else {
+                                                        Color.Transparent
+                                                    }
+                                                )
+                                                withStyle(style) {
+                                                    append(ch)
+                                                }
+                                                charIdx++
+                                            }
+                                        }
+                                    } else {
                                         for (span in lineData.spans) {
                                             val spanColor = getAdaptiveTerminalColor(
                                                 rawColor = span.color,
@@ -615,30 +738,43 @@ fun TerminalScreen(
                                             }
                                         }
                                     }
+                                }
 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = annotatedString,
-                                            fontFamily = SfMono,
-                                            fontSize = 12.sp,
-                                            lineHeight = 16.sp,
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {
+                                                focusRequester.requestFocus()
+                                                keyboardController?.show()
+                                            },
+                                            onLongClick = {
+                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Line", lineData.rawText))
+                                                Toast.makeText(context, "Line copied to clipboard", Toast.LENGTH_SHORT).show()
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            }
+                                        ),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = annotatedString,
+                                        fontFamily = SfMono,
+                                        fontSize = 12.sp,
+                                        lineHeight = 16.sp,
+                                    )
+                                    // Blinking block cursor rendered when cursor is at or past line end
+                                    if (isLastLine && isShellActive && cursorCol >= lineData.rawText.length) {
+                                        Spacer(Modifier.width(1.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .width(7.dp)
+                                                .height(14.dp)
+                                                .background(
+                                                    color = (if (neuColors.isDark) Color(0xFF22C55E) else neuColors.primaryAccent).copy(alpha = cursorAlpha),
+                                                    shape = RoundedCornerShape(1.dp)
+                                                )
                                         )
-                                        // Blinking block cursor rendered at active prompt
-                                        if (isLastLine && isShellActive) {
-                                            Spacer(Modifier.width(1.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(7.dp)
-                                                    .height(14.dp)
-                                                    .background(
-                                                        color = (if (neuColors.isDark) Color(0xFF22C55E) else neuColors.primaryAccent).copy(alpha = cursorAlpha),
-                                                        shape = RoundedCornerShape(1.dp)
-                                                    )
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -657,7 +793,7 @@ fun TerminalScreen(
                 }
             }
 
-            // macOS TouchBar / Ergonomic Extra Keyboard Button Strip
+            // 2-Row Ergonomic Extra Keyboard with Inverted-T Navigation Cluster
             NeuCard(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = 4.dp,
@@ -666,125 +802,104 @@ fun TerminalScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TerminalKeyButton(
-                        text = "ESC",
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.sendEscape()
-                            focusRequester.requestFocus()
+                    // Left Scrollable 2-Row Function & Symbol Keys
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Row 1: Modifier & Common Control Keys
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TerminalKeyButton("ESC", onClick = { viewModel.sendEscape(); focusRequester.requestFocus() })
+                            TerminalKeyButton("TAB", onClick = { viewModel.sendTab(); focusRequester.requestFocus() })
+                            TerminalKeyButton("CTRL", isActive = isCtrlActive, showLed = true, onClick = { isCtrlActive = !isCtrlActive })
+                            TerminalKeyButton("ALT", isActive = isAltActive, showLed = true, onClick = { isAltActive = !isAltActive })
+                            TerminalKeyButton("PASTE", highlight = true, onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
+                                if (!clipText.isNullOrEmpty()) {
+                                    viewModel.pasteText(clipText)
+                                    Toast.makeText(context, "Pasted from clipboard", Toast.LENGTH_SHORT).show()
+                                }
+                                focusRequester.requestFocus()
+                            })
+                            TerminalKeyButton("|", onClick = { viewModel.sendInput("|"); focusRequester.requestFocus() })
+                            TerminalKeyButton("/", onClick = { viewModel.sendInput("/"); focusRequester.requestFocus() })
+                            TerminalKeyButton("-", onClick = { viewModel.sendInput("-"); focusRequester.requestFocus() })
+                            TerminalKeyButton("~", onClick = { viewModel.sendInput("~"); focusRequester.requestFocus() })
+                            TerminalKeyButton("$", onClick = { viewModel.sendInput("$"); focusRequester.requestFocus() })
+                            TerminalKeyButton("⌫", highlight = true, onClick = { viewModel.sendBackspace(); focusRequester.requestFocus() })
                         }
+
+                        // Row 2: Signals, Navigation & Action Keys
+                        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TerminalKeyButton("C-c", highlight = true, onClick = { viewModel.sendCtrlC(); focusRequester.requestFocus() })
+                            TerminalKeyButton("C-d", onClick = { viewModel.sendBytes(byteArrayOf(4)); focusRequester.requestFocus() })
+                            TerminalKeyButton("C-z", onClick = { viewModel.sendBytes(byteArrayOf(26)); focusRequester.requestFocus() })
+                            TerminalKeyButton("C-l", onClick = { viewModel.sendCtrlL(); focusRequester.requestFocus() })
+                            TerminalKeyButton("HOME", onClick = { viewModel.sendHome(); focusRequester.requestFocus() })
+                            TerminalKeyButton("END", onClick = { viewModel.sendEnd(); focusRequester.requestFocus() })
+                            TerminalKeyButton("PGUP", onClick = { viewModel.sendPageUp(); focusRequester.requestFocus() })
+                            TerminalKeyButton("PGDN", onClick = { viewModel.sendPageDown(); focusRequester.requestFocus() })
+                            TerminalKeyButton("INS", onClick = { viewModel.sendInsert(); focusRequester.requestFocus() })
+                            TerminalKeyButton("DEL", onClick = { viewModel.sendDelete(); focusRequester.requestFocus() })
+                        }
+                    }
+
+                    // Vertical Separator
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(72.dp)
+                            .background(neuColors.borderHighlight.copy(alpha = 0.3f))
                     )
 
-                    TerminalKeyButton(
-                        text = "TAB",
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.sendTab()
-                            focusRequester.requestFocus()
+                    // Right Side: Inverted-T Navigation Cluster (Slightly Bigger Buttons)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        // Top of Inverted-T: Up Arrow
+                        TerminalNavButton(
+                            text = "↑",
+                            onClick = {
+                                viewModel.sendArrowUp()
+                                focusRequester.requestFocus()
+                            }
+                        )
+
+                        // Bottom of Inverted-T: Left, Down, Right
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TerminalNavButton(
+                                text = "←",
+                                onClick = {
+                                    viewModel.sendArrowLeft()
+                                    focusRequester.requestFocus()
+                                }
+                            )
+                            TerminalNavButton(
+                                text = "↓",
+                                onClick = {
+                                    viewModel.sendArrowDown()
+                                    focusRequester.requestFocus()
+                                }
+                            )
+                            TerminalNavButton(
+                                text = "→",
+                                onClick = {
+                                    viewModel.sendArrowRight()
+                                    focusRequester.requestFocus()
+                                }
+                            )
                         }
-                    )
-
-                    TerminalKeyButton(
-                        text = "CTRL",
-                        isActive = isCtrlActive,
-                        showLed = true,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            isCtrlActive = !isCtrlActive
-                        }
-                    )
-
-                    TerminalKeyButton(
-                        text = "ALT",
-                        isActive = isAltActive,
-                        showLed = true,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            isAltActive = !isAltActive
-                        }
-                    )
-
-                    TerminalKeyButton("↑") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendArrowUp()
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("↓") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendArrowDown()
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("←") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendArrowLeft()
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("→") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendArrowRight()
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("C-c", highlight = true) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendCtrlC()
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("C-d") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendBytes(byteArrayOf(4)) // EOF
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("C-z") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendBytes(byteArrayOf(26)) // SIGTSTP
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("/") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendInput("/")
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("-") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendInput("-")
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("|") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendInput("|")
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("~") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendInput("~")
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("$") {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendInput("$")
-                        focusRequester.requestFocus()
-                    }
-
-                    TerminalKeyButton("⌫", highlight = true) {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.sendBackspace()
-                        focusRequester.requestFocus()
                     }
                 }
             }
@@ -804,15 +919,18 @@ fun TerminalScreen(
                             viewModel.sendBackspace()
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         } else if (newText.length > 1) {
-                            // Typed text extracted around sentinel character
+                            // Typed or pasted text with full character & whitespace fidelity
                             val typed = if (newText.startsWith(" ")) {
                                 newText.substring(1)
+                            } else if (newText.endsWith(" ")) {
+                                newText.substring(0, newText.length - 1)
                             } else {
-                                newText.replace(" ", "")
+                                newText
                             }
 
-                            for (ch in typed) {
-                                if (isCtrlActive) {
+                            if (typed.isNotEmpty()) {
+                                if (isCtrlActive && typed.length == 1) {
+                                    val ch = typed[0]
                                     val upper = ch.uppercaseChar()
                                     if (upper in 'A'..'Z') {
                                         val ctrlCode = (upper.code - 'A'.code + 1).toByte()
@@ -823,11 +941,11 @@ fun TerminalScreen(
                                         viewModel.sendInput(ch.toString())
                                     }
                                     isCtrlActive = false
-                                } else if (isAltActive) {
-                                    viewModel.sendInput("\u001B$ch")
+                                } else if (isAltActive && typed.length == 1) {
+                                    viewModel.sendInput("\u001B${typed[0]}")
                                     isAltActive = false
                                 } else {
-                                    viewModel.sendInput(ch.toString())
+                                    viewModel.pasteText(typed)
                                 }
                             }
                         }
@@ -903,6 +1021,35 @@ fun TerminalScreen(
                     keyboardActions = KeyboardActions(onAny = { viewModel.sendEnter() })
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TerminalNavButton(
+    text: String,
+    onClick: () -> Unit,
+) {
+    val neuColors = NeuTheme.colors
+    val haptic = LocalHapticFeedback.current
+    NeuButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        elevation = 3.dp,
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+        modifier = Modifier.size(width = 36.dp, height = 34.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text(
+                text = text,
+                fontSize = 16.sp,
+                fontFamily = SfMono,
+                fontWeight = FontWeight.Bold,
+                color = neuColors.primaryAccent
+            )
         }
     }
 }

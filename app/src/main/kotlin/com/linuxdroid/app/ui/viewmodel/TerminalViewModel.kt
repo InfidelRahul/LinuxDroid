@@ -17,6 +17,7 @@ import com.linuxdroid.core.runtime.TerminalLineData
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ class TerminalViewModel @Inject constructor(
 
     private val terminalBuffer = TerminalBuffer(maxScrollbackLines = 2000)
     val lines: StateFlow<List<TerminalLineData>> = terminalBuffer.lines
+    val cursorCol: StateFlow<Int> = terminalBuffer.activeCursorCol
 
     private val _isShellActive = MutableStateFlow(false)
     val isShellActive: StateFlow<Boolean> = _isShellActive.asStateFlow()
@@ -55,6 +57,7 @@ class TerminalViewModel @Inject constructor(
     private var ptySession: PtySession? = null
     private var readJob: Job? = null
     private val sessionMutex = Mutex()
+    private val inputChannel = Channel<ByteArray>(Channel.UNLIMITED)
     private var isCtrlActive = false
     private var isAltActive = false
 
@@ -62,6 +65,15 @@ class TerminalViewModel @Inject constructor(
     private var currentCols = 80
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (bytes in inputChannel) {
+                val session = ptySession
+                if (session?.isAlive() == true) {
+                    session.write(bytes)
+                }
+            }
+        }
+
         viewModelScope.launch {
             environment.filterNotNull().first { env ->
                 startInteractiveShellSession(env)
@@ -163,27 +175,27 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
-     * Sends keyboard input string directly to the active shell stdin.
+     * Sends keyboard input string directly to the active shell stdin in strictly ordered sequence.
      */
     fun sendInput(text: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val session = ptySession
-            if (session?.isAlive() == true) {
-                session.write(text)
-            }
-        }
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        inputChannel.trySend(bytes)
     }
 
     /**
-     * Sends raw bytes to the active shell stdin.
+     * Sends raw bytes to the active shell stdin in strictly ordered sequence.
      */
     fun sendBytes(bytes: ByteArray) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val session = ptySession
-            if (session?.isAlive() == true) {
-                session.write(bytes)
-            }
-        }
+        inputChannel.trySend(bytes)
+    }
+
+    /**
+     * Pastes raw text into the active shell, normalizing carriage returns without distorting letters or spaces.
+     */
+    fun pasteText(text: String) {
+        if (text.isEmpty()) return
+        val normalized = text.replace("\r\n", "\r").replace("\n", "\r")
+        sendInput(normalized)
     }
 
     /**
