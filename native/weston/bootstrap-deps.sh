@@ -55,24 +55,75 @@ API=36
 HOST_TAG="linux-x86_64"
 
 # ---------------------------------------------------------------------------
+# Logging helpers (defined early so precondition probes below can use them).
+# ---------------------------------------------------------------------------
+log() { printf '[weston-deps] %s\n' "$*"; }
+die() { printf '[weston-deps] ERROR: %s\n' "$*" >&2; exit 1; }
+
+# Emit a numbered, unambiguous precondition outcome so that if the build fails
+# at the very top, the CI log tail names the exact check. `probe` prints
+# "[weston-deps] CHECK [n] label = OK/FAIL" and, on FAIL, exits 1 with a reason.
+_probe_no=0
+probe() {
+    local label="$1" cond="$2" detail="${3:-}"
+    _probe_no=$((_probe_no+1))
+    if eval "$cond"; then
+        printf '[weston-deps] CHECK [%d] %s = OK\n' "$_probe_no" "$label"
+    else
+        printf '[weston-deps] CHECK [%d] %s = FAIL%s\n' "$_probe_no" "$label" "${detail:+ -- $detail}"
+        printf '[weston-deps] ERROR: %s failed.\n' "$label" >&2
+        exit 1
+    fi
+}
+
+# ---------------------------------------------------------------------------
 # Toolchain
 # ---------------------------------------------------------------------------
-NDK_ROOT="${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}"
-if [[ -z "$NDK_ROOT" ]]; then
-    echo "[weston-deps] ERROR: ANDROID_NDK_ROOT / ANDROID_NDK_HOME not set." >&2
-    exit 1
-fi
-TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
-if [[ ! -d "$TOOLCHAIN" ]]; then
-    echo "[weston-deps] ERROR: NDK toolchain not found at $TOOLCHAIN." >&2
-    exit 1
-fi
+# Resolve the Android NDK. Prefer the explicit ANDROID_NDK_ROOT / ANDROID_NDK_HOME
+# env vars (as CI sets), then fall back to auto-discovery from ANDROID_SDK_ROOT /
+# ANDROID_HOME / common locations. This removes a whole class of "NDK not found"
+# failures that can happen when an action sets ANDROID_HOME but the pinned
+# ANDROID_NDK_ROOT path is stale or misplaced.
+ndk_root_resolve() {
+    local cand base
+    if [[ -n "${ANDROID_NDK_ROOT:-}" ]]; then echo "$ANDROID_NDK_ROOT"; return; fi
+    if [[ -n "${ANDROID_NDK_HOME:-}" ]]; then echo "$ANDROID_NDK_HOME"; return; fi
+    local -a bases=()
+    [[ -n "${ANDROID_SDK_ROOT:-}" ]] && bases+=("$ANDROID_SDK_ROOT")
+    [[ -n "${ANDROID_HOME:-}" ]] && bases+=("$ANDROID_HOME")
+    bases+=("$HOME/Android/Sdk" "$HOME/android-sdk" "/usr/local/lib/android/sdk")
+    for base in "${bases[@]}"; do
+        if [[ -d "$base/ndk" ]]; then
+            cand="$(find "$base/ndk" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)"
+            [[ -n "$cand" ]] && { echo "$cand"; return; }
+        fi
+        if [[ -d "$base/ndk-bundle" ]]; then echo "$base/ndk-bundle"; return; fi
+    done
+    echo ""
+}
 
-command -v meson >/dev/null 2>&1 || { echo "[weston-deps] ERROR: meson not found on PATH." >&2; exit 1; }
-command -v ninja >/dev/null 2>&1 || { echo "[weston-deps] ERROR: ninja not found on PATH." >&2; exit 1; }
-command -v curl >/dev/null 2>&1 || { echo "[weston-deps] ERROR: curl not found on PATH." >&2; exit 1; }
-command -v sha256sum >/dev/null 2>&1 || { echo "[weston-deps] ERROR: sha256sum not found on PATH." >&2; exit 1; }
-command -v pkg-config >/dev/null 2>&1 || { echo "[weston-deps] ERROR: pkg-config not found on PATH." >&2; exit 1; }
+NDK_ROOT="$(ndk_root_resolve)"
+probe "NDK_ROOT set" "[[ -n \"$NDK_ROOT\" ]]" "set ANDROID_NDK_ROOT / ANDROID_NDK_HOME / ANDROID_SDK_ROOT / ANDROID_HOME"
+log "Using NDK at: $NDK_ROOT"
+
+TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
+probe "NDK toolchain dir" "[[ -d \"$TOOLCHAIN\" ]]" "expected $TOOLCHAIN"
+
+probe "meson on PATH"   "command -v meson >/dev/null 2>&1"
+probe "ninja on PATH"   "command -v ninja >/dev/null 2>&1"
+probe "curl on PATH"    "command -v curl >/dev/null 2>&1"
+probe "sha256sum on PATH" "command -v sha256sum >/dev/null 2>&1"
+
+# pkg-config may be shipped as `pkg-config` or `pkgconf` depending on distro;
+# accept either and use the resolved binary consistently in the meson cross file.
+PKG_CONFIG_BIN=""
+if command -v pkg-config >/dev/null 2>&1; then
+    PKG_CONFIG_BIN="$(command -v pkg-config)"
+elif command -v pkgconf >/dev/null 2>&1; then
+    PKG_CONFIG_BIN="$(command -v pkgconf)"
+fi
+probe "pkg-config on PATH" "[[ -n \"$PKG_CONFIG_BIN\" ]]" "install pkg-config or pkgconf"
+log "Using pkg-config: $PKG_CONFIG_BIN"
 
 DEP_SYSROOT="${DEP_SYSROOT:-$SCRIPT_DIR/deps/sysroot}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
@@ -88,18 +139,8 @@ STRIP="$TOOLCHAIN/llvm-strip"
 # Hard guarantee: this is an ARM64/AArch64-ONLY build. The target triple is
 # baked into the NDK clang names; refuse to proceed if the compiler is anything
 # other than an aarch64 clang (we do NOT build or ship x86 / x86_64 / armeabi).
-if [[ ! -x "$CC" || "$CC" != *"-aarch64-linux-android"* ]]; then
-    echo "[weston-deps] ERROR: CC is not an aarch64-linux-android NDK clang: $CC" >&2
-    echo "[weston-deps] LinuxDroid supports arm64-v8a / AArch64 ONLY. Set ANDROID_NDK_ROOT to an arm64-capable NDK." >&2
-    exit 1
-fi
-if [[ ! -x "$CXX" || "$CXX" != *"-aarch64-linux-android"* ]]; then
-    echo "[weston-deps] ERROR: CXX is not an aarch64-linux-android NDK clang++: $CXX" >&2
-    exit 1
-fi
-
-log() { printf '[weston-deps] %s\n' "$*"; }
-die() { printf '[weston-deps] ERROR: %s\n' "$*" >&2; exit 1; }
+probe "CC is aarch64 NDK clang" "[[ -x \"$CC\" && \"$CC\" == *\"aarch64-linux-android\"* ]]" "expected $CC"
+probe "CXX is aarch64 NDK clang++" "[[ -x \"$CXX\" && \"$CXX\" == *\"aarch64-linux-android\"* ]]" "expected $CXX"
 
 # Start from a clean sysroot so a stale/failed earlier build can never mask a
 # missing dependency (missing deps must fail CI, never silently pass).
@@ -247,7 +288,7 @@ cpp = '$CXX'
 ar = '$AR'
 ranlib = '$RANLIB'
 strip = '$STRIP'
-pkg-config = 'pkg-config'
+pkg-config = '$PKG_CONFIG_BIN'
 
 [host_machine]
 system = 'linux'
