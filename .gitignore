@@ -33,4 +33,5 @@ signing.properties
 native/weston/src/
 native/weston/build/
 native/weston/dist/
+native/weston/deps/
 native/weston/.fetch-work/

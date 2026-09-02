@@ -56,7 +56,11 @@ JNI module and must not be disrupted.
 against the Android NDK (`arm64-v8a`, API 36) using an isolated,
 dependency-scoped build:
 
-- [`build-libweston.sh`](./build-libweston.sh) — reproducible cross-build.
+- [`bootstrap-deps.sh`](./bootstrap-deps.sh) — cross-builds the dependency
+  sysroot (libwayland + wayland-protocols + pixman + xkbcommon + libinput +
+  libevdev + libdrm + libdisplay-info + libffi) for the target.
+- [`build-libweston.sh`](./build-libweston.sh) — reproducible cross-build of
+  libweston against the dependency sysroot into `native/weston/dist`.
 - [`meson-cross-android-arm64.ini.in`](./meson-cross-android-arm64.ini.in) —
   Meson cross file template for the NDK arm64-v8a target.
 
@@ -72,12 +76,24 @@ are git-ignored generated artifacts.)
 
 ## Dependency policy
 
-Only the minimum dependencies required by `libweston` for the future custom
-Android backend are considered:
+Weston 16.0.0's top-level `meson.build` **unconditionally** requires the
+following pkg-config dependencies to configure (no option can disable them):
 
-- `libwayland-server`
+- `wayland-server`, `wayland-client` (from libwayland)
 - `wayland-protocols`
 - `pixman`
+- `xkbcommon`
+- `libinput`
+- `libevdev`
+- `libdrm`
+- `libdisplay-info`
+- `wayland-scanner` (HOST tool + pkg-config)
+- `libffi` (to build libwayland)
+
+Of these, `libweston-16.so` links only `wayland-server`, `pixman`, `libdrm`
+and `xkbcommon` (plus libm/libdl from the NDK); the rest are required at
+configure time. All are cross-built by [`bootstrap-deps.sh`](./bootstrap-deps.sh)
+into a single sysroot consumed by [`build-libweston.sh`](./build-libweston.sh).
 
 The full Weston **desktop** stack is **not** built. The following are **not**
 added as Weston/libweston dependencies:
@@ -115,12 +131,21 @@ native/weston/fetch-weston.sh
 # 2. Deterministically verify version + commit.
 native/weston/verify-weston.sh --strict-source
 
-# 3. Cross-build libweston (requires NDK r29 + meson/ninja + dep sysroot).
+# 3. Cross-build the dependency sysroot (requires NDK r29 + meson/ninja/pkg-config).
 ANDROID_NDK_ROOT=/opt/ndk \
-DEP_SYSROOT=/path/to/arm64-36/sysroot \
-DEP_PKG_CONFIG_PATH=/path/to/sysroot/pkgconfig \
+native/weston/bootstrap-deps.sh
+
+# 4. Cross-build libweston against that sysroot into native/weston/dist.
+ANDROID_NDK_ROOT=/opt/ndk \
+DEP_SYSROOT="$PWD/native/weston/deps/sysroot" \
+DEP_PKG_CONFIG_PATH="$PWD/native/weston/deps/sysroot/share/pkgconfig" \
 native/weston/build-libweston.sh
 
-# 4. Gradle-wired verification (does not require the NDK).
-./gradlew verifyWeston
+# 5. Phase 3 native bridge now detects native/weston/dist and enables
+#    LINUXDROID_HAS_LIBWESTON. Build the release APK with the real path gated:
+./gradlew :app:assembleRelease -PreqWeston
+
+# Verification tasks (do not require the NDK):
+./gradlew verifyWeston          # version + commit
+./gradlew verifyWestonBuild     # Phase 3 hard gate: real libweston present in dist
 ```

@@ -24,11 +24,12 @@
  * when the pinned libweston 16.0.0 build output is available). It is the module
  * that linuxdroid::WestonHost initializes at compositor startup.
  *
- * NOTE ON THE API SURFACE: the `struct weston_backend` and
- * `weston_compositor::backend` members follow the libweston 16.0.0 contract.
- * When this module is built against the pinned libweston headers, any minor
- * signature drift would be resolved at compile time; this file is intentionally
- * kept out of the default (non-libweston) build so it cannot break it.
+ * API NOTE (libweston 16.0.0): a backend is a `struct weston_backend` linked
+ * into `compositor->backend_list` via `wl_list_insert()`. The full definition
+ * lives in the private `libweston/backend.h`, which is NOT part of the installed
+ * public headers; `build-libweston.sh` installs it next to the public headers
+ * so this module can embed `struct weston_backend` as its first member. We must
+ * NOT use `compositor->backend` — that member does not exist in Weston 16.
  */
 
 /* This file must not be compiled unless libweston integration is enabled. */
@@ -37,7 +38,9 @@
 #include <android/log.h>
 #include <stdlib.h>
 
-#include <libweston/compositor.h>
+#include <wayland-server.h>
+#include <libweston/libweston.h>
+#include <libweston/backend.h>
 
 #define TAG "LinuxDroid/WestonBackend"
 #define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__)
@@ -47,8 +50,9 @@
  * LinuxDroid backend instance.
  *
  * `base` must be the first member so a `struct linuxdroid_backend*` can be
- * recovered from the `struct weston_backend*` stored in
- * `compositor->backend`.
+ * recovered from the `struct weston_backend*` linked into
+ * `compositor->backend_list` (via container_of). The backend is registered with
+ * the compositor on init and torn down by libweston on compositor destroy.
  *
  * Future phases will add:
  *   - head mapping   (weston_head -> Android display)
@@ -59,27 +63,34 @@
  */
 struct linuxdroid_backend {
     struct weston_backend base;
+    struct weston_compositor *compositor;
 };
 
+/*
+ * libweston calls this when the compositor is destroyed; the backend must
+ * unlink itself from `compositor->backend_list` and release its memory.
+ */
 static void
-linuxdroid_backend_destroy(struct weston_compositor *compositor)
+linuxdroid_backend_destroy(struct weston_backend *backend)
 {
     struct linuxdroid_backend *b =
-        (struct linuxdroid_backend *)compositor->backend;
+        container_of(backend, struct linuxdroid_backend, base);
 
     if (b == NULL) {
         return;
     }
 
     LOGI("linuxdroid backend destroy");
+    wl_list_remove(&b->base.link);
     free(b);
-    compositor->backend = NULL;
 }
 
 /*
- * Backend entry point. libweston expects a `struct weston_backend` installed on
- * `compositor->backend`. No output/head is created yet: the integration point is
- * established, and buffer/rendering presentation follows in a later phase.
+ * Backend entry point. libweston 16 keeps backends in a list
+ * (`compositor->backend_list`); the first member of `struct weston_backend` is
+ * the `link` used to insert it. No output/head is created yet: the integration
+ * point is established, and buffer/rendering presentation follows in a later
+ * phase.
  */
 int
 linuxdroid_backend_init(struct weston_compositor *compositor)
@@ -97,11 +108,14 @@ linuxdroid_backend_init(struct weston_compositor *compositor)
         return -1;
     }
 
+    b->compositor = compositor;
     b->base.destroy = linuxdroid_backend_destroy;
+    b->base.supported_presentation_clocks = WESTON_PRESENTATION_CLOCKS_SOFTWARE;
 
-    compositor->backend = &b->base;
+    wl_list_insert(&compositor->backend_list, &b->base.link);
+    compositor->primary_backend = &b->base;
+
     LOGI("linuxdroid backend registered with compositor (integration point ready)");
-
     return 0;
 }
 

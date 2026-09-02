@@ -32,10 +32,26 @@
   "dependencies": {
     "minimumRequired": [
       "libwayland-server",
+      "libwayland-client",
       "wayland-protocols",
-      "pixman"
+      "pixman",
+      "xkbcommon",
+      "libinput",
+      "libevdev",
+      "libdrm",
+      "libdisplay-info",
+      "libffi",
+      "wayland-scanner"
     ],
-    "policyComment": "Minimum dependency set required by libweston for the future custom Android backend only. The full Weston desktop stack is NOT built."
+    "linkedByLibweston": [
+      "libwayland-server",
+      "pixman",
+      "libdrm",
+      "xkbcommon"
+    ],
+    "libffi": "libffi is required to cross-build libwayland.",
+    "waylandScanner": "wayland-scanner is a HOST tool consumed by the libweston Meson build at configure time.",
+    "policyComment": "Weston 16.0.0's meson.build unconditionally requires the above pkg-config dependencies at configure time; only the linkedByLibweston subset is linked into libweston-16.so. All are cross-built by native/weston/bootstrap-deps.sh. The full Weston desktop stack is NOT built."
   },
   "disallowedDependencies": [
     "cage",

@@ -2,10 +2,15 @@
 # Target: arm64-v8a (aarch64), Android API level 36+.
 #
 # This file is a template; the @...@ placeholders are substituted by
-# native/weston/build-libweston.sh using the configured Android NDK.
+# native/weston/build-libweston.sh using the configured Android NDK and the
+# cross-built dependency sysroot (native/weston/bootstrap-deps.sh).
 #
 # Only arm64-v8a is supported. No x86/x86_64/ARM32 host or target variants are
 # produced by LinuxDroid.
+#
+# `wayland-scanner` is a HOST tool (it must run on the build machine, not the
+# target), so it is pulled from the dependency sysroot's host-native bin dir.
+# The Weston Meson build requires it via a native pkg-config 'wayland-scanner'.
 
 [binaries]
 c       = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/aarch64-linux-android@API@-clang'
@@ -14,6 +19,7 @@ ar      = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-ar'
 strip   = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-strip'
 ranlib  = '@NDK@/toolchains/llvm/prebuilt/@HOST_TAG@/bin/llvm-ranlib'
 pkg-config = 'pkg-config'
+wayland-scanner = '@HOST_BINDIR@/wayland-scanner'
 
 [host_machine]
 system = 'linux'

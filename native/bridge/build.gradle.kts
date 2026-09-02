@@ -9,13 +9,22 @@ android {
     ndkVersion = libs.versions.ndk.get()
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
+        // Frozen architecture: Android arm64-v8a only. libweston is cross-built
+        // exclusively for arm64-v8a / API 36+ (native/weston), so x86_64 is not
+        // produced or linked.
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
                 cppFlags("-std=c++17", "-Wall", "-Wextra", "-fexceptions", "-frtti")
                 arguments("-DANDROID_STL=c++_shared")
+                // CI passes -PreqWeston to require the real libweston path; the
+                // native CMake then fails if LINUXDROID_HAS_LIBWESTON is unset,
+                // so a fallback-only Phase 3 build cannot pass.
+                if (project.hasProperty("reqWeston")) {
+                    arguments("-DLINUXDROID_REQUIRE_LIBWESTON=ON")
+                }
             }
         }
     }

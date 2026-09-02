@@ -60,11 +60,19 @@ NOT a rendering/frame thread, and there is no frame scheduler.
 
 ### Custom backend (`native/bridge/src/main/cpp/linuxdroid_backend.c`)
 
-`linuxdroid_backend_init()` installs a `struct weston_backend` on
-`compositor->backend`, establishing the **backend/output integration point**.
-It creates no heads, no outputs, and presents no buffers. A later phase extends
-the `linuxdroid_backend` struct to map `weston_head` → Android display and
+`linuxdroid_backend_init()` allocates a `struct linuxdroid_backend` (whose first
+member is `struct weston_backend`) and inserts it into
+`compositor->backend_list` via `wl_list_insert()`, setting
+`compositor->primary_backend` and `base.destroy` / `base.supported_presentation_clocks`.
+This establishes the **backend/output integration point**. It creates no heads,
+no outputs, and presents no buffers. A later phase extends the
+`linuxdroid_backend` struct to map `weston_head` → Android display and
 `weston_output` → AHardwareBuffer-backed SurfaceControl.
+
+(The full `struct weston_backend` definition lives in the private
+`libweston/backend.h`, which `build-libweston.sh` installs beside the public
+headers so the bridge can embed it. Weston 16 has no `compositor->backend`
+member — backends are tracked in `compositor->backend_list`.)
 
 ### Build integration (`native/bridge/src/main/cpp/CMakeLists.txt`)
 
@@ -73,9 +81,14 @@ The bridge auto-detects the pinned libweston build output under
 
 - If found: `LINUXDROID_HAS_LIBWESTON` is defined, `linuxdroid_backend.c` is
   compiled, and the bridge links the installed libweston + libwayland-server.
-- If not found (default checkout / CI): `weston_host.cpp` compiles its
-  no-libweston fallback (logs "libweston not built") and the app + CLI/runtime
-  still build normally.
+- If not found (default checkout / local, without the CMake gate):
+  `weston_host.cpp` compiles its no-libweston fallback (logs "libweston not
+  built") and the app + CLI/runtime still build normally.
+
+When the build is gated with `-PreqWeston` (CI), the bridge CMake sets
+`LINUXDROID_REQUIRE_LIBWESTON=ON`, which makes `CMakeLists.txt` **fail the whole
+build** if the real libweston install is not detected. A fallback-only build
+therefore cannot pass a gated Phase 3 CI build.
 
 ### Lifecycle wiring (`native/bridge/src/main/cpp/gui_host.cpp`)
 
@@ -93,14 +106,27 @@ Reuses the existing native logging (`__android_log_print` under
 ## Verification status
 
 This is the low-level compositor integration. Building and running it requires
-the pinned libweston 16.0.0 build (`native/weston/build-libweston.sh`) plus a
-cross sysroot (libwayland-server, wayland-protocols, pixman) and the Android
-NDK/Meson toolchain, which are not present in this repository's default CI
-(CI builds the app + native bridge without libweston). Consequently:
+the pinned libweston 16.0.0 build (`native/weston/build-libweston.sh`) plus the
+cross sysroot (from `native/weston/bootstrap-deps.sh`) and the Android
+NDK/Meson toolchain. The CI workflow **does** now provision all of these:
 
-- **Build verification** (CI): the default app/native build compiles the
-  fallback path and the CLI/runtime modules; the real libweston path is
-  conditionally compiled only when the pinned libweston artifacts are present.
+1. `native/weston/fetch-weston.sh` — fetch + SHA-256 verify the pinned 16.0.0 source.
+2. `native/weston/verify-weston.sh --strict-source` — verify the pinned commit.
+3. `native/weston/bootstrap-deps.sh` — cross-build the dependency sysroot for
+   arm64-v8a / API 36 (libwayland, wayland-protocols, pixman, xkbcommon,
+   libinput, libevdev, libdrm, libdisplay-info, libffi).
+4. `native/weston/build-libweston.sh` — cross-build libweston 16.0.0 into
+   `native/weston/dist`.
+5. `./gradlew :app:assembleRelease -PreqWeston` — build the release APK with the
+   native CMake gate `LINUXDROID_REQUIRE_LIBWESTON=ON`, which **fails** if the
+   real libweston path is not detected.
+
+Consequently:
+
+- **Build verification** (CI): the release build compiles + links the real
+  libweston path (`linuxdroid_backend.c` compiled, `weston_host.cpp` compiled
+  with `LINUXDROID_HAS_LIBWESTON`, bridge links `libweston-16.so`). A
+  fallback-only build cannot pass.
 - **Device/runtime verification**: not performed in this environment; repeated
   host create/destroy cycling of the compositor must be exercised on-device
   once the pinned libweston is built and linked.

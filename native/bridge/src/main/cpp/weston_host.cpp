@@ -61,8 +61,8 @@ bool WestonHost::isRunning() const {
 #include <pthread.h>
 
 #include <wayland-server.h>
-#include <libweston/compositor.h>
-#include <libweston/log.h>
+#include <libweston/libweston.h>
+#include <libweston/weston-log.h>
 
 // The LinuxDroid custom Android backend registers itself with a compositor.
 // It is provided by linuxdroid_backend.c and is compiled into this library

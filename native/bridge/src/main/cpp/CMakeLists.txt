@@ -33,13 +33,28 @@ set(
     CACHE PATH "Pinned libweston install prefix (defaults to native/weston/dist)"
 )
 
+# Weston 16 installs its public headers under <prefix>/include/libweston-16/libweston/
+# (meson: dir_include_libweston = 'libweston-@major@', dir_include_libweston_install
+# = <that>/libweston). The top-level public header is libweston/libweston.h.
 find_path(
     LIBWESTON_INCLUDE_DIR
-    NAMES libweston/compositor.h
+    NAMES libweston/libweston.h
     PATHS
-        "${LINUXDROID_WESTON_PREFIX}/include"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston"
+        "${LINUXDROID_WESTON_PREFIX}/include"
+    NO_DEFAULT_PATH
+)
+# libweston/backend.h is the private (internal-backend) header that defines the
+# full `struct weston_backend` used by linuxdroid_backend.c. build-libweston.sh
+# installs it beside the public headers.
+find_path(
+    LIBWESTON_BACKEND_INCLUDE_DIR
+    NAMES libweston/backend.h
+    PATHS
+        "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
+        "${LINUXDROID_WESTON_PREFIX}/include/libweston"
+        "${LINUXDROID_WESTON_PREFIX}/include"
     NO_DEFAULT_PATH
 )
 find_path(
@@ -49,6 +64,16 @@ find_path(
         "${LINUXDROID_WESTON_PREFIX}/include"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston"
+    NO_DEFAULT_PATH
+)
+# libweston.h includes <pixman.h> and <xkbcommon/xkbcommon.h>; pixman installs
+# pixman.h to a pixman-1/ subdir, so add it to the include search.
+find_path(
+    PIXMAN_INCLUDE_DIR
+    NAMES pixman.h
+    PATHS
+        "${LINUXDROID_WESTON_PREFIX}/include/pixman-1"
+        "${LINUXDROID_WESTON_PREFIX}/include"
     NO_DEFAULT_PATH
 )
 find_library(
@@ -71,6 +96,18 @@ else()
     set(LINUXDROID_HAS_LIBWESTON FALSE)
     message(STATUS "[linuxdroid] libweston NOT found (${LINUXDROID_WESTON_PREFIX}); "
                    "building compositor host fallback (no libweston).")
+endif()
+
+# When the build is gated on the real libweston (CI Phase 3), a fallback-only
+# build must FAIL rather than silently shipping the no-libweston path.
+option(LINUXDROID_REQUIRE_LIBWESTON "Fail the build if the real libweston path is not available" OFF)
+if(LINUXDROID_REQUIRE_LIBWESTON AND NOT LINUXDROID_HAS_LIBWESTON)
+    message(FATAL_ERROR
+        "[linuxdroid] LINUXDROID_REQUIRE_LIBWESTON is set but the real libweston "
+        "16.0.0 build was NOT detected under ${LINUXDROID_WESTON_PREFIX}. The "
+        "Phase 3 compositor must link the generated libweston; a fallback-only "
+        "build is not a success. "
+        "Build native/weston (fetch + bootstrap deps + build-libweston.sh) first.")
 endif()
 
 # Main bridge library
@@ -122,8 +159,14 @@ if(LINUXDROID_HAS_LIBWESTON)
         linuxdroid_bridge
         PRIVATE
         ${LIBWESTON_INCLUDE_DIR}
+        ${LIBWESTON_BACKEND_INCLUDE_DIR}
         ${WAYLAND_SERVER_INCLUDE_DIR}
+        ${PIXMAN_INCLUDE_DIR}
     )
+
+    # Make libweston's transitive shared deps (libpixman-1, libxkbcommon, libdrm)
+    # resolvable by the Android linker if it requires them at link time.
+    link_directories("${LINUXDROID_WESTON_PREFIX}/lib")
 
     # libweston plus libwayland-server (the host uses wl_display_* directly).
     # Additional runtime deps (wayland-protocols, pixman) are resolved by
