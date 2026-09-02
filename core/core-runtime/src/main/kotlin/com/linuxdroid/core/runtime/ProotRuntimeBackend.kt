@@ -444,15 +444,17 @@ class ProotRuntimeBackend(
             }
             val proc = pb.start()
             val finished = proc.waitFor(3, TimeUnit.SECONDS)
-            if (!finished) {
+            val exit = if (finished) {
+                proc.exitValue()
+            } else {
                 proc.destroyForcibly()
+                -1
             }
-            val exit = proc.exitValue()
-            val stdout = proc.inputStream.bufferedReader().readText()
-            val stderr = proc.errorStream.bufferedReader().readText()
+            val stdout = runCatching { proc.inputStream.bufferedReader().readText() }.getOrDefault("")
+            val stderr = runCatching { proc.errorStream.bufferedReader().readText() }.getOrDefault("")
             val combined = stdout + stderr
 
-            log.info("PRoot self-test probe: exit=$exit, output=${combined.take(120).trim()}")
+            log.info("PRoot self-test probe: finished=$finished, exit=$exit, output=${combined.take(120).trim()}")
 
             if (combined.contains("PRoot", ignoreCase = true) || combined.contains("proot", ignoreCase = true) || exit == 0) {
                 ProotDiagnosticResult(

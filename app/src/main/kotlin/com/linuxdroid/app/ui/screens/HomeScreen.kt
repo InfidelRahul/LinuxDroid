@@ -171,7 +171,6 @@ fun HomeScreen(
                 NeuGuiLaunchCard(
                     environment = activeEnv,
                     onClick = {
-                        environmentViewModel.startEnvironment(activeEnv)
                         navController.navigate(Screen.Terminal.route(activeEnv.id.value))
                     }
                 )
@@ -180,7 +179,6 @@ fun HomeScreen(
                 NeuCliLaunchCard(
                     environment = activeEnv,
                     onClick = {
-                        environmentViewModel.startEnvironment(activeEnv)
                         navController.navigate(Screen.Terminal.route(activeEnv.id.value))
                     },
                     onStop = {

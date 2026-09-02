@@ -20,6 +20,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -52,6 +54,7 @@ class TerminalViewModel @Inject constructor(
 
     private var ptySession: PtySession? = null
     private var readJob: Job? = null
+    private val sessionMutex = Mutex()
     private var isCtrlActive = false
     private var isAltActive = false
 
@@ -71,89 +74,90 @@ class TerminalViewModel @Inject constructor(
      * Initializes and starts the persistent interactive shell in PTY.
      */
     fun startInteractiveShellSession(env: Environment) {
-        if (ptySession?.isAlive() == true) return
-
         viewModelScope.launch(Dispatchers.IO) {
-            _isStarting.value = true
-            _shellExitCode.value = null
+            sessionMutex.withLock {
+                if (ptySession?.isAlive() == true) return@withLock
+                _isStarting.value = true
+                _shellExitCode.value = null
 
-            try {
-                // Ensure runtime backend is prepared and started
-                if (env.state != EnvironmentState.RUNNING) {
-                    terminalBuffer.append("Starting Linux runtime…\r\n".toByteArray(), "Starting Linux runtime…\r\n".length)
-                    val readyEnv = when (env.state) {
-                        EnvironmentState.FAILED -> {
-                            dao.updateState(
-                                id = env.id.value,
-                                state = EnvironmentState.RECOVERING.name,
-                                timestamp = System.currentTimeMillis(),
-                                failureMessage = null,
-                            )
-                            dao.updateState(
-                                id = env.id.value,
-                                state = EnvironmentState.READY.name,
-                                timestamp = System.currentTimeMillis(),
-                                failureMessage = null,
-                            )
-                            env.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+                try {
+                    // Ensure runtime backend is prepared and started
+                    if (env.state != EnvironmentState.RUNNING) {
+                        terminalBuffer.append("Starting Linux runtime…\r\n".toByteArray(), "Starting Linux runtime…\r\n".length)
+                        val readyEnv = when (env.state) {
+                            EnvironmentState.FAILED -> {
+                                dao.updateState(
+                                    id = env.id.value,
+                                    state = EnvironmentState.RECOVERING.name,
+                                    timestamp = System.currentTimeMillis(),
+                                    failureMessage = null,
+                                )
+                                dao.updateState(
+                                    id = env.id.value,
+                                    state = EnvironmentState.READY.name,
+                                    timestamp = System.currentTimeMillis(),
+                                    failureMessage = null,
+                                )
+                                env.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+                            }
+                            EnvironmentState.STARTING -> env.withState(EnvironmentState.READY)
+                            else -> env
                         }
-                        EnvironmentState.STARTING -> env.withState(EnvironmentState.READY)
-                        else -> env
+                        runtimeBackend.prepare(readyEnv)
+                        runtimeBackend.initialize(readyEnv)
+                        runtimeBackend.start(readyEnv)
+                        dao.updateState(
+                            id = env.id.value,
+                            state = EnvironmentState.RUNNING.name,
+                            timestamp = System.currentTimeMillis(),
+                            failureMessage = null,
+                        )
                     }
-                    runtimeBackend.prepare(readyEnv)
-                    runtimeBackend.initialize(readyEnv)
-                    runtimeBackend.start(readyEnv)
-                    dao.updateState(
-                        id = env.id.value,
-                        state = EnvironmentState.RUNNING.name,
-                        timestamp = System.currentTimeMillis(),
-                        failureMessage = null,
+
+                    // Close existing session if any
+                    closeSession()
+
+                    val targetShell = env.configuration.shell.ifBlank { "/bin/bash" }
+                    val shellCommand = listOf(targetShell, "-l")
+
+                    val session = runtimeBackend.startInteractiveShell(
+                        environment = env,
+                        rows = currentRows,
+                        cols = currentCols,
+                        command = shellCommand
                     )
-                }
+                    ptySession = session
+                    _isShellActive.value = true
+                    _isStarting.value = false
 
-                // Close existing session if any
-                closeSession()
+                    log.info("Interactive shell session connected for ${env.id} (pid=${session.pid})")
 
-                val targetShell = env.configuration.shell.ifBlank { "/bin/bash" }
-                val shellCommand = listOf(targetShell, "-l")
-
-                val session = runtimeBackend.startInteractiveShell(
-                    environment = env,
-                    rows = currentRows,
-                    cols = currentCols,
-                    command = shellCommand
-                )
-                ptySession = session
-                _isShellActive.value = true
-                _isStarting.value = false
-
-                log.info("Interactive shell session connected for ${env.id} (pid=${session.pid})")
-
-                // Start continuous IO reader job
-                readJob = launch(Dispatchers.IO) {
-                    val buffer = ByteArray(4096)
-                    while (isActive) {
-                        val bytesRead = session.read(buffer)
-                        if (bytesRead > 0) {
-                            terminalBuffer.append(buffer, bytesRead)
-                        } else if (bytesRead < 0) {
-                            break
+                    // Start continuous IO reader job
+                    readJob = launch(Dispatchers.IO) {
+                        val buffer = ByteArray(4096)
+                        while (isActive) {
+                            val bytesRead = session.read(buffer)
+                            if (bytesRead > 0) {
+                                terminalBuffer.append(buffer, bytesRead)
+                            } else if (bytesRead < 0) {
+                                break
+                            }
                         }
-                    }
 
+                        _isShellActive.value = false
+                        val exitCode = session.getExitCode() ?: 1
+                        _shellExitCode.value = exitCode
+                        val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
+                        terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)
+                        log.info("Shell process exited with code $exitCode")
+                    }
+                } catch (e: Exception) {
+                    log.error("Failed to spawn interactive shell", e)
+                    _isStarting.value = false
                     _isShellActive.value = false
-                    val exitCode = session.getExitCode() ?: 1
-                    _shellExitCode.value = exitCode
-                    val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
-                    terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)
-                    log.info("Shell process exited with code $exitCode")
+                    val errorMsg = "\r\n[Error launching shell: ${e.message}]\r\n"
+                    terminalBuffer.append(errorMsg.toByteArray(), errorMsg.length)
                 }
-            } catch (e: Exception) {
-                log.error("Failed to spawn interactive shell", e)
-                _isStarting.value = false
-                _isShellActive.value = false
-                val errorMsg = "\r\n[Error launching shell: ${e.message}]\r\n"
-                terminalBuffer.append(errorMsg.toByteArray(), errorMsg.length)
             }
         }
     }
