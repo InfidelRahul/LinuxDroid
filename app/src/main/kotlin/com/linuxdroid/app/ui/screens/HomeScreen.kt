@@ -757,18 +757,18 @@ private fun SystemOverviewCard(context: Context, environment: Environment?) {
                         color = neuColors.textPrimary,
                     )
                 }
-                Surface(
-                    color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(6.dp),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(neuColors.surfacePressed)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(fraction = stats.rootfsFraction.coerceIn(0.01f, 1f))
-                            .background(neuColors.primaryAccent, shape = RoundedCornerShape(6.dp))
+                            .fillMaxWidth(fraction = stats.rootfsFraction.coerceIn(0.02f, 1f))
+                            .background(neuColors.primaryAccent, shape = RoundedCornerShape(4.dp))
                     )
                 }
             }
@@ -792,18 +792,18 @@ private fun SystemOverviewCard(context: Context, environment: Environment?) {
                         color = neuColors.textPrimary,
                     )
                 }
-                Surface(
-                    color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(6.dp),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(neuColors.surfacePressed)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(fraction = stats.memFraction.coerceIn(0.01f, 1f))
-                            .background(Color(0xFF22C55E), shape = RoundedCornerShape(6.dp))
+                            .fillMaxWidth(fraction = stats.memFraction.coerceIn(0.02f, 1f))
+                            .background(Color(0xFF22C55E), shape = RoundedCornerShape(4.dp))
                     )
                 }
             }
@@ -827,18 +827,18 @@ private fun SystemOverviewCard(context: Context, environment: Environment?) {
                         color = neuColors.textPrimary,
                     )
                 }
-                Surface(
-                    color = neuColors.surfacePressed,
-                    shape = RoundedCornerShape(6.dp),
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp),
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(neuColors.surfacePressed)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .fillMaxWidth(fraction = stats.storageFraction.coerceIn(0.01f, 1f))
-                            .background(neuColors.secondaryAccent, shape = RoundedCornerShape(6.dp))
+                            .fillMaxWidth(fraction = stats.storageFraction.coerceIn(0.02f, 1f))
+                            .background(neuColors.secondaryAccent, shape = RoundedCornerShape(4.dp))
                     )
                 }
             }
@@ -1373,22 +1373,15 @@ private fun ActiveEnvironmentHeroCard(
                 // Left: Authentic Linux Penguin (Tux) mascot icon
                 LinuxPenguinIcon(size = 52.dp)
 
-                // Center: "LinuxDroid" title + OS & Architecture subtitle
+                // Center: "LinuxDroid" title (dedicated launch mode cards below show OS distribution)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "LinuxDroid",
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
+                            fontSize = 21.sp,
                         ),
                         color = neuColors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${environment.distribution.displayName} (${environment.architecture.linuxArch}) · Rootless Linux",
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                        color = neuColors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1437,7 +1430,7 @@ private fun ActiveEnvironmentHeroCard(
                 thickness = 0.5.dp,
             )
 
-            // Telemetry status pills
+            // Telemetry status pills (OS details are in dedicated launch mode cards below)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1451,7 +1444,7 @@ private fun ActiveEnvironmentHeroCard(
                     border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
                 ) {
                     Text(
-                        text = "Distro: ${environment.distribution.displayName}",
+                        text = "Subsystem: Rootless",
                         fontFamily = SfMono,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
