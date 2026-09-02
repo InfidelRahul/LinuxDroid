@@ -242,7 +242,7 @@ PY
 info "Running source sanity checks..."
 grep -n "SYSCALL_AVOIDER" src/arch.h
 grep -n -A4 -B2 "case PR_getcwd" src/syscall/enter.c
-if grep -R -n $'case PR_prctl:\n\t\treturn 0;' src/tracee/event.c; then
+if grep -Pzo 'case PR_prctl:\s*return 0;' src/tracee/event.c; then
     die "blanket PR_prctl success fabrication remains"
 fi
 if grep -R -n "errno == EINVAL" src/tracee/event.c | grep -q faccessat; then
