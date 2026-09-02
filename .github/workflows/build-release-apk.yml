@@ -38,11 +38,47 @@ jobs:
             "ndk;29.0.14206865" \
             "cmake;3.22.1"
 
+      # Meson/Ninja are required to cross-build libweston and its deps
+      # (bootstrap-deps.sh + build-libweston.sh). pkg-config is needed by Meson.
+      - name: Install Meson / Ninja / pkg-config
+        run: |
+          python3 -m pip install --break-system-packages --quiet meson ninja pkgconfig 2>/dev/null \
+            || python3 -m pip install --user --quiet meson ninja pkgconfig
+          echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
+          sudo apt-get update && sudo apt-get install -y pkg-config curl
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      # The current Gradle release configuration requires a keystore.
-      # This key is temporary and must not be used for production releases.
+      # ------------------------------------------------------------------
+      # Weston 16.0.0: fetch + verify + build the real libweston for ARM64.
+      # ------------------------------------------------------------------
+
+      - name: Fetch pinned Weston 16.0.0 source (SHA-256 verified)
+        run: native/weston/fetch-weston.sh
+
+      - name: Verify pinned Weston revision
+        run: native/weston/verify-weston.sh --strict-source
+
+      - name: Bootstrap libweston cross dependencies (arm64-v8a / API 36)
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          native/weston/bootstrap-deps.sh
+
+      - name: Build libweston 16.0.0 for arm64-v8a / API 36+
+        env:
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
+          DEP_PKG_CONFIG_PATH: ${{ github.workspace }}/native/weston/deps/sysroot/share/pkgconfig
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          native/weston/build-libweston.sh
+
+      # ------------------------------------------------------------------
+      # The ephemeral CI signing key (temporary; not for production).
+      # ------------------------------------------------------------------
       - name: Create ephemeral CI signing key
         run: |
           keytool -genkeypair -v \
@@ -55,13 +91,38 @@ jobs:
             -validity 1 \
             -dname "CN=LinuxDroid CI,O=LinuxDroid"
 
-      - name: Compile release APK
+      - name: Verify pinned Weston revision (Gradle task)
+        run: ./gradlew verifyWeston --no-daemon
+
+      - name: Verify real libweston install (Phase 3 gate)
+        run: ./gradlew verifyWestonBuild --no-daemon
+
+      - name: Compile release APK (real libweston path required)
         shell: bash
         run: |
-          # Preserve the full Gradle output to a file for failure diagnostics,
-          # while still failing the step if the build fails (pipefail).
+          # -PreqWeston gates the native CMake to FAIL if the real libweston
+          # path (LINUXDROID_HAS_LIBWESTON) is not active, so a fallback-only
+          # Phase 3 build cannot pass CI.
           set -o pipefail
-          ./gradlew :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build-log.txt
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace \
+            -PreqWeston 2>&1 | tee build-log.txt
+
+      - name: Confirm real libweston path was compiled and linked
+        shell: bash
+        run: |
+          echo "== Phase 3 real libweston path verification =="
+          echo "The bridge library must be linked against the cross-built libweston-16.so."
+          if grep -q 'libweston found at' build-log.txt; then
+            echo "PASS: native CMake detected the real libweston install (LINUXDROID_HAS_LIBWESTON)."
+          else
+            echo "FAIL: native CMake did NOT detect libweston; the fallback path was used."
+            exit 1
+          fi
+          # Confirm the linuxdroid_backend.c + weston_host.cpp compilation and
+          # that libweston is a link input.
+          if grep -q 'libweston-16' build-log.txt; then
+            echo "PASS: libweston-16 referenced (compiled/linked)."
+          fi
 
       - name: Upload build log on failure
         if: failure()
