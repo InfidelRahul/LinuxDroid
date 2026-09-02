@@ -1,5 +1,6 @@
 # Built by Gradle
 .gradle/
+.kotlin/
 build/
 
 # Local configuration
