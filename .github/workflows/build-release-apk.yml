@@ -45,33 +45,43 @@ jobs:
           python3 -m pip install --break-system-packages --quiet meson ninja pkgconfig 2>/dev/null \
             || python3 -m pip install --user --quiet meson ninja pkgconfig
           echo "$(python3 -m site --user-base)/bin" >> "$GITHUB_PATH"
-          sudo apt-get update && sudo apt-get install -y pkg-config curl
+          # libexpat1-dev is needed to build the HOST wayland-scanner
+          # (bootstrap-deps.sh builds it natively before cross-building wayland).
+          sudo apt-get update && sudo apt-get install -y pkg-config curl libexpat1-dev
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
       # ------------------------------------------------------------------
-      # Weston 16.0.0: fetch + verify + build the real libweston for ARM64.
+      # Weston: fetch + verify + build the real libweston for ARM64.
+      # Weston is tracked from the InfidelRahul/weston development mirror main;
+      # the resolved commit is recorded/verified per build (no fixed SHA pin).
       # ------------------------------------------------------------------
 
-      - name: Fetch pinned Weston 16.0.0 source (SHA-256 verified)
+      - name: Fetch Weston from InfidelRahul/weston mirror main
         run: native/weston/fetch-weston.sh
 
-      - name: Verify pinned Weston revision
+      - name: Verify resolved mirror-main Weston revision
         run: native/weston/verify-weston.sh --strict-source
 
       - name: Bootstrap libweston cross dependencies (arm64-v8a / API 36)
         env:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           native/weston/bootstrap-deps.sh
 
-      - name: Build libweston 16.0.0 for arm64-v8a / API 36+
+      - name: Verify tracked InfidelRahul dependency commits (after bootstrap)
+        env:
+          DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
+        run: native/weston/verify-weston.sh --strict-source --strict-deps
+
+      - name: Build libweston for arm64-v8a / API 36+ (mirror main)
         env:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
           DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
-          DEP_PKG_CONFIG_PATH: ${{ github.workspace }}/native/weston/deps/sysroot/share/pkgconfig
+          DEP_PKG_CONFIG_PATH: ${{ github.workspace }}/native/weston/deps/sysroot/lib/pkgconfig:${{ github.workspace }}/native/weston/deps/sysroot/share/pkgconfig
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           native/weston/build-libweston.sh
@@ -91,7 +101,7 @@ jobs:
             -validity 1 \
             -dname "CN=LinuxDroid CI,O=LinuxDroid"
 
-      - name: Verify pinned Weston revision (Gradle task)
+      - name: Verify resolved Weston source (Gradle task)
         run: ./gradlew verifyWeston --no-daemon
 
       - name: Verify real libweston install (Phase 3 gate)
@@ -111,7 +121,7 @@ jobs:
         shell: bash
         run: |
           echo "== Phase 3 real libweston path verification =="
-          echo "The bridge library must be linked against the cross-built libweston-16.so."
+          echo "The bridge library must be linked against the cross-built libweston (libweston-<major>.so)."
           if grep -q 'libweston found at' build-log.txt; then
             echo "PASS: native CMake detected the real libweston install (LINUXDROID_HAS_LIBWESTON)."
           else
@@ -119,9 +129,9 @@ jobs:
             exit 1
           fi
           # Confirm the linuxdroid_backend.c + weston_host.cpp compilation and
-          # that libweston is a link input.
-          if grep -q 'libweston-16' build-log.txt; then
-            echo "PASS: libweston-16 referenced (compiled/linked)."
+          # that libweston is a link input (libweston-16 / libweston-17 ...).
+          if grep -q 'libweston-1' build-log.txt; then
+            echo "PASS: libweston-<major> referenced (compiled/linked)."
           fi
 
       - name: Upload build log on failure

@@ -1,8 +1,10 @@
 # LinuxDroid — libweston Compositor Initialization (Phase 3)
 
-> **Scope:** Phase 3 initializes and runs the pinned **libweston 16.0.0** inside
-> the existing native GUI host, and adds the **LinuxDroid custom backend**
-> integration point. It does **not** implement `weston_head` → Android display,
+> **Scope:** Phase 3 initializes and runs the resolved **libweston** (tracked
+> from the `InfidelRahul/weston` development mirror `main`; produces
+> `libweston-17` on the current mirror) inside the existing native GUI host, and
+> adds the **LinuxDroid custom backend** integration point. It does **not**
+> implement `weston_head` → Android display,
 > `weston_output` → SurfaceControl, AHardwareBuffer, SurfaceControl buffer
 > submission, Pixman/GLES/EGL/Vulkan rendering, input, a desktop shell, or a
 > VSync/frame timeline. Those belong to later phases.
@@ -28,7 +30,7 @@ Native C/C++ GUI host (linuxdroid::GuiHost)
         ↓
 linuxdroid::WestonHost
         ↓
-libweston / Weston 16.0.0
+libweston / Weston (mirror main)
         ↓
 LinuxDroid custom Android backend (linuxdroid_backend.c)
         ↓
@@ -46,7 +48,7 @@ ASurfaceControl/...     (Phase 4+)
 `linuxdroid::WestonHost` is a singleton with a minimal, deterministic lifecycle:
 
 - `start()` creates a `wl_display`, a `weston_log_context`, and the
-  `weston_compositor` (Weston 16 API:
+  `weston_compositor` (mirror-main API, unchanged from the 16 series:
   `weston_compositor_create(display, log_ctx, user_data, /*testsuite=*/NULL)`),
   registers the LinuxDroid backend via `linuxdroid_backend_init()`, and begins
   the libweston **event loop** on a dedicated worker thread
@@ -76,7 +78,7 @@ member — backends are tracked in `compositor->backend_list`.)
 
 ### Build integration (`native/bridge/src/main/cpp/CMakeLists.txt`)
 
-The bridge auto-detects the pinned libweston build output under
+The bridge auto-detects the resolved libweston build output under
 `native/weston/dist` (overridable via `-DLINUXDROID_WESTON_PREFIX=...`):
 
 - If found: `LINUXDROID_HAS_LIBWESTON` is defined, `linuxdroid_backend.c` is
@@ -106,17 +108,25 @@ Reuses the existing native logging (`__android_log_print` under
 ## Verification status
 
 This is the low-level compositor integration. Building and running it requires
-the pinned libweston 16.0.0 build (`native/weston/build-libweston.sh`) plus the
+the resolved libweston build (`native/weston/build-libweston.sh`) plus the
 cross sysroot (from `native/weston/bootstrap-deps.sh`) and the Android
 NDK/Meson toolchain. The CI workflow **does** now provision all of these:
 
-1. `native/weston/fetch-weston.sh` — fetch + SHA-256 verify the pinned 16.0.0 source.
-2. `native/weston/verify-weston.sh --strict-source` — verify the pinned commit.
-3. `native/weston/bootstrap-deps.sh` — cross-build the dependency sysroot for
-   arm64-v8a / API 36 (libwayland, wayland-protocols, pixman, xkbcommon,
-   libinput, libevdev, libdrm, libdisplay-info, libffi).
-4. `native/weston/build-libweston.sh` — cross-build libweston 16.0.0 into
-   `native/weston/dist`.
+1. `native/weston/fetch-weston.sh` — clone + record/verify the resolved
+   `InfidelRahul/weston` mirror `main` commit.
+2. `native/weston/verify-weston.sh --strict-source` — verify the resolved
+   commit matches the checked-out HEAD.
+3. `native/weston/bootstrap-deps.sh` — clone the InfidelRahul `main` deps
+   (wayland, wayland-protocols, pixman) + record their commits, build a HOST
+   wayland-scanner, then cross-build the dependency sysroot for arm64-v8a /
+   API 36 (libwayland, wayland-protocols, pixman, libxkbcommon with X11
+   disabled, xkeyboard-config XKB data, libinput, libevdev, libdrm,
+   libdisplay-info, libffi, plus the Cairo/libpng/zlib build deps the mirror
+   `main` requires). It also verifies every produced library is AArch64 ELF.
+3b. `native/weston/verify-weston.sh --strict-source --strict-deps` — verify each
+   tracked InfidelRahul dependency's recorded `main` commit.
+4. `native/weston/build-libweston.sh` — cross-build libweston (mirror `main`,
+   currently `libweston-17`) into `native/weston/dist`.
 5. `./gradlew :app:assembleRelease -PreqWeston` — build the release APK with the
    native CMake gate `LINUXDROID_REQUIRE_LIBWESTON=ON`, which **fails** if the
    real libweston path is not detected.
@@ -125,8 +135,8 @@ Consequently:
 
 - **Build verification** (CI): the release build compiles + links the real
   libweston path (`linuxdroid_backend.c` compiled, `weston_host.cpp` compiled
-  with `LINUXDROID_HAS_LIBWESTON`, bridge links `libweston-16.so`). A
+  with `LINUXDROID_HAS_LIBWESTON`, bridge links `libweston-<major>.so`). A
   fallback-only build cannot pass.
 - **Device/runtime verification**: not performed in this environment; repeated
   host create/destroy cycling of the compositor must be exercised on-device
-  once the pinned libweston is built and linked.
+  once the resolved libweston is built and linked.

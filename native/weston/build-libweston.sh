@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# LinuxDroid — Build libweston (16.0.0) for Android arm64-v8a / API 36+.
+# LinuxDroid — Build libweston for Android arm64-v8a / API 36+.
 #
-# This is the Milestone 1 native dependency build. It produces libweston from
-# the SAME pinned Weston source (native/weston/src), never from a distro
-# package and never from a different Weston/libweston release.
+# This is the native dependency build. It produces libweston from the SAME
+# resolved Weston source (native/weston/src), which is the `main` branch of the
+# InfidelRahul/weston development mirror — never from a distro package and never
+# from a different Weston/libweston release. The exact resolved commit is
+# recorded by fetch-weston.sh and verified here.
 #
 # Prerequisites (host):
 #   - Android NDK r29 (29.0.14206865)  -> ANDROID_NDK_ROOT (or ANDROID_NDK_HOME)
@@ -25,11 +27,17 @@
 # The build is isolated from the PRoot/CLI runtime — it neither links nor
 # modifies the existing runtime, and only the libweston dependency is produced.
 #
-# NOTE: Weston 16.0.0's top-level meson.build unconditionally requires
-# wayland-server, wayland-client, pixman-1, xkbcommon, libinput, libevdev,
-# libdrm and libdisplay-info via pkg-config (no option disables them), plus the
-# host wayland-scanner and wayland-protocols. bootstrap-deps.sh builds all of
-# these for the target; this script builds libweston against that sysroot.
+# NOTE: The mirror-main weston's top-level meson.build (native/weston/src)
+# requires wayland-server, wayland-client (>= 1.24), pixman-1 (>= 0.25.2),
+# xkbcommon, libinput, libevdev, libdrm (>= 2.4.108) and libdisplay-info via
+# pkg-config (no option disables them), plus the host wayland-scanner and
+# wayland-protocols >= 1.46. Its shared/meson.build also declares
+# lib_cairo_shared (dependency('cairo') + dependency('libpng')) and the
+# headless-backend links it, so cairo + libpng + zlib must also be present.
+# bootstrap-deps.sh cross-builds all of these for the target; this script builds
+# libweston against that sysroot. This build produces libweston-<major> where
+# <major> is read from the source's libweston_major (= 17 on the current mirror
+# main).
 
 set -euo pipefail
 
@@ -58,24 +66,26 @@ command -v ninja >/dev/null 2>&1 || { echo "[libweston] ERROR: ninja not found o
 
 # The pinned source is required.
 if [[ ! -f "$SRC_DIR/meson.build" ]]; then
-    echo "[libweston] ERROR: pinned Weston source not present at $SRC_DIR." >&2
-    echo "[libweston] Run native/weston/fetch-weston.sh to acquire and verify the 16.0.0 source." >&2
+    echo "[libweston] ERROR: resolved Weston source not present at $SRC_DIR." >&2
+    echo "[libweston] Run native/weston/fetch-weston.sh to acquire and verify the mirror-main source." >&2
     exit 1
 fi
 
-# The cross-built dependency sysroot is required (Weston 16 cannot configure
-# without wayland-server/client/pixman/xkbcommon/libinput/libevdev/libdrm/
-# libdisplay-info).
+# The cross-built dependency sysroot is required (the mirror-main weston cannot
+# configure without wayland-server/client/pixman/xkbcommon/libinput/libevdev/
+# libdrm/libdisplay-info).
 DEP_SYSROOT="${DEP_SYSROOT:-$SCRIPT_DIR/deps/sysroot}"
-DEP_PKG_CONFIG_PATH="${DEP_PKG_CONFIG_PATH:-$DEP_SYSROOT/share/pkgconfig}"
-if [[ ! -d "$DEP_PKG_CONFIG_PATH" ]]; then
-    echo "[libweston] ERROR: dependency sysroot pkg-config dir not found at $DEP_PKG_CONFIG_PATH." >&2
+# .pc files may land in either lib/pkgconfig or share/pkgconfig; include both.
+DEP_PKG_CONFIG_PATH="${DEP_PKG_CONFIG_PATH:-$DEP_SYSROOT/lib/pkgconfig:$DEP_SYSROOT/share/pkgconfig}"
+if [[ ! -d "${DEP_PKG_CONFIG_PATH%%:*}" ]]; then
+    echo "[libweston] ERROR: dependency sysroot pkg-config dir not found at ${DEP_PKG_CONFIG_PATH%%:*}." >&2
     echo "[libweston] Run native/weston/bootstrap-deps.sh first." >&2
     exit 1
 fi
 
-# The host wayland-scanner lives in the dependency sysroot bin dir. Wayland's
-# Meson build installs it regardless of target.
+# The host wayland-scanner lives in the dependency sysroot bin dir. Because the
+# target libweston build runs wayland-scanner on the build machine, bootstrap
+# builds it for the HOST and installs it here.
 HOST_BINDIR="$DEP_SYSROOT/bin"
 if [[ ! -x "$HOST_BINDIR/wayland-scanner" ]]; then
     echo "[libweston] ERROR: host wayland-scanner not found at $HOST_BINDIR/wayland-scanner." >&2
@@ -96,8 +106,8 @@ sed \
 echo "[libweston] Generated cross file: $CROSS_FILE"
 
 # --- Configure libweston with the MINIMUM dependency set -----------------------
-# Weston 16.0.0 meson options. Some options used by earlier versions are
-# gone/renamed in 16.0.0; the set below is the valid minimal configuration:
+# Mirror-main meson options. Some options used by earlier versions are
+# gone/renamed; the set below is the valid minimal configuration:
 #   - No desktop shell / DRM / X11 / Wayland / RDP / PipeWire / VNC backends.
 #   - Renderer bring-up is Pixman only (renderer-gl / renderer-vulkan disabled).
 #   - demo-clients must be disabled and simple-clients set to a valid member
@@ -138,7 +148,7 @@ export PKG_CONFIG_SYSROOT_DIR="$DEP_SYSROOT"
 export PKG_CONFIG_PATH="$DEP_PKG_CONFIG_PATH:${PKG_CONFIG_PATH:-}"
 export PKG_CONFIG_LIBDIR="$DEP_PKG_CONFIG_PATH"
 
-echo "[libweston] Configuring libweston (version 16.0.0) for arm64-v8a / API $API"
+echo "[libweston] Configuring libweston from mirror-main source for arm64-v8a / API $API"
 meson setup "$BUILD_DIR/weston-build" "$SRC_DIR" "${MESON_OPTS[@]}"
 
 echo "[libweston] Compiling libweston"
@@ -153,7 +163,9 @@ ninja -C "$BUILD_DIR/weston-build" install
 # the installed public headers so the bridge CMake can find it at
 # <dist>/include/libweston-16/libweston/backend.h.
 INSTALL_INC=""
-for cand in "$DIST_DIR/include/libweston-16" "$DIST_DIR/include/libweston"; do
+# The mirror main produces libweston-17 (libweston_major = 17); keep 16 and the
+# plain name as fallbacks so the bridge continues to find the private header.
+for cand in "$DIST_DIR/include/libweston-17" "$DIST_DIR/include/libweston-16" "$DIST_DIR/include/libweston"; do
     if [[ -d "$cand/libweston" ]]; then
         INSTALL_INC="$cand"
         break
@@ -167,7 +179,7 @@ if [[ -f "$SRC_DIR/libweston/backend.h" ]]; then
     cp "$SRC_DIR/libweston/backend.h" "$INSTALL_INC/libweston/backend.h"
     echo "[libweston] Installed private header: $INSTALL_INC/libweston/backend.h"
 else
-    echo "[libweston] ERROR: private header libweston/backend.h not found in pinned source." >&2
+    echo "[libweston] ERROR: private header libweston/backend.h not found in resolved source." >&2
     exit 1
 fi
 
@@ -213,12 +225,26 @@ fi
 if [[ -n "$(find "$DEP_SYSROOT/lib" -name 'libwayland-client.so*' 2>/dev/null | head -1)" ]]; then
     cp -a "$DEP_SYSROOT"/lib/libwayland-client.so* "$DIST_DIR/lib/" 2>/dev/null || true
 fi
+# libweston-<major>.so transitively depends on libpixman-1, libxkbcommon (and libdrm
+# for the build). Stage these also so the Android linker can resolve them when the
+# bridge links libweston at build/link time and so the APK package can ship them.
+for libpat in 'libpixman-1.so*' 'libxkbcommon.so*' 'libdrm.so*'; do
+    if ls "$DEP_SYSROOT"/lib/$libpat >/dev/null 2>&1; then
+        cp -a "$DEP_SYSROOT"/lib/$libpat "$DIST_DIR/lib/" 2>/dev/null || true
+        echo "[libweston] Staged $libpat into distrib lib/"
+    fi
+done
 
 # --- Deterministic verification --------------------------------------------------
 # Confirms the built dependency matches the frozen pins (version + commit),
-# reading from the actual source tree.
-echo "[libweston] Verifying built dependency version/commit"
-"$SCRIPT_DIR/verify-weston.sh" --strict-source
+# reading from the actual source tree, and that the tracked InfidelRahul
+# dependency commits (wayland / wayland-protocols / pixman) match their recorded
+# commits.
+echo "[libweston] Verifying built dependency source/commit"
+"$SCRIPT_DIR/verify-weston.sh" --strict-source --strict-deps
 
-echo "[libweston] libweston 16.0.0 built for arm64-v8a / API 36+."
+# Echo the resolved version + commit for the build record.
+RESOLVED_VERSION="$(grep -oE "version: *'[0-9]+\.[0-9]+\.[0-9]+'" "$SRC_DIR/meson.build" | head -1 | sed -E "s/.*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/")"
+RESOLVED_COMMIT="$(cat "$SRC_DIR/.weston_commit" 2>/dev/null || git -C "$SRC_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+echo "[libweston] libweston built for arm64-v8a / API 36+ from mirror main @ $RESOLVED_COMMIT (version ${RESOLVED_VERSION:-unknown})."
 echo "[libweston] Artifacts: $DIST_DIR"

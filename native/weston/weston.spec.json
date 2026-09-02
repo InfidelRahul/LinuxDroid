@@ -2,76 +2,205 @@
   "schemaVersion": 1,
   "project": "LinuxDroid",
   "subsystem": "native/weston",
-  "description": "Pinned Weston / libweston dependency for the LinuxDroid Android GUI.",
+  "description": "LinuxDroid native GUI dependency manifest. Source policy: repositories under the InfidelRahul/ GitHub org (LinuxDroid mirrors) track their `main` branch and record the exact resolved commit per build; all other (official upstream) dependencies use the latest stable release and record its exact commit. Everything is cross-built for Android arm64-v8a / API 36+.",
   "platform": {
     "os": "android",
     "abi": "arm64-v8a",
     "apiLevel": 36,
-    "archComment": "Only arm64-v8a / API 36+ is supported. No x86, x86_64, or ARM32 targets are built or packaged."
+    "archComment": "Only arm64-v8a / API 36+ is supported. No x86, x86_64, or ARM32 targets are built or packaged. Every produced native library must be an AArch64 ELF."
   },
   "toolchain": {
     "ndk": "29.0.14206865",
-    "buildTool": "meson",
-    "buildToolComment": "libweston is built with Meson. Meson is the upstream, authoritative build system for Weston/libweston; the Android Gradle/CMake externalNativeBuild path cannot build the upstream Meson tree, so an isolated Meson cross-build is used for this dependency (see README.md).",
-    "cmake": "3.22.1"
+    "host": "linux-x86_64",
+    "meson": ">= 0.63.0 (provided by CI; the mirror-main weston bundles its own meson files)",
+    "ninja": "CI-provided",
+    "cmake": "3.22.1",
+    "pkg-config": "host + cross (PKG_CONFIG_SYSROOT_DIR)",
+    "buildToolComment": "libweston and its dependencies are built with Meson (the upstream, authoritative build system for Weston/libweston); the Android Gradle/CMake externalNativeBuild path cannot consume the upstream Meson tree, so an isolated Meson cross-build is used. See native/weston/README.md."
   },
-  "weston": {
-    "version": "16.0.0",
-    "commit": "d1882b0a544ae2197b597a6e39478e719bc54302",
-    "archive": {
-      "source": "https://gitlab.freedesktop.org/wayland/weston/-/releases/16.0.0/downloads/weston-16.0.0.tar.xz",
-      "sha256": "dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f",
-      "archiveFormat": "tar.xz",
-      "note": "The pinned SHA-256 is the official Weston-release tar.xz digest, NOT GitLab's auto-generated tag archive (which is .tar.gz with a different digest)."
+  "dependencies": {
+    "weston": {
+      "role": "compositor-core",
+      "source": "https://github.com/InfidelRahul/weston",
+      "sourceType": "git",
+      "track": "main",
+      "upstreamRepository": "https://gitlab.freedesktop.org/wayland/weston",
+      "resolvedCommit": "recorded-at-fetch-time",
+      "resolvedCommitRecord": "native/weston/src/.weston_commit",
+      "libwestonMajor": "resolved-from-source",
+      "comments": "Tracks the InfidelRahul/weston development mirror `main` branch (a LinuxDroid fork, not an upstream stable release). The exact resolved HEAD commit is recorded in src/.weston_commit and verified by fetch-weston.sh / verify-weston.sh. On the current `main` HEAD (9669073f) this declares Weston version 16.0.90 with libweston_major=17 (so Meson produces libweston-17 and installs headers under include/libweston-17/). The mirror main requires wayland-server/client >= 1.24.0, wayland-protocols >= 1.46, pixman-1 >= 0.25.2, xkbcommon >= 0.5.0, libdrm >= 2.4.108, libdisplay-info >= 0.2.0 < 0.5.0; shared/meson.build declares lib_cairo_shared (cairo + libpng) and the headless-backend links it, so cairo+libpng+zlib are build-required."
+    },
+    "wayland": {
+      "role": "protocol-runtime",
+      "source": "https://github.com/InfidelRahul/wayland",
+      "sourceType": "git",
+      "track": "main",
+      "upstreamRepository": "https://gitlab.freedesktop.org/wayland/wayland",
+      "resolvedCommit": "recorded-at-fetch-time",
+      "resolvedCommitRecord": "native/weston/deps/sysroot/.git-commits/wayland",
+      "buildSystem": "meson",
+      "requires": ["libffi"],
+      "comments": "Tracks the InfidelRahul/wayland development mirror `main` branch. On the current `main` HEAD (381af21c) this declares Wayland version 1.26.90 (dev). Provides wayland-server, wayland-client, wayland-scanner and wayland-cursor, and satisfies the mirror-main weston's >= 1.24.0 requirement."
+    },
+    "wayland-protocols": {
+      "role": "protocol-data",
+      "source": "https://github.com/InfidelRahul/wayland-protocols",
+      "sourceType": "git",
+      "track": "main",
+      "upstreamRepository": "https://gitlab.freedesktop.org/wayland/wayland-protocols",
+      "resolvedCommit": "recorded-at-fetch-time",
+      "resolvedCommitRecord": "native/weston/deps/sysroot/.git-commits/wayland-protocols",
+      "buildSystem": "meson",
+      "isBuildTimeData": true,
+      "comments": "Tracks the InfidelRahul/wayland-protocols development mirror `main` branch. On the current `main` HEAD (afb614d5) this is the 1.x series; it satisfies the mirror-main weston's >= 1.46 requirement. All protocols the mirror-main weston generates must be present in the checked-out wayland-protocols."
+    },
+    "pixman": {
+      "role": "software-renderer-dependency",
+      "source": "https://github.com/InfidelRahul/pixman",
+      "sourceType": "git",
+      "track": "main",
+      "upstreamRepository": "https://gitlab.freedesktop.org/pixman/pixman",
+      "resolvedCommit": "recorded-at-fetch-time",
+      "resolvedCommitRecord": "native/weston/deps/sysroot/.git-commits/pixman",
+      "buildSystem": "meson",
+      "requires": [],
+      "comments": "Tracks the InfidelRahul/pixman development mirror `main` branch (meson-buildable). Built for AArch64 with NEON paths; ARGB8888/RGBA8888/premultiplied-alpha/compositing/scaling/damage operations are provided by the library. Pixman is a dependency, NOT the LinuxDroid renderer (the renderer is a separate layer)."
+    },
+    "libxkbcommon": {
+      "role": "xkb-keymap",
+      "source": "https://github.com/xkbcommon/libxkbcommon",
+      "sourceType": "git",
+      "track": "stable",
+      "release": "xkbcommon-1.13.2",
+      "commit": "d1442aaa6b635551182e83c3b55037f4c118c962",
+      "archiveSourceHash": "acc4d5f7c3cbba5f9f8d08d8bdbeede84ecede46792f47929aa9321873385528",
+      "upstreamRepository": "https://github.com/xkbcommon/libxkbcommon",
+      "buildSystem": "meson",
+      "buildOptions": ["-Denable-x11=false", "-Denable-docs=false", "-Denable-tools=false"],
+      "requires": [],
+      "comments": "Official upstream, latest stable libxkbcommon (not an InfidelRahul mirror). Built core + XKB keymap/state handling with X11 disabled (Wayland-only architecture; no libxkbcommon-x11, no xcb-xkb)."
+    },
+    "xkeyboard-config": {
+      "role": "xkb-layout-data",
+      "source": "https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config",
+      "sourceType": "git",
+      "track": "stable",
+      "release": "2.48",
+      "commit": "resolved-at-fetch-time",
+      "archiveSourceHash": "",
+      "buildSystem": "meson",
+      "isBuildTimeData": true,
+      "requires": [],
+      "comments": "Official upstream, latest stable xkeyboard-config (2.48, released 2026-06-21). Pure keyboard-layout DATA, not a compiled library: it provides the XKB keymap database libxkbcommon loads at runtime from the Linux userspace (standard Linux XKB data path, <prefix>/share/X11/xkb). Installed into the Linux rootfs during bootstrap; it is NOT an Android runtime library and X11 is not a runtime requirement."
+    },
+    "libffi": {
+      "role": "build-only",
+      "source": "https://github.com/libffi/libffi",
+      "track": "stable",
+      "release": "3.4.6",
+      "buildSystem": "autotools",
+      "requires": [],
+      "comments": "Latest stable; required to cross-build libwayland."
+    },
+    "libdrm": {
+      "role": "build-only",
+      "source": "https://gitlab.freedesktop.org/mesa/drm",
+      "track": "stable",
+      "release": "2.4.120",
+      "buildSystem": "meson",
+      "requires": [],
+      "comments": "Latest stable; mirror-main weston requires libdrm >= 2.4.108 at configure time; not linked into libweston-<major>.so."
+    },
+    "libinput": {
+      "role": "build-only",
+      "source": "https://gitlab.freedesktop.org/libinput/libinput",
+      "track": "stable",
+      "release": "1.26.0",
+      "buildSystem": "meson",
+      "requires": [],
+      "comments": "Latest stable; mirror-main weston configure-time dependency; built with udev/libseat disabled (Android target), not linked into libweston."
+    },
+    "libevdev": {
+      "role": "build-only",
+      "source": "https://gitlab.freedesktop.org/libevdev/libevdev",
+      "track": "stable",
+      "release": "1.13.1",
+      "buildSystem": "meson",
+      "requires": [],
+      "comments": "Latest stable; mirror-main weston configure-time dependency."
+    },
+    "libdisplay-info": {
+      "role": "build-only",
+      "source": "https://gitlab.freedesktop.org/emersion/libdisplay-info",
+      "track": "stable",
+      "release": "0.2.0",
+      "buildSystem": "meson",
+      "requires": [],
+      "comments": "Latest stable; mirror-main weston requires libdisplay-info >= 0.2.0 < 0.5.0 at configure time."
+    },
+    "zlib": {
+      "role": "build-only",
+      "source": "https://github.com/madler/zlib",
+      "track": "stable",
+      "release": "1.3.1",
+      "buildSystem": "autotools",
+      "requires": [],
+      "comments": "Latest stable; required to cross-build libpng (and thus cairo)."
+    },
+    "libpng": {
+      "role": "build-only",
+      "source": "https://github.com/pnggroup/libpng",
+      "track": "stable",
+      "release": "1.6.43",
+      "buildSystem": "autotools",
+      "requires": ["zlib"],
+      "comments": "Latest stable; required by cairo for the image-surface backend (Weston's lib_cairo_shared)."
+    },
+    "cairo": {
+      "role": "build-only",
+      "source": "https://gitlab.freedesktop.org/cairo/cairo",
+      "track": "stable",
+      "release": "1.18.2",
+      "buildSystem": "meson",
+      "buildOptions": ["-Dpng=enabled", "-Dzlib=enabled", "-Dfreetype=disabled", "-Dfontconfig=disabled", "-Dglib=disabled", "-Dxlib=disabled", "-Dxcb=disabled", "-Dcairo-pdf=disabled", "-Dcairo-ps=disabled", "-Dcairo-svg=disabled", "-Dcairo-script=disabled", "-Dcairo-trace=disabled", "-Dtests=disabled", "-Dbenchmarks=disabled"],
+      "requires": ["pixman", "zlib", "libpng"],
+      "comments": "Latest stable. Mirror-main weston declares lib_cairo_shared (dependency('cairo') + dependency('libpng')) and the headless-backend links it, so cairo+libpng+zlib are required to configure and link weston even though they are NOT linked into libweston-<major>.so and are NOT part of the LinuxDroid renderer (Pixman -> GLES/EGL -> Vulkan). Built as a minimal image-only cairo (freetype/fontconfig/glib/x11/wayland/xcb disabled)."
     }
   },
   "libweston": {
-    "version": "16.0.0",
-    "source": "same-pinned-weston-source",
+    "version": "from-resolved-weston-source",
+    "source": "same-resolved-weston-source",
+    "libraryName": "libweston-<major>",
+    "includeDir": "include/libweston-<major>",
     "engine": "pixman",
-    "rendererComment": "Milestone 1 establishes the libweston dependency only. The renderer strategy for later milestones is Pixman (bring-up) then GLES/EGL (production) then Vulkan (future/optional)."
+    "rendererComment": "The renderer strategy is Pixman (bring-up) then GLES/EGL (production) then Vulkan (future/optional). libweston is the compositor core; the LinuxDroid renderer is a separate layer."
   },
-  "dependencies": {
-    "minimumRequired": [
-      "libwayland-server",
-      "libwayland-client",
-      "wayland-protocols",
-      "pixman",
-      "xkbcommon",
-      "libinput",
-      "libevdev",
-      "libdrm",
-      "libdisplay-info",
-      "libffi",
-      "wayland-scanner"
-    ],
-    "linkedByLibweston": [
-      "libwayland-server",
-      "pixman",
-      "libdrm",
-      "xkbcommon"
-    ],
-    "libffi": "libffi is required to cross-build libwayland.",
-    "waylandScanner": "wayland-scanner is a HOST tool consumed by the libweston Meson build at configure time.",
-    "policyComment": "Weston 16.0.0's meson.build unconditionally requires the above pkg-config dependencies at configure time; only the linkedByLibweston subset is linked into libweston-16.so. All are cross-built by native/weston/bootstrap-deps.sh. The full Weston desktop stack is NOT built."
-  },
+  "linkedByLibweston": [
+    "libwayland-server",
+    "pixman",
+    "libdrm",
+    "xkbcommon"
+  ],
   "disallowedDependencies": [
     "cage",
     "xfce",
     "gnome",
     "kde",
     "x11",
+    "xcb",
+    "xkbcommon-x11",
     "xwayland",
     "vnc",
     "pipewire",
+    "systemd",
+    "udev",
+    "drm-kms-backend",
     "libweston-from-another-release",
     "distro-weston"
   ],
   "versionVerification": {
-    "mechanism": "native/weston/verify-weston.sh",
-    "required": {
-      "westonVersion": "16.0.0",
-      "pinnedCommit": "d1882b0a544ae2197b597a6e39478e719bc54302"
-    }
+    "mechanism": "native/weston/fetch-weston.sh and native/weston/verify-weston.sh (per-dependency resolved commit)",
+    "note": "For InfidelRahul mirror dependencies the resolved `main` HEAD commit is the per-build reproducibility anchor (recorded + verified; a fixed SHA is intentionally NOT pinned). For official upstream dependencies the stable release + exact commit are recorded. Verification asserts the checked-out source (git HEAD) matches the recorded commit.",
+    "resolvedCommitRecord": "native/weston/src/.weston_commit (weston); other tracked InfidelRahul deps record HEAD in native/weston/deps/src/<name>/.git"
   }
 }

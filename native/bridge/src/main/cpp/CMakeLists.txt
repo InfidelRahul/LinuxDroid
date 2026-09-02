@@ -21,25 +21,28 @@ add_compile_options(
 # ---------------------------------------------------------------------------
 # libweston integration (Phase 3)
 # ---------------------------------------------------------------------------
-# The pinned libweston 16.0.0 build output (see native/weston/) is installed
-# under native/weston/dist. When it is present, the bridge compiles the real
-# libweston compositor host + the LinuxDroid custom backend and links libweston.
-# When it is absent (default checkout / CI, where libweston cannot currently be
-# built), weston_host.cpp compiles its no-libweston fallback so the app still
-# builds and the CLI/runtime remains unaffected.
+# The resolved libweston build output (see native/weston/) is installed under
+# native/weston/dist. Weston is tracked from the InfidelRahul/weston development
+# mirror main; the current mirror main produces libweston-17 (libweston_major =
+# 17). When it is present, the bridge compiles the real libweston compositor
+# host + the LinuxDroid custom backend and links libweston. When it is absent
+# (default checkout / local dev), weston_host.cpp compiles its no-libweston
+# fallback so the app still builds and the CLI/runtime remains unaffected.
 set(
     LINUXDROID_WESTON_PREFIX
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../weston/dist"
     CACHE PATH "Pinned libweston install prefix (defaults to native/weston/dist)"
 )
 
-# Weston 16 installs its public headers under <prefix>/include/libweston-16/libweston/
+# libweston installs its public headers under <prefix>/include/libweston-<major>/libweston/
 # (meson: dir_include_libweston = 'libweston-@major@', dir_include_libweston_install
-# = <that>/libweston). The top-level public header is libweston/libweston.h.
+# = <that>/libweston). The current mirror main uses major=17 (libweston-17); keep
+# 16 and the plain name as fallbacks. The top-level public header is libweston/libweston.h.
 find_path(
     LIBWESTON_INCLUDE_DIR
     NAMES libweston/libweston.h
     PATHS
+        "${LINUXDROID_WESTON_PREFIX}/include/libweston-17"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston"
         "${LINUXDROID_WESTON_PREFIX}/include"
@@ -52,6 +55,7 @@ find_path(
     LIBWESTON_BACKEND_INCLUDE_DIR
     NAMES libweston/backend.h
     PATHS
+        "${LINUXDROID_WESTON_PREFIX}/include/libweston-17"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston"
         "${LINUXDROID_WESTON_PREFIX}/include"
@@ -62,6 +66,7 @@ find_path(
     NAMES wayland-server.h
     PATHS
         "${LINUXDROID_WESTON_PREFIX}/include"
+        "${LINUXDROID_WESTON_PREFIX}/include/libweston-17"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston-16"
         "${LINUXDROID_WESTON_PREFIX}/include/libweston"
     NO_DEFAULT_PATH
@@ -78,7 +83,7 @@ find_path(
 )
 find_library(
     LIBWESTON_LIBRARY
-    NAMES libweston-16 libweston weston-16 weston
+    NAMES libweston-17 libweston-16 libweston weston-17 weston-16 weston
     PATHS "${LINUXDROID_WESTON_PREFIX}/lib"
     NO_DEFAULT_PATH
 )
@@ -104,7 +109,7 @@ option(LINUXDROID_REQUIRE_LIBWESTON "Fail the build if the real libweston path i
 if(LINUXDROID_REQUIRE_LIBWESTON AND NOT LINUXDROID_HAS_LIBWESTON)
     message(FATAL_ERROR
         "[linuxdroid] LINUXDROID_REQUIRE_LIBWESTON is set but the real libweston "
-        "16.0.0 build was NOT detected under ${LINUXDROID_WESTON_PREFIX}. The "
+        "build was NOT detected under ${LINUXDROID_WESTON_PREFIX}. The "
         "Phase 3 compositor must link the generated libweston; a fallback-only "
         "build is not a success. "
         "Build native/weston (fetch + bootstrap deps + build-libweston.sh) first.")
