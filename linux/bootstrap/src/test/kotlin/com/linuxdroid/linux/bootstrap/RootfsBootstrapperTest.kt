@@ -161,6 +161,13 @@ class RootfsBootstrapperTest {
         val aptSources = File(rootfsDir, "etc/apt/sources.list")
         assertThat(aptSources.exists()).isTrue()
         assertThat(aptSources.readText()).contains("debian")
+
+        // Verify /sbin/linuxdroid-init and /etc/linuxdroid/init.d created
+        val initFile = File(rootfsDir, "sbin/linuxdroid-init")
+        assertThat(initFile.exists()).isTrue()
+        assertThat(initFile.readText()).contains("[GUEST-INIT]")
+        assertThat(initFile.canRead()).isTrue()
+        assertThat(File(rootfsDir, "etc/linuxdroid/init.d").isDirectory).isTrue()
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.linuxdroid.core.runtime
 
+import com.linuxdroid.core.model.BootstrapPolicy
+import com.linuxdroid.core.model.ExecutionTarget
 import com.linuxdroid.core.model.RuntimeSpec
 import java.io.File
 
@@ -41,7 +43,19 @@ class ProotCommandBuilder : RuntimeCommandBuilder {
             add("-w")
             add(spec.workingDirectory.ifBlank { "/" })
 
-            // Target workload / shell
+            // Host Preboot Handover to Guest Init:
+            // When executing in GUEST target under BOOTSTRAP_USERSPACE or BOOTSTRAP_NATIVE_INIT,
+            // handover entrypoint is /sbin/linuxdroid-init
+            val guestInit = spec.guestInitPath
+            val useInit = spec.executionTarget == ExecutionTarget.GUEST &&
+                spec.bootstrapPolicy != BootstrapPolicy.BOOTSTRAP_DIRECT_EXEC &&
+                !guestInit.isNullOrBlank()
+
+            if (useInit && spec.command.firstOrNull() != guestInit) {
+                add(guestInit!!)
+            }
+
+            // Target workload / shell arguments (strictly preserved structured array)
             addAll(spec.command)
         }
     }

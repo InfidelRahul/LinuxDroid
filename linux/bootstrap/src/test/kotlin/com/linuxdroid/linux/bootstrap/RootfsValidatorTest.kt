@@ -103,6 +103,13 @@ class RootfsValidatorTest {
 
         // Apt sources
         File(rootfsDir, "etc/apt/sources.list").writeText("deb http://deb.debian.org/debian trixie main\n")
+
+        // Guest Init (/sbin/linuxdroid-init)
+        val sbin = File(rootfsDir, "sbin").apply { mkdirs() }
+        val initFile = File(sbin, "linuxdroid-init")
+        initFile.writeText("#!/bin/sh\nexec \"$@\"\n")
+        initFile.setExecutable(true, false)
+        initFile.setReadable(true, false)
     }
 
     @Test
@@ -210,5 +217,17 @@ class RootfsValidatorTest {
         val resolved = validator.resolveGuestSymlink(rootfs, "/bin/sh")
         assertThat(resolved).isNull()
     }
+
+    @Test
+    fun `validate detects missing guest init`() {
+        val rootfs = tempFolder.newFolder("no-init-rootfs")
+        populateStandardMockRootfs(rootfs, Distribution.DEBIAN)
+        File(rootfs, "sbin/linuxdroid-init").delete()
+
+        val report = validator.validate(rootfs, Distribution.DEBIAN, Architecture.ARM64)
+        assertThat(report.isValid).isFalse()
+        assertThat(report.errors.any { it.contains("guest init") }).isTrue()
+    }
 }
+
 

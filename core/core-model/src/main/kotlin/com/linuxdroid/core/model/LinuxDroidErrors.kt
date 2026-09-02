@@ -112,3 +112,33 @@ class SecurityError(
 class CommandInjectionError(
     val command: String,
 ) : LinuxDroidError("[Security] Potential command injection detected in: $command")
+
+// ─── Preboot & Guest Init ───────────────────────────────────────────────────
+
+enum class PrebootErrorCode {
+    HOST_PREBOOT_ROOTFS_INVALID,
+    HOST_PREBOOT_PROOT_MISSING,
+    HOST_PREBOOT_RUNTIME_INVALID,
+    HOST_PREBOOT_INIT_MISSING,
+    HOST_PREBOOT_INIT_NOT_EXECUTABLE,
+    PROOT_START_FAILED,
+    GUEST_INIT_FAILED,
+    GUEST_RUNTIME_SETUP_FAILED,
+    GUEST_ENVIRONMENT_SETUP_FAILED,
+    GUEST_HOOK_FAILED,
+    GUEST_WORKLOAD_EXEC_FAILED,
+}
+
+class PrebootError(
+    val code: PrebootErrorCode,
+    val environmentId: EnvironmentId? = null,
+    val detail: String,
+    cause: Throwable? = null,
+) : LinuxDroidError("[HOST-PREBOOT] ${code.name}: $detail", cause)
+
+class GuestInitError(
+    val code: PrebootErrorCode,
+    val detail: String,
+    cause: Throwable? = null,
+) : LinuxDroidError("[GUEST-INIT] ${code.name}: $detail", cause)
+

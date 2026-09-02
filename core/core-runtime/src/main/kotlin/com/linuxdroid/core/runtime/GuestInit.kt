@@ -1,0 +1,104 @@
+package com.linuxdroid.core.runtime
+
+/**
+ * Authoritative definition and installation template for `/sbin/linuxdroid-init`.
+ *
+ * This executable is the guest userspace entrypoint. It executes strictly inside
+ * the virtualized rootfs, sets up runtime directories, establishes the guest environment,
+ * triggers initialization hooks, and hands over to the requested workload via `exec`.
+ */
+object GuestInit {
+    const val GUEST_INIT_PATH = "/sbin/linuxdroid-init"
+    const val HOOKS_DIRECTORY = "/etc/linuxdroid/init.d"
+
+    val SCRIPT_CONTENT: String = """
+#!/bin/sh
+# /sbin/linuxdroid-init - LinuxDroid production guest initialization entrypoint
+set -e
+
+init_log() {
+    echo "[GUEST-INIT] §*" >&2
+}
+
+init_err() {
+    echo "[GUEST-INIT] ERROR: §*" >&2
+}
+
+# 1. Initialize guest runtime directories (idempotent, non-destructive)
+for dir in /tmp /run /run/lock /var/run; do
+    if [ ! -d "§dir" ]; then
+        mkdir -p "§dir" 2>/dev/null || true
+    fi
+done
+chmod 1777 /tmp 2>/dev/null || true
+
+# 2. Construct guest environment independently from Android host
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:§{PATH:-}"
+
+# Load guest environment from /etc/environment if present
+if [ -f /etc/environment ]; then
+    while IFS= read -r line || [ -n "§line" ]; do
+        case "§line" in
+            \#*|"") continue ;;
+            *=*) export "§line" ;;
+        esac
+    done < /etc/environment
+fi
+
+# Essential guest defaults
+export USER="§{USER:-root}"
+export LOGNAME="§{LOGNAME:-§USER}"
+if [ -z "§{HOME:-}" ]; then
+    if [ "§USER" = "root" ]; then
+        export HOME="/root"
+    elif [ -d "/home/§USER" ]; then
+        export HOME="/home/§USER"
+    else
+        export HOME="/"
+    fi
+fi
+
+if [ -z "§{SHELL:-}" ] || [ ! -x "§SHELL" ]; then
+    if [ -x /bin/bash ]; then
+        export SHELL="/bin/bash"
+    elif [ -x /usr/bin/bash ]; then
+        export SHELL="/usr/bin/bash"
+    elif [ -x /bin/sh ]; then
+        export SHELL="/bin/sh"
+    else
+        export SHELL="/usr/bin/sh"
+    fi
+fi
+
+export TERM="§{TERM:-xterm-256color}"
+export LANG="§{LANG:-C.UTF-8}"
+export LC_ALL="§{LC_ALL:-C.UTF-8}"
+export TMPDIR="/tmp"
+
+# Scrub Android host environment leakage if present
+unset ANDROID_ROOT ANDROID_DATA ANDROID_STORAGE ASEC_MOUNTPOINT BOOTCLASSPATH DEX2OATBOOTCLASSPATH EXTERNAL_STORAGE
+
+# 3. Execute guest initialization hooks in deterministic order
+HOOKS_DIR="/etc/linuxdroid/init.d"
+if [ -d "§HOOKS_DIR" ]; then
+    for hook in "§HOOKS_DIR"/*; do
+        if [ -f "§hook" ] && [ -x "§hook" ]; then
+            init_log "Executing hook: §(basename "§hook")"
+            if ! "§hook"; then
+                init_err "Hook failed: §(basename "§hook")"
+                exit 1
+            fi
+        fi
+    done
+fi
+
+# 4. Hand over to requested workload
+if [ §# -gt 0 ]; then
+    init_log "Handing over to requested workload: §1"
+    exec "§@"
+else
+    init_log "No command specified; starting default login shell: §SHELL"
+    exec "§SHELL" -l
+fi
+""".trimIndent().replace('§', '$') + "\n"
+}

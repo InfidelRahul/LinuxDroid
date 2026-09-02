@@ -163,6 +163,27 @@ class RootfsValidator(
             checks.add(ValidationCheckResult("shell_executable", true, "Resolved shell at ${activeShell?.path}"))
         }
 
+        // 3.1 Mandatory Persistent Guest Init: /sbin/linuxdroid-init
+        val guestInitFile = resolveGuestSymlink(rootfsDir, "/sbin/linuxdroid-init")
+        if (guestInitFile == null || !guestInitFile.exists()) {
+            val msg = "Mandatory guest init executable missing: /sbin/linuxdroid-init"
+            errors.add(msg)
+            checks.add(ValidationCheckResult("guest_init", false, msg))
+        } else if (!guestInitFile.canRead() || !guestInitFile.canExecute()) {
+            val msg = "Guest init /sbin/linuxdroid-init is not executable (canRead=${guestInitFile.canRead()}, canExecute=${guestInitFile.canExecute()})"
+            errors.add(msg)
+            checks.add(ValidationCheckResult("guest_init", false, msg))
+        } else {
+            val firstLine = try { guestInitFile.bufferedReader().readLine() } catch (_: Exception) { null }
+            if (firstLine?.startsWith("#!") != true) {
+                val msg = "Guest init /sbin/linuxdroid-init missing valid shebang: '$firstLine'"
+                errors.add(msg)
+                checks.add(ValidationCheckResult("guest_init", false, msg))
+            } else {
+                checks.add(ValidationCheckResult("guest_init", true, "Valid persistent guest init at ${guestInitFile.path}"))
+            }
+        }
+
         // 4. ELF & PT_INTERP Validation
         val elfBinariesToCheck = listOfNotNull(
             bashResolved ?: shResolved,

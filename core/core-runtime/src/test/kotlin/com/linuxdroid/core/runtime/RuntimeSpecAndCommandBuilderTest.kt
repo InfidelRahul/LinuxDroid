@@ -44,6 +44,7 @@ class RuntimeSpecAndCommandBuilderTest {
             "/tmp/host-tmp:/tmp",
             "-w",
             "/home/user",
+            "/sbin/linuxdroid-init",
             "/bin/sh",
             "-c",
             "echo hello"
@@ -87,6 +88,7 @@ class RuntimeSpecAndCommandBuilderTest {
             "/tmp/host-tmp:/tmp",
             "-w",
             "/",
+            "/sbin/linuxdroid-init",
             "/bin/sh",
         ).inOrder()
     }

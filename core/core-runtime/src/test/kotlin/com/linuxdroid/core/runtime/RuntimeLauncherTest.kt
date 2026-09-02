@@ -26,6 +26,7 @@ class RuntimeLauncherTest {
         architecture = Architecture.ARM64,
         workingDirectory = "/",
         command = listOf("hello"),
+        executionTarget = com.linuxdroid.core.model.ExecutionTarget.HOST,
         bindings = emptyList(),
         sharedStorageEnabled = false,
     )

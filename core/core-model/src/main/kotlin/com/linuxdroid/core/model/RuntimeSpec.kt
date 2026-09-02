@@ -15,6 +15,17 @@ data class RuntimeBinding(
 }
 
 /**
+ * Explicit target environment for command execution.
+ */
+@Serializable
+enum class ExecutionTarget {
+    /** Execute inside the virtualized Linux guest via PRoot and /sbin/linuxdroid-init. */
+    GUEST,
+    /** Execute directly on the Android host environment outside PRoot. */
+    HOST,
+}
+
+/**
  * Early userspace bootstrap handoff policy.
  */
 @Serializable
@@ -41,6 +52,8 @@ data class RuntimeSpec(
     val bindings: List<RuntimeBinding> = emptyList(),
     val command: List<String> = listOf("/bin/sh"),
     val bootstrapPolicy: BootstrapPolicy = BootstrapPolicy.BOOTSTRAP_USERSPACE,
+    val executionTarget: ExecutionTarget = ExecutionTarget.GUEST,
+    val guestInitPath: String? = DEFAULT_GUEST_INIT_PATH,
     val customProotPath: String? = null,
     val customLoaderPath: String? = null,
     val tmpDirPath: String? = null,
@@ -53,6 +66,8 @@ data class RuntimeSpec(
     }
 
     companion object {
+        const val DEFAULT_GUEST_INIT_PATH = "/sbin/linuxdroid-init"
+
         /**
          * Creates a default [RuntimeSpec] from an [Environment] domain object.
          */
@@ -64,6 +79,8 @@ data class RuntimeSpec(
             extraBindings: List<RuntimeBinding> = emptyList(),
             tmpDirPath: String? = null,
             logFilePath: String? = null,
+            executionTarget: ExecutionTarget = ExecutionTarget.GUEST,
+            guestInitPath: String? = DEFAULT_GUEST_INIT_PATH,
         ): RuntimeSpec {
             val configuredUser = environment.configuration.linuxUser.ifBlank { "root" }
             val configuredHome = environment.configuration.homeDir.ifBlank {
@@ -110,6 +127,8 @@ data class RuntimeSpec(
                 environmentVariables = envVars,
                 bindings = defaultBindings,
                 command = command,
+                executionTarget = executionTarget,
+                guestInitPath = guestInitPath,
                 customProotPath = environment.configuration.runtime.customProotPath,
                 tmpDirPath = tmpDirPath,
                 logFilePath = logFilePath,

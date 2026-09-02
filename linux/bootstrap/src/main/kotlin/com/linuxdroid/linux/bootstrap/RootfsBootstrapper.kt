@@ -153,6 +153,8 @@ class RootfsBootstrapper(
                 onLog(">>> [CONFIG] Setting hostname to /etc/hostname: linuxdroid")
                 onLog(">>> [CONFIG] Configuring environment variables (/etc/environment)")
                 onLog(">>> [CONFIG] Setting up APT package sources for ${definition.release}")
+                onLog(">>> [CONFIG] Installing persistent guest init into /sbin/linuxdroid-init")
+                onLog(">>> [CONFIG] Initializing guest hooks directory /etc/linuxdroid/init.d")
                 configureStagingRootfs(stagingDir, definition)
 
                 // 6. Deep Validation of Staging Rootfs (Structure, Binaries, Symlinks, ELF, PT_INTERP)
@@ -484,6 +486,22 @@ class RootfsBootstrapper(
         // 7. Default User and Android Mount Directories
         File(rootfsDir, "home/user").mkdirs()
         File(rootfsDir, "home/user/Android").mkdirs()
+
+        // 8. Persistent Guest Init (/sbin/linuxdroid-init) & Hooks Directory
+        val sbinDir = File(rootfsDir, "sbin").apply { mkdirs() }
+        val initFile = File(sbinDir, "linuxdroid-init")
+        try {
+            Files.deleteIfExists(initFile.toPath())
+        } catch (_: Exception) {
+            initFile.delete()
+        }
+        initFile.writeText(com.linuxdroid.core.runtime.GuestInit.SCRIPT_CONTENT)
+        initFile.setReadable(true, false)
+        initFile.setExecutable(true, false)
+        NativeBridge.setExecutable(initFile.absolutePath)
+
+        // Create guest hooks directory
+        File(rootfsDir, "etc/linuxdroid/init.d").mkdirs()
     }
 
     private suspend fun runLiveRuntimeValidation(environment: Environment, rootfsDir: File) {

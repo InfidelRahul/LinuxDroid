@@ -174,7 +174,7 @@ class ProotRuntimeBackend(
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
 
-        log.info("Executing in proot: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)")
+        log.info("[PROOT] Executing in proot: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)")
 
         val process: Process
         try {
@@ -312,7 +312,7 @@ class ProotRuntimeBackend(
             pid = handle.pid,
             masterFd = handle.masterFd,
         )
-        log.info("Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
+        log.info("[PROOT] Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
         session
     }
 
