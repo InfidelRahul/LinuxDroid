@@ -69,13 +69,27 @@ jobs:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
           DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
         run: |
+          set -o pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          native/weston/bootstrap-deps.sh
+          mkdir -p native/weston/deps
+          # Tee the full bootstrap output so the failing step's exact error is
+          # captured and can be retrieved from the uploaded artifact.
+          native/weston/bootstrap-deps.sh 2>&1 | tee native/weston/deps/bootstrap-log.txt
+          exit "${PIPESTATUS[0]}"
 
       - name: Verify tracked InfidelRahul dependency commits (after bootstrap)
         env:
           DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
         run: native/weston/verify-weston.sh --strict-source --strict-deps
+
+      - name: Upload bootstrap diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-log.txt
+          if-no-files-found: warn
+          retention-days: 7
+          path: native/weston/deps/bootstrap-log.txt
 
       - name: Build libweston for arm64-v8a / API 36+ (mirror main)
         env:
