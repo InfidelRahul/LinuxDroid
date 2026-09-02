@@ -16,7 +16,7 @@ SCRIPT_NAME="$(basename "$0")"
 LINUXDROID_DIR="${1:-${LINUXDROID_DIR:-$(pwd)}}"
 PROOT_DIR="${2:-${LINUXDROID_PROOT_DIR:-$(cd "$LINUXDROID_DIR/../LinuxDroid_proot" 2>/dev/null && pwd || true)}}"
 ANDROID_API="${ANDROID_API:-36}"
-NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-/home/codespace/Android/Sdk/ndk/29.0.14206865}}"
+export NDK_ROOT="${NDK_ROOT:-${ANDROID_NDK_ROOT:-/home/codespace/Android/Sdk/ndk/29.0.14206865}}"
 
 die() { echo "[$SCRIPT_NAME] ERROR: $*" >&2; exit 1; }
 info() { echo "[$SCRIPT_NAME] $*"; }
