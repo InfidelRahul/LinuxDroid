@@ -343,10 +343,20 @@ build_host_wayland_scanner() {
     local d="$SRC_DIR/wayland" hp="$WORK_DIR/host-wayland" hb="$WORK_DIR/host-wayland-build"
     rm -rf "$hb" "$hp"; mkdir -p "$hb"
     log "Building HOST wayland-scanner (native)"
+    # This is a HOST (native) build: the cross-build's PKG_CONFIG_SYSROOT_DIR
+    # must NOT be applied, or it would re-prefix the host expat include/lib
+    # paths with the target sysroot and the build would fail to find expat.h.
+    local saved_sysroot="${PKG_CONFIG_SYSROOT_DIR:-unset_sentinel}"
+    unset PKG_CONFIG_SYSROOT_DIR
+    local rc=0
     meson setup "$hb" "$d" \
         "--prefix=$hp" "--buildtype=release" \
         "-Dlibraries=false" "-Ddocumentation=false" "-Dtests=false" \
-        "-Ddtd_validation=false" || die "host wayland-scanner meson setup failed."
+        "-Ddtd_validation=false" || rc=1
+    if [[ "$saved_sysroot" != "unset_sentinel" ]]; then
+        export PKG_CONFIG_SYSROOT_DIR="$saved_sysroot"
+    fi
+    [[ "$rc" -eq 0 ]] || die "host wayland-scanner meson setup failed."
     ninja -C "$hb" || die "host wayland-scanner build failed."
     DESTDIR= ninja -C "$hb" install || die "host wayland-scanner install failed."
     mkdir -p "$DEP_SYSROOT/bin" "$DEP_SYSROOT/lib/pkgconfig"
