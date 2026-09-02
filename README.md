@@ -67,8 +67,8 @@ Unlike traditional solutions that depend on root access, QEMU/KVM virtual machin
 | :--- | :--- |
 | **Minimum Android Version** | Android 9.0 (API level 28) |
 | **Target Android Version** | Android 16 / 17 (API level 36) |
-| **Supported Architectures** | `arm64-v8a` (Primary), `x86_64` |
-| **Default Distribution** | Debian 12 (Bookworm) / Ubuntu 24.04 LTS (Noble Numbat) |
+| **Supported Architectures** | `arm64-v8a` (ARM64 / AArch64) |
+| **Default Distribution** | Debian 13 (Trixie) / Ubuntu 24.04 LTS (Noble Numbat) |
 | **Runtime Engine** | PRoot v5.4.0 (Hardened with Bionic Ptrace & Tagged Pointer normalization) |
 | **Display Architecture** | Wayland Native Protocol (`wl_compositor`, `wl_shm`), XWayland for legacy X11 |
 | **Build Toolchain** | Java 17/21 • Gradle 9.7.1 • AGP 9.3.2 • Kotlin 2.3.20 • NDK r29 |

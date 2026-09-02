@@ -644,7 +644,7 @@ private fun CreateEnvironmentDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(Architecture.ARM64, Architecture.X86_64).forEach { arch ->
+                        listOf(Architecture.ARM64).forEach { arch ->
                             val isSelected = selectedArch == arch
                             NeuButton(
                                 onClick = { selectedArch = arch },

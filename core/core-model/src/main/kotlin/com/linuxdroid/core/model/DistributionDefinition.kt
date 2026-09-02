@@ -67,11 +67,8 @@ object DistributionCatalog {
         getDefinition(Distribution.KALI, Architecture.ARM64),
     )
 
-    fun getDefinition(distribution: Distribution, architecture: Architecture): DistributionDefinition {
-        val archSuffix = when (architecture) {
-            Architecture.ARM64 -> "arm64"
-            Architecture.X86_64 -> "amd64"
-        }
+    fun getDefinition(distribution: Distribution, architecture: Architecture = Architecture.ARM64): DistributionDefinition {
+        val archSuffix = "arm64"
 
         return when (distribution) {
             Distribution.DEBIAN -> {
@@ -83,16 +80,8 @@ object DistributionCatalog {
                     release = "trixie",
                     variant = "minimal",
                     source = DistributionSource(
-                        url = if (architecture == Architecture.ARM64) {
-                            "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260831_05:24/rootfs.tar.xz"
-                        } else {
-                            "https://images.linuxcontainers.org/images/debian/trixie/amd64/default/20260831_05:24/rootfs.tar.xz"
-                        },
-                        expectedChecksum = if (architecture == Architecture.ARM64) {
-                            "1767187c73bf4f84376d2a48741efdf6bd2ca6c22295c1f1ab5934003de0cab4"
-                        } else {
-                            null
-                        },
+                        url = "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260831_05:24/rootfs.tar.xz",
+                        expectedChecksum = "1767187c73bf4f84376d2a48741efdf6bd2ca6c22295c1f1ab5934003de0cab4",
                         checksumAlgorithm = "SHA-256",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
@@ -120,16 +109,8 @@ object DistributionCatalog {
                     release = "noble",
                     variant = "minimal",
                     source = DistributionSource(
-                        url = if (architecture == Architecture.ARM64) {
-                            "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz"
-                        } else {
-                            "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-amd64.tar.gz"
-                        },
-                        expectedChecksum = if (architecture == Architecture.ARM64) {
-                            "04207713ece899c3740823d33690441ad3a7f0ded1101aca744e2b0f37ac7ff2"
-                        } else {
-                            null
-                        },
+                        url = "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.4-base-arm64.tar.gz",
+                        expectedChecksum = "04207713ece899c3740823d33690441ad3a7f0ded1101aca744e2b0f37ac7ff2",
                         checksumAlgorithm = "SHA-256",
                         format = ArchiveFormat.TAR_GZ,
                         stripComponents = 0,
@@ -157,16 +138,8 @@ object DistributionCatalog {
                     release = "kali-rolling",
                     variant = "minimal",
                     source = DistributionSource(
-                        url = if (architecture == Architecture.ARM64) {
-                            "https://images.linuxcontainers.org/images/kali/current/arm64/default/20260830_17:14/rootfs.tar.xz"
-                        } else {
-                            "https://images.linuxcontainers.org/images/kali/current/amd64/default/20260830_17:14/rootfs.tar.xz"
-                        },
-                        expectedChecksum = if (architecture == Architecture.ARM64) {
-                            "90ee4cd49f0ff6a4b6b62ad9144223246b403456f52d1180912bb29f25b00dcd"
-                        } else {
-                            null
-                        },
+                        url = "https://images.linuxcontainers.org/images/kali/current/arm64/default/20260830_17:14/rootfs.tar.xz",
+                        expectedChecksum = "90ee4cd49f0ff6a4b6b62ad9144223246b403456f52d1180912bb29f25b00dcd",
                         checksumAlgorithm = "SHA-256",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
@@ -192,7 +165,7 @@ object DistributionCatalog {
                     release = "rolling",
                     variant = "minimal",
                     source = DistributionSource(
-                        url = "https://images.linuxcontainers.org/images/archlinux/current/${if (architecture == Architecture.ARM64) "arm64" else "amd64"}/default/rootfs.tar.xz",
+                        url = "https://images.linuxcontainers.org/images/archlinux/current/arm64/default/rootfs.tar.xz",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
                     ),
@@ -213,7 +186,7 @@ object DistributionCatalog {
                     release = "v3.20",
                     variant = "minimal",
                     source = DistributionSource(
-                        url = "https://images.linuxcontainers.org/images/alpine/3.20/${if (architecture == Architecture.ARM64) "arm64" else "amd64"}/default/rootfs.tar.xz",
+                        url = "https://images.linuxcontainers.org/images/alpine/3.20/arm64/default/rootfs.tar.xz",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
                     ),

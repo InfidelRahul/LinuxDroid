@@ -23,9 +23,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // ABI filter: arm64-v8a primary, x86_64 for emulator
+        // ABI filter: arm64-v8a primary target
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 

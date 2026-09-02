@@ -122,14 +122,10 @@ enum class Distribution(val displayName: String, val packageManager: String) {
  */
 @Serializable
 enum class Architecture(val abiName: String, val linuxArch: String) {
-    ARM64("arm64-v8a", "aarch64"),
-    X86_64("x86_64", "x86_64");
+    ARM64("arm64-v8a", "aarch64");
 
     companion object {
-        fun current(): Architecture {
-            val abi = System.getProperty("os.arch") ?: ""
-            return if (abi.contains("aarch64") || abi.contains("arm64")) ARM64 else X86_64
-        }
+        fun current(): Architecture = ARM64
     }
 }
 

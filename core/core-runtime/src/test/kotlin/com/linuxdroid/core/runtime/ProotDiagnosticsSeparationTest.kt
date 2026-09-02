@@ -44,7 +44,7 @@ class ProotDiagnosticsSeparationTest {
                 id = envId,
                 name = "Test Env",
                 distribution = Distribution.DEBIAN,
-                architecture = Architecture.X86_64,
+                architecture = Architecture.ARM64,
             ),
             rootfsPath = "/test/rootfs",
             metadataPath = "/test/metadata",

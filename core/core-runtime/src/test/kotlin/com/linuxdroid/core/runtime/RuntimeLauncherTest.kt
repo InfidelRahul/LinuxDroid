@@ -23,7 +23,7 @@ class RuntimeLauncherTest {
     private fun guestEchoSpec(echo: File): RuntimeSpec = RuntimeSpec(
         environmentId = EnvironmentId("launcher-test"),
         rootfsPath = echo.parentFile?.absolutePath ?: "/",
-        architecture = Architecture.X86_64,
+        architecture = Architecture.ARM64,
         workingDirectory = "/",
         command = listOf("hello"),
         bindings = emptyList(),

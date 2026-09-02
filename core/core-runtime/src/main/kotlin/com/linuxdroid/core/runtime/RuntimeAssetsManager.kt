@@ -101,9 +101,9 @@ class RuntimeAssetsManager(
      */
     fun resolveAbi(): String {
         val supported = android.os.Build.SUPPORTED_ABIS.toList()
-        val abi = supported.firstOrNull { it in setOf("arm64-v8a", "x86_64") }
+        val abi = supported.firstOrNull { it in setOf("arm64-v8a") }
             ?: throw RuntimeError(
-                message = "Unsupported device ABI: $supported (supported: arm64-v8a, x86_64)",
+                message = "Unsupported device ABI: $supported (supported: arm64-v8a)",
             )
         return abi
     }
