@@ -72,9 +72,10 @@ jobs:
           set -o pipefail
           export PATH="$HOME/.local/bin:$PATH"
           mkdir -p native/weston/deps
-          # Tee the full bootstrap output so the failing step's exact error is
-          # captured and can be retrieved from the uploaded artifact.
-          native/weston/bootstrap-deps.sh 2>&1 | tee native/weston/deps/bootstrap-log.txt
+          # Tee the full bootstrap output to an artifact; show only the last 120
+          # lines in the step log so the failing sub-build's error is not
+          # truncated away.
+          native/weston/bootstrap-deps.sh 2>&1 | tee native/weston/deps/bootstrap-log.txt | tail -120
           exit "${PIPESTATUS[0]}"
 
       - name: Verify tracked InfidelRahul dependency commits (after bootstrap)
