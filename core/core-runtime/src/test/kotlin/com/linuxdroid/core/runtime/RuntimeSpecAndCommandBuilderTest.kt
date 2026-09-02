@@ -196,6 +196,7 @@ class RuntimeSpecAndCommandBuilderTest {
             "/data/user/0/com.linuxdroid/cache/tmp:/tmp",
             "-w",
             "/home/user",
+            "/sbin/linuxdroid-init",
             "/bin/bash",
             "-l",
         ).inOrder()

@@ -186,3 +186,4 @@ class HostPrebootTest {
         assertThat(argsAfterInit).containsExactly("apt", "install", "nano with space", "param=1").inOrder()
     }
 }
+
