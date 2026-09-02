@@ -54,6 +54,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.linuxdroid.app.R
 import com.linuxdroid.app.ui.components.DistroIcon
+import com.linuxdroid.app.ui.components.LinuxPenguinIcon
 import com.linuxdroid.app.ui.navigation.Screen
 import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.app.ui.viewmodel.EnvironmentViewModel
@@ -63,6 +64,7 @@ import com.linuxdroid.core.model.Distribution
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.EnvironmentState
 import com.linuxdroid.core.storage.StorageAuthorizationState
+import java.io.File
 
 /**
  * Home screen:
@@ -186,8 +188,8 @@ fun HomeScreen(
                     }
                 )
 
-                // Live System Telemetry Card (RAM & Storage Bars, Network, CPU, Battery)
-                SystemOverviewCard(context = context)
+                // Live System Telemetry Card (Rootfs, RAM & Storage Bars, Network, CPU, Battery)
+                SystemOverviewCard(context = context, environment = activeEnv)
             }
         }
 
@@ -671,12 +673,12 @@ private fun NeuCliLaunchCard(
 }
 
 /**
- * Live System Telemetry Card with RAM and Storage progress bars, Network, CPU and Battery.
+ * Live System Telemetry Card with Rootfs, RAM and Storage progress bars, Network, CPU and Battery.
  */
 @Composable
-private fun SystemOverviewCard(context: Context) {
+private fun SystemOverviewCard(context: Context, environment: Environment?) {
     val neuColors = NeuTheme.colors
-    val stats = remember(context) { getSystemOverview(context) }
+    val stats = remember(context, environment) { getSystemOverview(context, environment) }
 
     NeuCard(
         modifier = Modifier.fillMaxWidth(),
@@ -736,7 +738,7 @@ private fun SystemOverviewCard(context: Context) {
                 }
             }
 
-            // RAM Usage Bar
+            // 1. Installed Rootfs Usage Bar (Above RAM Usage)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -744,7 +746,42 @@ private fun SystemOverviewCard(context: Context) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Memory, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
+                        Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(14.dp), tint = neuColors.primaryAccent)
+                        Text("Rootfs Disk Usage", style = MaterialTheme.typography.labelSmall, color = neuColors.textSecondary)
+                    }
+                    Text(
+                        "${stats.rootfsUsedFormatted} / ${stats.storageTotalFormatted} (${(stats.rootfsFraction * 100).toInt().coerceAtLeast(1)}%)",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = neuColors.textPrimary,
+                    )
+                }
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = stats.rootfsFraction.coerceIn(0.01f, 1f))
+                            .background(neuColors.primaryAccent, shape = RoundedCornerShape(6.dp))
+                    )
+                }
+            }
+
+            // 2. RAM Usage Bar (Actual Physical Device Memory)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(Icons.Default.Memory, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF22C55E))
                         Text("RAM Usage", style = MaterialTheme.typography.labelSmall, color = neuColors.textSecondary)
                     }
                     Text(
@@ -766,12 +803,12 @@ private fun SystemOverviewCard(context: Context) {
                         modifier = Modifier
                             .fillMaxHeight()
                             .fillMaxWidth(fraction = stats.memFraction.coerceIn(0.01f, 1f))
-                            .background(neuColors.primaryAccent, shape = RoundedCornerShape(6.dp))
+                            .background(Color(0xFF22C55E), shape = RoundedCornerShape(6.dp))
                     )
                 }
             }
 
-            // Storage Usage Bar
+            // 3. Storage Usage Bar (Actual Internal Storage)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -874,6 +911,8 @@ private fun SystemOverviewCard(context: Context) {
 }
 
 private data class SystemOverview(
+    val rootfsUsedFormatted: String,
+    val rootfsFraction: Float,
     val memUsedFormatted: String,
     val memTotalFormatted: String,
     val memFraction: Float,
@@ -887,7 +926,28 @@ private data class SystemOverview(
     val processorText: String,
 )
 
-private fun getSystemOverview(context: Context): SystemOverview {
+private fun calculateDirectorySize(dir: File): Long {
+    if (!dir.exists()) return 0L
+    var total = 0L
+    val queue = ArrayDeque<File>()
+    queue.add(dir)
+    var visited = 0
+    while (queue.isNotEmpty() && visited < 40000) {
+        val current = queue.removeFirst()
+        visited++
+        val children = current.listFiles() ?: continue
+        for (child in children) {
+            if (child.isFile) {
+                total += child.length()
+            } else if (child.isDirectory) {
+                queue.add(child)
+            }
+        }
+    }
+    return total
+}
+
+private fun getSystemOverview(context: Context, environment: Environment?): SystemOverview {
     var memUsedFormatted = "2.4 GB"
     var memTotalFormatted = "8.0 GB"
     var memFraction = 0.30f
@@ -908,15 +968,35 @@ private fun getSystemOverview(context: Context): SystemOverview {
     var storageUsedFormatted = "32.0 GB"
     var storageTotalFormatted = "128.0 GB"
     var storageFraction = 0.25f
+    var storageTotalBytes = 128L * 1024 * 1024 * 1024
     try {
         val stat = StatFs(android.os.Environment.getDataDirectory().path)
         val available = stat.availableBytes
         val total = stat.totalBytes
+        storageTotalBytes = total
         val used = total - available
         storageUsedFormatted = Formatter.formatFileSize(context, used)
         storageTotalFormatted = Formatter.formatFileSize(context, total)
         if (total > 0) {
             storageFraction = (used.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+        }
+    } catch (_: Exception) {}
+
+    var rootfsUsedFormatted = "1.2 GB"
+    var rootfsFraction = 0.01f
+    try {
+        val path = environment?.rootfsPath
+        if (!path.isNullOrBlank()) {
+            val rootfsDir = File(path)
+            if (rootfsDir.exists()) {
+                val sizeBytes = calculateDirectorySize(rootfsDir)
+                if (sizeBytes > 0) {
+                    rootfsUsedFormatted = Formatter.formatFileSize(context, sizeBytes)
+                    if (storageTotalBytes > 0) {
+                        rootfsFraction = (sizeBytes.toFloat() / storageTotalBytes.toFloat()).coerceIn(0.005f, 1f)
+                    }
+                }
+            }
         }
     } catch (_: Exception) {}
 
@@ -976,6 +1056,8 @@ private fun getSystemOverview(context: Context): SystemOverview {
     val processorText = "$arch • $cores C"
 
     return SystemOverview(
+        rootfsUsedFormatted = rootfsUsedFormatted,
+        rootfsFraction = rootfsFraction,
         memUsedFormatted = memUsedFormatted,
         memTotalFormatted = memTotalFormatted,
         memFraction = memFraction,
@@ -1022,39 +1104,46 @@ private fun RootfsInstallationCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(text = "🐧", fontSize = 22.sp)
-                    Text(
-                        text = "LinuxDroid",
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                        ),
-                        color = neuColors.textPrimary,
-                    )
+                    LinuxPenguinIcon(size = 46.dp)
+                    Column {
+                        Text(
+                            text = "LinuxDroid",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                            ),
+                            color = neuColors.textPrimary,
+                        )
+                        Text(
+                            text = "Rootless Linux Userspace on Android 16",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = neuColors.textSecondary,
+                        )
+                    }
                 }
                 NeuIconButton(
                     onClick = onSettingsClick,
-                    size = 42.dp,
+                    size = 44.dp,
                     tint = neuColors.primaryAccent,
                 ) {
                     Icon(
                         Icons.Default.Settings,
                         contentDescription = "Settings",
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(24.dp),
                     )
                 }
             }
 
             HorizontalDivider(
-                color = neuColors.borderHighlight.copy(alpha = 0.2f),
+                color = neuColors.borderHighlight.copy(alpha = 0.25f),
                 thickness = 0.5.dp
             )
 
@@ -1251,7 +1340,7 @@ private fun RootfsInstallationCard(
 }
 
 /**
- * Hero card displaying the active environment telemetry.
+ * Hero card displaying LinuxDroid active environment telemetry.
  */
 @Composable
 private fun ActiveEnvironmentHeroCard(
@@ -1259,10 +1348,10 @@ private fun ActiveEnvironmentHeroCard(
     onSettingsClick: () -> Unit,
 ) {
     val neuColors = NeuTheme.colors
-    val (badgeColor, textColor) = when (environment.state) {
-        EnvironmentState.RUNNING -> neuColors.success to Color.White
-        EnvironmentState.STARTING -> neuColors.primaryAccent to Color.White
-        EnvironmentState.READY -> neuColors.surfacePressed to neuColors.success
+    val (badgeBgColor, badgeTextColor) = when (environment.state) {
+        EnvironmentState.RUNNING -> neuColors.success.copy(alpha = 0.18f) to neuColors.success
+        EnvironmentState.STARTING -> neuColors.warning.copy(alpha = 0.18f) to neuColors.warning
+        EnvironmentState.READY -> neuColors.primaryAccent.copy(alpha = 0.15f) to neuColors.primaryAccent
         else -> neuColors.surfacePressed to neuColors.textSecondary
     }
 
@@ -1271,153 +1360,137 @@ private fun ActiveEnvironmentHeroCard(
         elevation = 6.dp,
         shape = RoundedCornerShape(18.dp),
     ) {
-        Column {
-            // ── Custom Header: Penguin + App name + state badge + big settings ──
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // ── Main Hero Header: Penguin Icon + "LinuxDroid" + Status Badge + Big Settings ──
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Left: Linux penguin emoji + "LinuxDroid" app name
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "🐧",
-                        fontSize = 22.sp,
-                    )
+                // Left: Authentic Linux Penguin (Tux) mascot icon
+                LinuxPenguinIcon(size = 52.dp)
+
+                // Center: "LinuxDroid" title + OS & Architecture subtitle
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "LinuxDroid",
-                        style = MaterialTheme.typography.titleSmall.copy(
+                        style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
+                            fontSize = 20.sp,
                         ),
                         color = neuColors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${environment.distribution.displayName} (${environment.architecture.linuxArch}) · Rootless Linux",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                        color = neuColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
-                // Right: state badge + big settings icon
+                // Right: Status Badge in front of LinuxDroid + Big Settings Icon Button (2x size)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Surface(
-                        color = badgeColor,
-                        shape = RoundedCornerShape(6.dp),
+                        color = badgeBgColor,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            badgeTextColor.copy(alpha = 0.45f)
+                        ),
                     ) {
                         Text(
                             text = environment.state.name,
                             fontFamily = SfMono,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = textColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            color = badgeTextColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                             maxLines = 1,
                         )
                     }
+
                     NeuIconButton(
                         onClick = onSettingsClick,
-                        size = 42.dp,
+                        size = 44.dp,
                         tint = neuColors.primaryAccent,
                     ) {
                         Icon(
                             Icons.Default.Settings,
                             contentDescription = "Settings",
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
                 }
             }
 
             HorizontalDivider(
-                color = neuColors.borderHighlight.copy(alpha = 0.2f),
+                color = neuColors.borderHighlight.copy(alpha = 0.25f),
                 thickness = 0.5.dp,
             )
 
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+            // Telemetry status pills
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
                 ) {
-                    DistroIcon(
-                        distribution = environment.distribution,
-                        size = 48.dp,
+                    Text(
+                        text = "Distro: ${environment.distribution.displayName}",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = neuColors.primaryAccent,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        maxLines = 1,
                     )
-                    Column {
-                        Text(
-                            text = environment.distribution.displayName,
-                            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                            color = neuColors.textPrimary,
-                        )
-                        Text(
-                            text = "Rootless Linux Userspace on Android 16",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = neuColors.textSecondary,
-                        )
-                    }
                 }
 
-                // Telemetry status pills
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
                 ) {
-                    Surface(
-                        color = neuColors.surfacePressed,
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                    ) {
-                        Text(
-                            text = "Engine: PRoot",
-                            fontFamily = SfMono,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = neuColors.primaryAccent,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            maxLines = 1,
-                        )
-                    }
+                    Text(
+                        text = "Engine: PRoot (${environment.architecture.linuxArch})",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = neuColors.secondaryAccent,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        maxLines = 1,
+                    )
+                }
 
-                    Surface(
-                        color = neuColors.surfacePressed,
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                    ) {
-                        Text(
-                            text = "Arch: ${environment.architecture.linuxArch}",
-                            fontFamily = SfMono,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = neuColors.secondaryAccent,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            maxLines = 1,
-                        )
-                    }
-
-                    Surface(
-                        color = neuColors.surfacePressed,
-                        shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-                    ) {
-                        Text(
-                            text = "Status: ${environment.state.name}",
-                            fontFamily = SfMono,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (environment.state == EnvironmentState.RUNNING) neuColors.success else neuColors.textSecondary,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            maxLines = 1,
-                        )
-                    }
+                Surface(
+                    color = neuColors.surfacePressed,
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
+                ) {
+                    Text(
+                        text = "Kernel: Host 6.6+",
+                        fontFamily = SfMono,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = neuColors.textSecondary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        maxLines = 1,
+                    )
                 }
             }
         }

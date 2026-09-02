@@ -183,7 +183,7 @@ private fun DrawScope.drawAlpineLogo(color: Color, width: Float, height: Float) 
         lineTo(cx - width * 0.42f, cy + height * 0.38f)
         close()
     }
-    drawPath(path = path1, color = color)
+    drawPath(path1, color = color)
     val snowPath = Path().apply {
         moveTo(cx - width * 0.05f, cy - height * 0.38f)
         lineTo(cx + width * 0.12f, cy - height * 0.08f)
@@ -193,5 +193,93 @@ private fun DrawScope.drawAlpineLogo(color: Color, width: Float, height: Float) 
         close()
     }
     drawPath(path = snowPath, color = Color.White)
+}
+
+/**
+ * Authentic Linux Penguin (Tux) mascot icon box.
+ */
+@Composable
+fun LinuxPenguinIcon(
+    modifier: Modifier = Modifier,
+    size: Dp = 52.dp,
+) {
+    val neuColors = NeuTheme.colors
+    Surface(
+        modifier = modifier.size(size),
+        shape = RoundedCornerShape(14.dp),
+        color = neuColors.surfacePressed,
+        border = androidx.compose.foundation.BorderStroke(1.dp, neuColors.primaryAccent.copy(alpha = 0.45f)),
+        shadowElevation = 2.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Canvas(modifier = Modifier.size(size * 0.70f)) {
+                val canvasWidth = size.toPx() * 0.70f
+                val canvasHeight = size.toPx() * 0.70f
+                drawLinuxPenguinLogo(canvasWidth, canvasHeight)
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawLinuxPenguinLogo(width: Float, height: Float) {
+    val cx = width / 2f
+    val cy = height / 2f
+
+    // 1. Black Body (Outer Tux silhouette)
+    drawOval(
+        color = Color(0xFF1E293B),
+        topLeft = Offset(cx - width * 0.38f, cy - height * 0.42f),
+        size = Size(width * 0.76f, height * 0.86f)
+    )
+
+    // 2. White Belly
+    drawOval(
+        color = Color(0xFFF8FAFC),
+        topLeft = Offset(cx - width * 0.25f, cy - height * 0.18f),
+        size = Size(width * 0.50f, height * 0.58f)
+    )
+
+    // 3. Eyes (White base + Dark pupils)
+    drawOval(
+        color = Color.White,
+        topLeft = Offset(cx - width * 0.20f, cy - height * 0.32f),
+        size = Size(width * 0.16f, height * 0.18f)
+    )
+    drawOval(
+        color = Color.White,
+        topLeft = Offset(cx + width * 0.04f, cy - height * 0.32f),
+        size = Size(width * 0.16f, height * 0.18f)
+    )
+    drawCircle(
+        color = Color(0xFF0F172A),
+        radius = width * 0.04f,
+        center = Offset(cx - width * 0.11f, cy - height * 0.24f)
+    )
+    drawCircle(
+        color = Color(0xFF0F172A),
+        radius = width * 0.04f,
+        center = Offset(cx + width * 0.11f, cy - height * 0.24f)
+    )
+
+    // 4. Golden Beak
+    val beakPath = Path().apply {
+        moveTo(cx - width * 0.14f, cy - height * 0.16f)
+        lineTo(cx + width * 0.14f, cy - height * 0.16f)
+        lineTo(cx, cy - height * 0.02f)
+        close()
+    }
+    drawPath(path = beakPath, color = Color(0xFFF59E0B))
+
+    // 5. Golden Feet
+    drawOval(
+        color = Color(0xFFF59E0B),
+        topLeft = Offset(cx - width * 0.35f, cy + height * 0.32f),
+        size = Size(width * 0.30f, height * 0.14f)
+    )
+    drawOval(
+        color = Color(0xFFF59E0B),
+        topLeft = Offset(cx + width * 0.05f, cy + height * 0.32f),
+        size = Size(width * 0.30f, height * 0.14f)
+    )
 }
 
