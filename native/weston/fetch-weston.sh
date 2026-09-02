@@ -33,7 +33,10 @@ EXPECTED_SHA256=dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f
 
 # Official release archive URL. This is the authoritative upstream source.
 # Distro-provided Weston is NEVER used as a substitute for the pinned build.
-WESTON_ARCHIVE_URL="https://gitlab.freedesktop.org/wayland/weston/-/archive/16.0.0/weston-16.0.0.tar.gz"
+# Note: GitLab's *generated* .tar.gz of the tag (the /-/archive/ path) has a
+# DIFFERENT SHA-256 than the official release .tar.xz; we pin the official
+# release artifact so the SHA-256 anchor matches the released file.
+WESTON_ARCHIVE_URL="https://gitlab.freedesktop.org/wayland/weston/-/releases/16.0.0/downloads/weston-16.0.0.tar.xz"
 
 log() { printf '[weston] %s\n' "$*"; }
 die() { printf '[weston] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -68,7 +71,7 @@ fi
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
-ARCHIVE="$WORK_DIR/weston-16.0.0.tar.gz"
+ARCHIVE="$WORK_DIR/weston-16.0.0.tar.xz"
 log "Downloading Weston from upstream (not distro): $WESTON_ARCHIVE_URL"
 if ! curl -fsSL --retry 3 "$WESTON_ARCHIVE_URL" -o "$ARCHIVE"; then
     die "Unable to download Weston source. Network access to the upstream host is required; no distro package is used as a fallback."
@@ -84,7 +87,7 @@ log "Archive SHA-256 verified: $ACTUAL_SHA256"
 log "Extracting source into $SRC_DIR"
 rm -rf "$SRC_DIR"
 mkdir -p "$SRC_DIR"
-tar -xzf "$ARCHIVE" -C "$WORK_DIR"
+tar -xJf "$ARCHIVE" -C "$WORK_DIR"
 # The tarball contains a single top-level directory (e.g. weston-16.0.0).
 extracted_dir="$(find "$WORK_DIR" -maxdepth 1 -type d -name 'weston-*' | head -1)"
 [[ -n "$extracted_dir" ]] || die "Could not locate extracted Weston source directory."

@@ -19,8 +19,10 @@
     "version": "16.0.0",
     "commit": "d1882b0a544ae2197b597a6e39478e719bc54302",
     "archive": {
-      "source": "https://gitlab.freedesktop.org/wayland/weston/-/archive/16.0.0/weston-16.0.0.tar.gz",
-      "sha256": "dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f"
+      "source": "https://gitlab.freedesktop.org/wayland/weston/-/releases/16.0.0/downloads/weston-16.0.0.tar.xz",
+      "sha256": "dfb32e2bccabda957b94a8d0ec6075acd18c71c87ebc543ee3e618d294ca0f7f",
+      "archiveFormat": "tar.xz",
+      "note": "The pinned SHA-256 is the official Weston-release tar.xz digest, NOT GitLab's auto-generated tag archive (which is .tar.gz with a different digest)."
     }
   },
   "libweston": {
