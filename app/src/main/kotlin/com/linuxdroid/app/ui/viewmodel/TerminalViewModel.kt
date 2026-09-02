@@ -81,22 +81,24 @@ class TerminalViewModel @Inject constructor(
                 // Ensure runtime backend is prepared and started
                 if (env.state != EnvironmentState.RUNNING) {
                     terminalBuffer.append("Starting Linux runtime…\r\n".toByteArray(), "Starting Linux runtime…\r\n".length)
-                    val readyEnv = if (env.state == EnvironmentState.FAILED) {
-                        dao.updateState(
-                            id = env.id.value,
-                            state = EnvironmentState.RECOVERING.name,
-                            timestamp = System.currentTimeMillis(),
-                            failureMessage = null,
-                        )
-                        dao.updateState(
-                            id = env.id.value,
-                            state = EnvironmentState.READY.name,
-                            timestamp = System.currentTimeMillis(),
-                            failureMessage = null,
-                        )
-                        env.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
-                    } else {
-                        env
+                    val readyEnv = when (env.state) {
+                        EnvironmentState.FAILED -> {
+                            dao.updateState(
+                                id = env.id.value,
+                                state = EnvironmentState.RECOVERING.name,
+                                timestamp = System.currentTimeMillis(),
+                                failureMessage = null,
+                            )
+                            dao.updateState(
+                                id = env.id.value,
+                                state = EnvironmentState.READY.name,
+                                timestamp = System.currentTimeMillis(),
+                                failureMessage = null,
+                            )
+                            env.withState(EnvironmentState.RECOVERING).withState(EnvironmentState.READY)
+                        }
+                        EnvironmentState.STARTING -> env.withState(EnvironmentState.READY)
+                        else -> env
                     }
                     runtimeBackend.prepare(readyEnv)
                     runtimeBackend.initialize(readyEnv)

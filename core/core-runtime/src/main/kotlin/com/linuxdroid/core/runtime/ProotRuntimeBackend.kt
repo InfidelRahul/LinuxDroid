@@ -114,7 +114,7 @@ class ProotRuntimeBackend(
 
     override suspend fun start(environment: Environment) = withContext(Dispatchers.IO) {
         log.info("Starting proot runtime for ${environment.id}")
-        if (!environment.state.canStart()) {
+        if (!environment.state.canStart() && environment.state != EnvironmentState.STARTING) {
             throw RuntimeNotReadyError(environment.id, environment.state)
         }
         val binary = ensureProotBinary()
