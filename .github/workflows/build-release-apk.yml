@@ -69,14 +69,19 @@ jobs:
           ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
           DEP_SYSROOT: ${{ github.workspace }}/native/weston/deps/sysroot
         run: |
-          set -o pipefail
           export PATH="$HOME/.local/bin:$PATH"
           mkdir -p native/weston/deps
-          # Tee the full bootstrap output to an artifact; show only the last 120
-          # lines in the step log so the failing sub-build's error is not
-          # truncated away.
-          native/weston/bootstrap-deps.sh 2>&1 | tee native/weston/deps/bootstrap-log.txt | tail -120
-          exit "${PIPESTATUS[0]}"
+          # Silence the verbose build; capture the full output to a file and, on
+          # failure, emit only the compact tail so the step log is not truncated
+          # and the exact error is visible. The full log is uploaded separately.
+          if native/weston/bootstrap-deps.sh > native/weston/deps/bootstrap-log.txt 2>&1; then
+            echo "== bootstrap-deps.sh: OK =="
+          else
+            rc=$?
+            echo "== bootstrap-deps.sh FAILED (exit $rc) =="
+            tail -150 native/weston/deps/bootstrap-log.txt
+            exit "$rc"
+          fi
 
       - name: Verify tracked InfidelRahul dependency commits (after bootstrap)
         env:
