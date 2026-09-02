@@ -29,3 +29,7 @@ signing.properties
 
 # NDK generated
 .cxx/
+
+# Helper build scripts
+linuxdroid.sh
+linuxdroid_proot.sh
