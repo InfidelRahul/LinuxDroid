@@ -85,6 +85,19 @@ AR="$TOOLCHAIN/llvm-ar"
 RANLIB="$TOOLCHAIN/llvm-ranlib"
 STRIP="$TOOLCHAIN/llvm-strip"
 
+# Hard guarantee: this is an ARM64/AArch64-ONLY build. The target triple is
+# baked into the NDK clang names; refuse to proceed if the compiler is anything
+# other than an aarch64 clang (we do NOT build or ship x86 / x86_64 / armeabi).
+if [[ ! -x "$CC" || "$CC" != *"-aarch64-linux-android"* ]]; then
+    echo "[weston-deps] ERROR: CC is not an aarch64-linux-android NDK clang: $CC" >&2
+    echo "[weston-deps] LinuxDroid supports arm64-v8a / AArch64 ONLY. Set ANDROID_NDK_ROOT to an arm64-capable NDK." >&2
+    exit 1
+fi
+if [[ ! -x "$CXX" || "$CXX" != *"-aarch64-linux-android"* ]]; then
+    echo "[weston-deps] ERROR: CXX is not an aarch64-linux-android NDK clang++: $CXX" >&2
+    exit 1
+fi
+
 log() { printf '[weston-deps] %s\n' "$*"; }
 die() { printf '[weston-deps] ERROR: %s\n' "$*" >&2; exit 1; }
 

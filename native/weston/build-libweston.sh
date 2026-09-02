@@ -235,6 +235,43 @@ for libpat in 'libpixman-1.so*' 'libxkbcommon.so*' 'libdrm.so*'; do
     fi
 done
 
+# --- ARM64/AArch64-only architecture verification --------------------------------
+# LinuxDroid targets arm64-v8a / AArch64 ONLY. Every produced library that the
+# bridge links must be a 64-bit AArch64 ELF (EM_AARCH64 = 183). Reject any
+# x86 / x86_64 / arm32 artifact; this can never be allowed to silently pass.
+verify_aarch64_only() {
+    local f b0 b1 em class magic
+    local count=0
+    local -a bad=()
+    while IFS= read -r -d '' f; do
+        count=$((count+1))
+        magic="$(od -An -tx1 -N1 "$f" | tr -d ' \n')"
+        if [[ "$magic" != "7f" ]]; then
+            bad+=("NOT-ELF: $f"); continue
+        fi
+        class="$(od -An -tx1 -j4 -N1 "$f" | tr -d ' \n')"
+        b0="$(od -An -tx1 -j18 -N1 "$f" | tr -d ' ')"
+        b1="$(od -An -tx1 -j19 -N1 "$f" | tr -d ' ')"
+        em="$(( 0x$b1 * 256 + 0x$b0 ))"
+        if [[ "$class" != "02" ]]; then
+            bad+=("NOT-64BIT: $f")
+        elif [[ "$em" -ne 183 ]]; then
+            bad+=("WRONG-ARCH($em): $f")
+        fi
+    done < <(find "$DIST_DIR/lib" -type f \( -name '*.so' -o -name '*.so.*' \) -print0 2>/dev/null)
+    if [[ "$count" -eq 0 ]]; then
+        echo "[libweston] ERROR: no shared libraries produced under $DIST_DIR/lib." >&2
+        exit 1
+    fi
+    if [[ "${#bad[@]}" -gt 0 ]]; then
+        echo "[libweston] ERROR: non-AArch64 libraries produced; LinuxDroid is ARM64-only:" >&2
+        printf '  %s\n' "${bad[@]}" >&2
+        exit 1
+    fi
+    echo "[libweston] Verified all produced libraries are AArch64 (EM_AARCH64) 64-bit ELF. ✓"
+}
+verify_aarch64_only
+
 # --- Deterministic verification --------------------------------------------------
 # Confirms the built dependency matches the frozen pins (version + commit),
 # reading from the actual source tree, and that the tracked InfidelRahul
