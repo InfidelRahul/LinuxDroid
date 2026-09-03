@@ -1,0 +1,8 @@
+LinuxDroid-PRoot dev
+commit: fd964e9dca400209d07d51dddcf2f6c14c4b1310
+ABI: arm64-v8a
+arch: aarch64 (ARM64)
+android: 28+
+sha256:
+  proot:  5d482a3c393ac4920778f0c2829f3352caf5cf4cafb23639803f7ffa37c70abd
+  loader: e2ced2bf14ab389f7a124ee094cae3f6bdc5702f81ac511b72eb5422bd630324

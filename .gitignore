@@ -16,9 +16,6 @@ task.md
 *.iws
 .DS_Store
 
-# Generated files
-app/src/main/assets/proot/
-
 # Sensitive files
 google-services.json
 signing.properties
