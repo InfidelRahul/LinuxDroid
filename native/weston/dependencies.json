@@ -1,0 +1,160 @@
+{
+  "manifest_version": "1.0.0",
+  "target_abi": "arm64-v8a",
+  "target_arch": "aarch64",
+  "min_android_api": 35,
+  "target_android_api": 36,
+  "libweston_major_api": 16,
+  "dependencies": {
+    "libffi": {
+      "name": "libffi",
+      "source_repository": "https://github.com/libffi/libffi.git",
+      "upstream_repository": "https://github.com/libffi/libffi.git",
+      "release": "v3.8.0",
+      "archive_url": "https://github.com/libffi/libffi/releases/download/v3.8.0/libffi-3.8.0.tar.gz",
+      "archive_sha256": "7da3e2d9a171eb0a038f592ecad3ff2bb2550f3496d87b3b29ad0cf4430c0db4",
+      "resolved_commit": "3d0ce1e6fcf19f853894862abcbac0ae78a7be60",
+      "build_system": "meson",
+      "build_options": [],
+      "runtime_library": "libffi.so"
+    },
+    "wayland": {
+      "name": "wayland",
+      "source_repository": "https://github.com/InfidelRahul/wayland.git",
+      "upstream_repository": "https://gitlab.freedesktop.org/wayland/wayland.git",
+      "release": "1.26.0",
+      "resolved_commit": "87cc8a8728a923fc57938faa81ba0e74f34ecdc7",
+      "build_system": "meson",
+      "build_options": [
+        "-Dscanner=false",
+        "-Dlibraries=true",
+        "-Ddocumentation=false",
+        "-Ddtd_validation=false",
+        "-Dtests=false"
+      ],
+      "runtime_library": "libwayland-server.so",
+      "tag_hash": "5f430e41167dd359b70fb5e9f584ba2dc058e4cc"
+    },
+    "wayland-protocols": {
+      "name": "wayland-protocols",
+      "source_repository": "https://github.com/InfidelRahul/wayland-protocols.git",
+      "upstream_repository": "https://gitlab.freedesktop.org/wayland/wayland-protocols.git",
+      "release": "1.49",
+      "resolved_commit": "ee78491a237eaff9389a0ccf8680521d074407d3",
+      "build_system": "meson",
+      "build_options": [
+        "-Dtests=false"
+      ],
+      "runtime_library": null,
+      "tag_hash": "a8d65d7f121497ddd0d10f620f4284896ab80aff"
+    },
+    "pixman": {
+      "name": "pixman",
+      "source_repository": "https://github.com/InfidelRahul/pixman.git",
+      "upstream_repository": "https://gitlab.freedesktop.org/pixman/pixman.git",
+      "release": "0.46.4",
+      "resolved_commit": "9cc163c9da0fb4da430641715313d95a6ec466d9",
+      "build_system": "meson",
+      "build_options": [
+        "-Da64-neon=enabled",
+        "-Ddemos=disabled",
+        "-Dtests=disabled"
+      ],
+      "runtime_library": "libpixman-1.so",
+      "tag_hash": "3f63e263be9e7c17962918f9372600b5668b6856"
+    },
+    "libxkbcommon": {
+      "name": "libxkbcommon",
+      "source_repository": "https://github.com/xkbcommon/libxkbcommon.git",
+      "upstream_repository": "https://github.com/xkbcommon/libxkbcommon.git",
+      "release": "xkbcommon-1.9.2",
+      "resolved_commit": "dd642359f8d43c09968e34ca7f1eb1121b2dfd70",
+      "build_system": "meson",
+      "build_options": [
+        "-Denable-x11=false",
+        "-Denable-xkbregistry=false",
+        "-Denable-docs=false",
+        "-Denable-tools=false",
+        "-Denable-bash-completion=false"
+      ],
+      "runtime_library": "libxkbcommon.so",
+      "tag_hash": "67ac6792bda0fd9ef0ae17a4c33026d17407b325"
+    },
+    "xkeyboard-config": {
+      "name": "xkeyboard-config",
+      "source_repository": "https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config.git",
+      "upstream_repository": "https://gitlab.freedesktop.org/xkeyboard-config/xkeyboard-config.git",
+      "release": "xkeyboard-config-2.48",
+      "resolved_commit": "cf8d1151bb4c9ef5b895828d0e6dd7860c0833e0",
+      "build_system": "meson",
+      "build_options": [],
+      "runtime_library": null,
+      "tag_hash": "4b9cb23eb328f57ecc78392b90749aad2bbb9831"
+    },
+    "libdrm": {
+      "name": "libdrm",
+      "source_repository": "https://dri.freedesktop.org/libdrm/",
+      "upstream_repository": "https://gitlab.freedesktop.org/mesa/drm.git",
+      "release": "2.4.134",
+      "archive_url": "https://dri.freedesktop.org/libdrm/libdrm-2.4.134.tar.xz",
+      "archive_sha256": "ac5e74d157830eb8bee44c6a6bf3ad49774ef0dd2a72bdad74a8f20308b52a95",
+      "resolved_commit": "2.4.134",
+      "build_system": "meson",
+      "build_options": [
+        "-Dintel=disabled",
+        "-Dradeon=disabled",
+        "-Damdgpu=disabled",
+        "-Dnouveau=disabled",
+        "-Dvmwgfx=disabled",
+        "-Domap=disabled",
+        "-Dexynos=disabled",
+        "-Dfreedreno=disabled",
+        "-Dtegra=disabled",
+        "-Dvc4=disabled",
+        "-Detnaviv=disabled",
+        "-Dcairo-tests=disabled",
+        "-Dman-pages=disabled",
+        "-Dvalgrind=disabled",
+        "-Dtests=false"
+      ],
+      "runtime_library": "libdrm.so"
+    },
+    "weston": {
+      "name": "weston",
+      "source_repository": "https://github.com/InfidelRahul/weston.git",
+      "upstream_repository": "https://gitlab.freedesktop.org/wayland/weston.git",
+      "release": "16.0.0",
+      "resolved_commit": "d1882b0a544ae2197b597a6e39478e719bc54302",
+      "libweston_major": 16,
+      "build_system": "meson",
+      "build_options": [
+        "-Dbackend-drm=false",
+        "-Dbackend-headless=false",
+        "-Dbackend-default=none",
+        "-Dbackend-wayland=false",
+        "-Dbackend-x11=false",
+        "-Dbackend-rdp=false",
+        "-Dbackend-vnc=false",
+        "-Dbackend-pipewire=false",
+        "-Dfrontend=false",
+        "-Dshell-desktop=false",
+        "-Dshell-ivi=false",
+        "-Dshell-kiosk=false",
+        "-Dshell-lua=false",
+        "-Dxwayland=false",
+        "-Drenderer-gl=false",
+        "-Drenderer-vulkan=false",
+        "-Dsystemd=false",
+        "-Dcolor-management-lcms=false",
+        "-Dimage-jpeg=false",
+        "-Dimage-webp=false",
+        "-Dtools=[]",
+        "-Ddemo-clients=false",
+        "-Dsimple-clients=[]",
+        "-Dtests=false"
+      ],
+      "runtime_library": "libweston-16.so",
+      "tag_hash": "7d2a4378ddf40c9fd674c117b4bccbbb6cb14c94"
+    }
+  }
+}

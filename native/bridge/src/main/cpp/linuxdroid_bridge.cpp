@@ -3,6 +3,9 @@
 #include "gpu_detector.h"
 #include "input_bridge.h"
 #include "audio_bridge.h"
+#include "wayland_foundation_test.h"
+#include "gui_host.h"
+
 
 #include <android/log.h>
 #include <cerrno>
@@ -455,4 +458,45 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioGetLatencyMs(
     return linuxdroid::AudioBridge::getInstance().getLatencyMs();
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeVerifyWaylandFoundation(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    auto status = linuxdroid::wayland::verifyWaylandFoundation();
+    return status.allOk() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetWaylandFoundationDetails(
+    JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    auto status = linuxdroid::wayland::verifyWaylandFoundation();
+    return env->NewStringUTF(status.details.c_str());
+}
+
+// ─── Native GUI Host Lifecycle ────────────────────────────────────────────────
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGuiStart(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    return linuxdroid::gui::GuiHost::getInstance().start() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGuiStop(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    return linuxdroid::gui::GuiHost::getInstance().stop() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGuiIsRunning(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    return linuxdroid::gui::GuiHost::getInstance().isRunning() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGuiGetState(
+    [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    return static_cast<jint>(linuxdroid::gui::GuiHost::getInstance().getState());
+}
+
 } // extern "C"
+

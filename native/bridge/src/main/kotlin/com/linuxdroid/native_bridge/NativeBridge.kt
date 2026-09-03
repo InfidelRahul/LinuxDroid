@@ -100,6 +100,80 @@ object NativeBridge {
 
     fun audioGetLatencyMs(): Int = nativeAudioGetLatencyMs()
 
+    // ─── Wayland / Weston Foundation Bridge ──────────────────────────────────────
+
+    /**
+     * Verifies the native Wayland / libweston / Pixman / libxkbcommon dependency foundation.
+     * Returns true if all headers, symbols, and runtime initialization smoke tests succeed.
+     */
+    fun verifyWaylandFoundation(): Boolean {
+        return try {
+            nativeVerifyWaylandFoundation()
+        } catch (e: UnsatisfiedLinkError) {
+            false
+        }
+    }
+
+    /**
+     * Returns a descriptive string detailing the status of each native Wayland foundation dependency.
+     */
+    fun getWaylandFoundationDetails(): String {
+        return try {
+            nativeGetWaylandFoundationDetails()
+        } catch (e: UnsatisfiedLinkError) {
+            "NativeBridge library not loaded or symbol not found: ${e.message}"
+        }
+    }
+
+    // ─── Native GUI Host Lifecycle ────────────────────────────────────────────────
+
+    /**
+     * Starts the native GUI host worker thread and initializes the Wayland/Weston runtime.
+     * Idempotent: repeated calls do not create duplicate workers.
+     * Blocks the caller until RUNNING or FAILED, but runs the event loop on a dedicated worker thread.
+     */
+    fun guiStart(): Boolean {
+        return if (isLoaded) {
+            try { nativeGuiStart() } catch (_: UnsatisfiedLinkError) { false }
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Stops the native GUI host worker thread and deterministically tears down Wayland/Weston runtime.
+     * Idempotent: safe to call repeatedly when stopped.
+     */
+    fun guiStop(): Boolean {
+        return if (isLoaded) {
+            try { nativeGuiStop() } catch (_: UnsatisfiedLinkError) { false }
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Returns true if the native GUI host is currently in RUNNING state.
+     */
+    fun guiIsRunning(): Boolean {
+        return if (isLoaded) {
+            try { nativeGuiIsRunning() } catch (_: UnsatisfiedLinkError) { false }
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Returns the lifecycle state integer (0: STOPPED, 1: STARTING, 2: RUNNING, 3: STOPPING).
+     */
+    fun guiGetState(): Int {
+        return if (isLoaded) {
+            try { nativeGuiGetState() } catch (_: UnsatisfiedLinkError) { 0 }
+        } else {
+            0
+        }
+    }
+
     // ─── External JNI declarations ─────────────────────────────────────────────────
 
     @JvmStatic external fun nativeGetBridgeVersion(): Int
@@ -133,4 +207,12 @@ object NativeBridge {
     @JvmStatic external fun nativeAudioStop()
     @JvmStatic external fun nativeAudioWritePcm(data: ByteArray, offset: Int, length: Int): Int
     @JvmStatic external fun nativeAudioGetLatencyMs(): Int
+
+    @JvmStatic external fun nativeVerifyWaylandFoundation(): Boolean
+    @JvmStatic external fun nativeGetWaylandFoundationDetails(): String
+
+    @JvmStatic external fun nativeGuiStart(): Boolean
+    @JvmStatic external fun nativeGuiStop(): Boolean
+    @JvmStatic external fun nativeGuiIsRunning(): Boolean
+    @JvmStatic external fun nativeGuiGetState(): Int
 }

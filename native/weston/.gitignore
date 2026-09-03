@@ -1,0 +1,8 @@
+src/
+prefix/bin/
+prefix/lib/
+prefix/share/
+host_tools/
+build/
+*.tar.xz
+*.tar.gz

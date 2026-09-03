@@ -41,6 +41,21 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      - name: Install Native Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flex bison ninja-build python3-pip python3-setuptools
+          pip install --break-system-packages meson
+
+      - name: Build Native Wayland & Weston Stack
+        run: |
+          chmod +x ./native/weston/build_wayland_stack.sh
+          ./native/weston/build_wayland_stack.sh
+
+      - name: Run Native Foundation Smoke Tests
+        run: |
+          ./gradlew :native:bridge:testDebugUnitTest --no-daemon
+
       # The current Gradle release configuration requires a keystore.
       # This key is temporary and must not be used for production releases.
       - name: Create ephemeral CI signing key

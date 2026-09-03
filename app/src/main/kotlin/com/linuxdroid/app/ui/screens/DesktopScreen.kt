@@ -612,8 +612,18 @@ private fun LinuxDesktopWorkspace(
     val neuColors = NeuTheme.colors
     val context = LocalContext.current
 
+    val guiHostController = remember { com.linuxdroid.core.display.GuiHostController() }
+
+    DisposableEffect(Unit) {
+        guiHostController.start()
+        onDispose {
+            guiHostController.stop()
+        }
+    }
+
     Scaffold(
         containerColor = Color(0xFF1E222B),
+
         topBar = {
             // macOS / XFCE Style Top Panel
             Surface(
