@@ -1,8 +1,8 @@
 # LinuxDroid — Build & Toolchain Guide
 
 ## 1. Prerequisites
-- **Android SDK:** API 35 (`compileSdk = 35`, `minSdk = 28`, `targetSdk = 35`)
-- **Android NDK:** Version `27.2.12479018`
+- **Android SDK:** API 36 (`compileSdk = 36`, `minSdk = 36`, `targetSdk = 36`)
+- **Android NDK:** Version `29.0.14206865`
 - **CMake:** Version `3.22.1`
 - **JDK:** OpenJDK 21 (Temurin / SDKMAN)
 - **Gradle:** 8.12 (via Gradle Wrapper `./gradlew`)

@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <android/native_window.h>
 
 struct wl_display;
 struct wl_event_source;
@@ -72,6 +73,21 @@ public:
      */
     LifecycleState getState() const;
 
+    /**
+     * Sets or rebinds the Android presentation ANativeWindow.
+     */
+    void setNativeWindow(struct ANativeWindow* window, int width, int height);
+
+    /**
+     * Handles Android presentation ANativeWindow changes (resize, format update).
+     */
+    void changeNativeWindow(struct ANativeWindow* window, int width, int height, int format);
+
+    /**
+     * Handles Android presentation ANativeWindow destruction.
+     */
+    void destroyNativeWindow();
+
 private:
     void workerMain();
 
@@ -90,6 +106,12 @@ private:
     struct linuxdroid_backend* backend_ = nullptr;
     struct linuxdroid_head* head_ = nullptr;
     struct weston_output* output_ = nullptr;
+
+    mutable std::mutex window_mutex_;
+    struct ANativeWindow* native_window_ = nullptr;
+    int window_width_ = 0;
+    int window_height_ = 0;
+    int window_format_ = 0;
 
     bool init_success_ = false;
 };

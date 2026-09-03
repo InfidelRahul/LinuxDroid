@@ -10,7 +10,7 @@ int main() {
 
     // Test 1 — Native host creation
     std::cout << "[GuiHostTest] Test 1: Native host creation..." << std::endl;
-    bool start1 = host.start();
+    [[maybe_unused]] bool start1 = host.start();
     assert(start1);
     assert(host.isRunning());
     assert(host.getState() == LifecycleState::RUNNING);
@@ -18,7 +18,7 @@ int main() {
 
     // Test 2 — Duplicate start
     std::cout << "[GuiHostTest] Test 2: Duplicate start..." << std::endl;
-    bool start2 = host.start();
+    [[maybe_unused]] bool start2 = host.start();
     assert(start2);
     assert(host.isRunning());
     assert(host.getState() == LifecycleState::RUNNING);
@@ -26,7 +26,7 @@ int main() {
 
     // Test 3 — Stop
     std::cout << "[GuiHostTest] Test 3: Stop..." << std::endl;
-    bool stop1 = host.stop();
+    [[maybe_unused]] bool stop1 = host.stop();
     assert(stop1);
     assert(!host.isRunning());
     assert(host.getState() == LifecycleState::STOPPED);
@@ -34,7 +34,7 @@ int main() {
 
     // Test 4 — Duplicate stop
     std::cout << "[GuiHostTest] Test 4: Duplicate stop..." << std::endl;
-    bool stop2 = host.stop();
+    [[maybe_unused]] bool stop2 = host.stop();
     assert(stop2);
     assert(!host.isRunning());
     assert(host.getState() == LifecycleState::STOPPED);

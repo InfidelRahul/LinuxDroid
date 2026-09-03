@@ -38,14 +38,22 @@ struct linuxdroid_head {
     struct weston_head base;
 };
 
+struct android_presentation;
+struct ANativeWindow;
+
 /**
  * LinuxDroid Weston output abstraction representing a Linux compositor output.
+ * Connects the Weston output to the Android presentation subsystem (SurfaceControl & AHardwareBuffer).
  * Wraps struct weston_output.
  */
 struct linuxdroid_output {
     struct weston_output base;
     struct linuxdroid_backend *backend;
     struct weston_mode mode;
+    struct android_presentation *presentation;
+    struct ANativeWindow *native_window;
+    int32_t width;
+    int32_t height;
 };
 
 /*
@@ -135,6 +143,18 @@ linuxdroid_output_set_mode(struct weston_output *output,
  */
 void
 linuxdroid_output_destroy(struct weston_output *output);
+
+/**
+ * Attaches or rebinds an Android ANativeWindow to a LinuxDroid output.
+ */
+void
+linuxdroid_output_set_window(struct weston_output *output, struct ANativeWindow *window);
+
+/**
+ * Resizes the output and underlying Android presentation resources without buffer corruption.
+ */
+int
+linuxdroid_output_resize(struct weston_output *output, int32_t width, int32_t height);
 
 #ifdef __cplusplus
 }

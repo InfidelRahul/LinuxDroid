@@ -1,4 +1,5 @@
 #include "linuxdroid_backend.h"
+#include "android_presentation.h"
 
 #include <android/log.h>
 #include <assert.h>
@@ -36,13 +37,34 @@ linuxdroid_output_repaint(struct weston_output *output)
 static int
 linuxdroid_output_enable(struct weston_output *base)
 {
-    LOGI("LINUXDROID_OUTPUT_ENABLED: output '%s' enabled", base->name ? base->name : "(unnamed)");
+    struct linuxdroid_output *output = (struct linuxdroid_output *)base;
+
+    // Connect to Android presentation layer if native window is attached
+    if (output->presentation && output->native_window) {
+        int err = android_presentation_enable(output->presentation,
+                                              output->native_window,
+                                              output->width,
+                                              output->height);
+        if (err < 0) {
+            LOGE("ANDROID_PRESENTATION_ERROR: failed to enable Android presentation surface: %d", err);
+            return -1; // If SurfaceControl creation fails, output enable must fail
+        }
+    }
+
+    LOGI("LINUXDROID_OUTPUT_ENABLED: output '%s' enabled (%dx%d)",
+         base->name ? base->name : "(unnamed)", output->width, output->height);
     return 0;
 }
 
 static int
 linuxdroid_output_disable(struct weston_output *base)
 {
+    struct linuxdroid_output *output = (struct linuxdroid_output *)base;
+
+    if (output->presentation) {
+        android_presentation_disable(output->presentation);
+    }
+
     LOGI("LINUXDROID_OUTPUT_DISABLED: output '%s' disabled", base->name ? base->name : "(unnamed)");
     return 0;
 }
@@ -56,6 +78,11 @@ linuxdroid_output_destroy_hook(struct weston_output *base)
 
     if (base->enabled) {
         linuxdroid_output_disable(base);
+    }
+
+    if (output->presentation) {
+        android_presentation_destroy(output->presentation);
+        output->presentation = NULL;
     }
 
     weston_output_release(base);
@@ -189,6 +216,10 @@ linuxdroid_output_create(struct weston_backend *backend, const char *name)
         return NULL;
     }
 
+    output->presentation = android_presentation_create();
+    output->width = LINUXDROID_DEFAULT_WIDTH;
+    output->height = LINUXDROID_DEFAULT_HEIGHT;
+
     weston_output_init(&output->base, b->compositor, name);
 
     output->base.destroy = linuxdroid_output_destroy_hook;
@@ -220,6 +251,8 @@ linuxdroid_output_set_mode(struct weston_output *output,
     }
 
     droid_output = (struct linuxdroid_output *)output;
+    droid_output->width = width;
+    droid_output->height = height;
 
     if (scale < 1) scale = 1;
 
@@ -248,4 +281,37 @@ linuxdroid_output_destroy(struct weston_output *output)
         weston_output_release(output);
         free(output);
     }
+}
+
+void
+linuxdroid_output_set_window(struct weston_output *base, struct ANativeWindow *window)
+{
+    struct linuxdroid_output *output = (struct linuxdroid_output *)base;
+    if (!output) return;
+
+    output->native_window = window;
+    if (output->presentation) {
+        android_presentation_set_window(output->presentation, window);
+    }
+}
+
+int
+linuxdroid_output_resize(struct weston_output *base, int32_t width, int32_t height)
+{
+    struct linuxdroid_output *output = (struct linuxdroid_output *)base;
+    if (!output || width <= 0 || height <= 0) return -1;
+
+    output->width = width;
+    output->height = height;
+
+    if (output->presentation) {
+        android_presentation_resize(output->presentation, width, height);
+    }
+
+    if (output->base.current_mode) {
+        output->mode.width = width * output->base.current_scale;
+        output->mode.height = height * output->base.current_scale;
+    }
+
+    return 0;
 }

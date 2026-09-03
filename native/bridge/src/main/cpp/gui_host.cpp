@@ -1,5 +1,6 @@
 #include "gui_host.h"
 #include "linuxdroid_backend.h"
+#include "android_presentation.h"
 
 #include <wayland-server.h>
 #include <libweston/libweston.h>
@@ -190,6 +191,43 @@ LifecycleState GuiHost::getState() const {
     return state_.load(std::memory_order_relaxed);
 }
 
+void GuiHost::setNativeWindow(ANativeWindow* window, int width, int height) {
+    std::lock_guard<std::mutex> lock(window_mutex_);
+    native_window_ = window;
+    window_width_ = width;
+    window_height_ = height;
+
+    if (output_ != nullptr) {
+        linuxdroid_output_set_window(output_, window);
+        if (width > 0 && height > 0) {
+            linuxdroid_output_resize(output_, width, height);
+        }
+    }
+}
+
+void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, int format) {
+    std::lock_guard<std::mutex> lock(window_mutex_);
+    native_window_ = window;
+    window_width_ = width;
+    window_height_ = height;
+    window_format_ = format;
+
+    if (output_ != nullptr) {
+        linuxdroid_output_set_window(output_, window);
+        if (width > 0 && height > 0) {
+            linuxdroid_output_resize(output_, width, height);
+        }
+    }
+}
+
+void GuiHost::destroyNativeWindow() {
+    std::lock_guard<std::mutex> lock(window_mutex_);
+    native_window_ = nullptr;
+    if (output_ != nullptr) {
+        linuxdroid_output_set_window(output_, nullptr);
+    }
+}
+
 void GuiHost::workerMain() {
     // 1. Create Wayland Server Display
     display_ = wl_display_create();
@@ -318,8 +356,26 @@ void GuiHost::workerMain() {
         return;
     }
 
-    // 8. Configure output mode (geometry, refresh, scale)
-    if (linuxdroid_output_set_mode(output_, 1920, 1080, LINUXDROID_DEFAULT_REFRESH_MHZ, 1) < 0) {
+    // Attach active native window if provided before start
+    {
+        std::lock_guard<std::mutex> lock(window_mutex_);
+        if (native_window_ != nullptr) {
+            linuxdroid_output_set_window(output_, native_window_);
+        }
+    }
+
+    // 8. Configure output mode using current window dimensions or defaults
+    int32_t out_w = LINUXDROID_DEFAULT_WIDTH;
+    int32_t out_h = LINUXDROID_DEFAULT_HEIGHT;
+    {
+        std::lock_guard<std::mutex> lock(window_mutex_);
+        if (window_width_ > 0 && window_height_ > 0) {
+            out_w = window_width_;
+            out_h = window_height_;
+        }
+    }
+
+    if (linuxdroid_output_set_mode(output_, out_w, out_h, LINUXDROID_DEFAULT_REFRESH_MHZ, 1) < 0) {
         LOGE("WESTON_START_FAILED: failed to set mode on LinuxDroid output");
         weston_compositor_destroy(compositor_);
         compositor_ = nullptr;
@@ -372,10 +428,11 @@ void GuiHost::workerMain() {
     LOGI("WESTON_EVENT_LOOP_STOPPED: Wayland/libweston event loop stopped");
 
     // 12. Teardown native state deterministically in reverse order of ownership
-    LOGI("WESTON_STOP_REQUEST: tearing down native Weston resources");
-
-    if (output_ != nullptr && output_->enabled) {
-        weston_output_disable(output_);
+    if (output_ != nullptr) {
+        linuxdroid_output_set_window(output_, nullptr);
+        if (output_->enabled) {
+            weston_output_disable(output_);
+        }
     }
 
     // weston_compositor_destroy shuts down outputs and backends, releases heads, and frees compositor

@@ -1,4 +1,5 @@
 #include "display_bridge.h"
+#include "gui_host.h"
 
 #include <android/log.h>
 
@@ -23,6 +24,7 @@ DisplayBridge::~DisplayBridge() {
 void DisplayBridge::onSurfaceCreated(JNIEnv* env, jobject surface, int width, int height) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (window_ != nullptr) {
+        linuxdroid::gui::GuiHost::getInstance().destroyNativeWindow();
         ANativeWindow_release(window_);
         window_ = nullptr;
     }
@@ -34,6 +36,7 @@ void DisplayBridge::onSurfaceCreated(JNIEnv* env, jobject surface, int width, in
             height_ = height;
             ANativeWindow_setBuffersGeometry(window_, width_, height_, format_);
             LOGI("ANativeWindow attached successfully: %dx%d", width_, height_);
+            linuxdroid::gui::GuiHost::getInstance().setNativeWindow(window_, width_, height_);
         } else {
             LOGE("ANativeWindow_fromSurface failed");
         }
@@ -43,6 +46,7 @@ void DisplayBridge::onSurfaceCreated(JNIEnv* env, jobject surface, int width, in
 void DisplayBridge::onSurfaceChanged(JNIEnv* env, jobject surface, int width, int height, int format) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (window_ != nullptr) {
+        linuxdroid::gui::GuiHost::getInstance().destroyNativeWindow();
         ANativeWindow_release(window_);
         window_ = nullptr;
     }
@@ -55,12 +59,14 @@ void DisplayBridge::onSurfaceChanged(JNIEnv* env, jobject surface, int width, in
             format_ = (format != 0) ? format : WINDOW_FORMAT_RGBA_8888;
             ANativeWindow_setBuffersGeometry(window_, width_, height_, format_);
             LOGI("ANativeWindow changed: %dx%d, format=%d", width_, height_, format_);
+            linuxdroid::gui::GuiHost::getInstance().changeNativeWindow(window_, width_, height_, format_);
         }
     }
 }
 
 void DisplayBridge::onSurfaceDestroyed() {
     std::lock_guard<std::mutex> lock(mutex_);
+    linuxdroid::gui::GuiHost::getInstance().destroyNativeWindow();
     if (window_ != nullptr) {
         LOGI("Releasing ANativeWindow");
         ANativeWindow_release(window_);

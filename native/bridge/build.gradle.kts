@@ -14,8 +14,8 @@ android {
         }
         externalNativeBuild {
             cmake {
-                cppFlags("-std=c++17", "-Wall", "-Wextra", "-fexceptions", "-frtti")
-                arguments("-DANDROID_STL=c++_shared")
+                cppFlags("-std=c++17", "-Wall", "-Wextra", "-fexceptions", "-frtti", "-Wno-unguarded-availability")
+                arguments("-DANDROID_STL=c++_shared", "-DANDROID_PLATFORM=latest")
             }
         }
     }

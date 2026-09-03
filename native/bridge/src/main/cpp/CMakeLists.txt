@@ -16,6 +16,8 @@ add_compile_options(
     -fexceptions
     -frtti
     -DANDROID
+    -Wno-unguarded-availability
+    -Wno-unguarded-availability-new
 )
 
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
@@ -34,6 +36,7 @@ add_library(
     input_bridge.cpp
     audio_bridge.cpp
     wayland_foundation_test.cpp
+    android_presentation.cpp
     linuxdroid_backend.c
     gui_host.cpp
 )
@@ -89,6 +92,7 @@ target_include_directories(
 add_executable(
     gui_host_test
     gui_host_test.cpp
+    android_presentation.cpp
     linuxdroid_backend.c
     gui_host.cpp
 )
@@ -110,5 +114,24 @@ target_include_directories(
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
     ${LIBWESTON_INC_DIRS}
+)
+
+# Standalone native Android presentation test executable (Phase 4 validation)
+add_executable(
+    android_presentation_test
+    android_presentation_test.cpp
+    android_presentation.cpp
+)
+
+target_link_libraries(
+    android_presentation_test
+    android
+    log
+)
+
+target_include_directories(
+    android_presentation_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

@@ -61,13 +61,23 @@ object NativeBridge {
 
     // ─── Display & Surface ─────────────────────────────────────────────────────────
 
-    fun onSurfaceCreated(surface: Surface, width: Int, height: Int) =
-        nativeOnSurfaceCreated(surface, width, height)
+    fun onSurfaceCreated(surface: Surface, width: Int, height: Int) {
+        if (isLoaded) {
+            try { nativeOnSurfaceCreated(surface, width, height) } catch (_: UnsatisfiedLinkError) {}
+        }
+    }
 
-    fun onSurfaceChanged(surface: Surface, width: Int, height: Int, format: Int) =
-        nativeOnSurfaceChanged(surface, width, height, format)
+    fun onSurfaceChanged(surface: Surface, width: Int, height: Int, format: Int) {
+        if (isLoaded) {
+            try { nativeOnSurfaceChanged(surface, width, height, format) } catch (_: UnsatisfiedLinkError) {}
+        }
+    }
 
-    fun onSurfaceDestroyed() = nativeOnSurfaceDestroyed()
+    fun onSurfaceDestroyed() {
+        if (isLoaded) {
+            try { nativeOnSurfaceDestroyed() } catch (_: UnsatisfiedLinkError) {}
+        }
+    }
 
     // ─── GPU Detection ─────────────────────────────────────────────────────────────
 
