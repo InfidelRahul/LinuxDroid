@@ -75,6 +75,12 @@ struct weston_coord_surface {
 	const struct weston_surface *coordinate_space_id;
 };
 
+struct weston_view;
+
+struct weston_coord_surface
+weston_coord_global_to_surface(struct weston_view *view,
+			       struct weston_coord_global g_pos);
+
 void
 weston_matrix_init(struct weston_matrix *matrix);
 void

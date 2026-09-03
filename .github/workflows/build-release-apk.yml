@@ -52,6 +52,15 @@ jobs:
           chmod +x ./native/weston/build_wayland_stack.sh
           ./native/weston/build_wayland_stack.sh
 
+      - name: Verify Real libweston ARM64 Linkage & Provenance
+        run: |
+          echo "=== Weston Build Provenance ==="
+          cat ./native/weston/weston_provenance.json
+          echo "=== Architecture Verification ==="
+          file ./app/src/main/jniLibs/arm64-v8a/libweston-*.so | grep -E "ELF 64-bit.*aarch64"
+          echo "=== Symbol Verification ==="
+          nm -D ./app/src/main/jniLibs/arm64-v8a/libweston-*.so | grep -E "weston_compositor_create|weston_compositor_add_head|weston_compositor_backends_loaded"
+
       - name: Run Native Foundation Smoke Tests
         run: |
           ./gradlew :native:bridge:testDebugUnitTest --no-daemon

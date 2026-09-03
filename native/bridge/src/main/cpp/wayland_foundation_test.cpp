@@ -1,7 +1,7 @@
 #include "wayland_foundation_test.h"
 #include <wayland-server.h>
-#include <libweston-16/libweston/libweston.h>
-#include <libweston-16/libweston/version.h>
+#include <libweston/libweston.h>
+#include <libweston/version.h>
 #include <pixman.h>
 #include <xkbcommon/xkbcommon.h>
 #include <sstream>
@@ -27,10 +27,10 @@ FoundationStatus verifyWaylandFoundation() {
         ss << "Wayland server: FAILED; ";
     }
 
-    // 2. Verify Weston / libweston 16
+    // 2. Verify Weston / libweston
     int major = 0, minor = 0, micro = 0;
     weston_version(&major, &minor, &micro);
-    if (major == 16 && WESTON_VERSION_MAJOR == 16) {
+    if (major >= 16 && WESTON_VERSION_MAJOR >= 16) {
         status.libweston_ok = true;
         std::ostringstream ver_ss;
         ver_ss << major << "." << minor << "." << micro;

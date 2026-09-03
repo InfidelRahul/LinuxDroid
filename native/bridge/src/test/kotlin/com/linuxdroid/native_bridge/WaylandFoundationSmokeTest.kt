@@ -21,8 +21,11 @@ class WaylandFoundationSmokeTest {
         val jniLibsDir = File(rootDir, "app/src/main/jniLibs/arm64-v8a")
         assertThat(jniLibsDir.exists()).isTrue()
 
+        val westonLib = jniLibsDir.listFiles()?.firstOrNull { it.name.matches(Regex("libweston-\\d+\\.so")) }
+        assertWithMessage("Expected libweston-*.so to be present in $jniLibsDir").that(westonLib).isNotNull()
+
         val requiredLibraries = listOf(
-            "libweston-16.so",
+            westonLib!!.name,
             "libwayland-server.so",
             "libwayland-client.so",
             "libwayland-cursor.so",
@@ -63,8 +66,8 @@ class WaylandFoundationSmokeTest {
         val manifestFile = File(rootDir, "native/weston/dependencies.json")
         assertThat(manifestFile.exists()).isTrue()
         val content = manifestFile.readText()
-        assertThat(content).contains("\"libweston_major_api\": 16")
-        assertThat(content).contains("\"release\": \"16.0.0\"")
+        assertThat(content).contains("\"name\": \"weston\"")
+        assertThat(content).contains("\"branch\": \"main\"")
         assertThat(content).contains("\"release\": \"1.26.0\"")
         assertThat(content).contains("\"release\": \"1.49\"")
         assertThat(content).contains("\"release\": \"0.46.4\"")
@@ -79,7 +82,7 @@ class WaylandFoundationSmokeTest {
         assertThat(cmakeFile.exists()).isTrue()
         val content = cmakeFile.readText()
         assertThat(content).contains("wayland-server")
-        assertThat(content).contains("weston-16")
+        assertThat(content).contains("weston")
         assertThat(content).contains("pixman-1")
         assertThat(content).contains("xkbcommon")
         assertThat(content).contains("wayland_foundation_test.cpp")

@@ -36,14 +36,14 @@ linuxdroid_output_repaint(struct weston_output *output)
 static int
 linuxdroid_output_enable(struct weston_output *base)
 {
-    LOGI("WESTON_OUTPUT_ENABLE: output '%s' enabled", base->name ? base->name : "(unnamed)");
+    LOGI("LINUXDROID_OUTPUT_ENABLED: output '%s' enabled", base->name ? base->name : "(unnamed)");
     return 0;
 }
 
 static int
 linuxdroid_output_disable(struct weston_output *base)
 {
-    LOGI("WESTON_OUTPUT_DISABLE: output '%s' disabled", base->name ? base->name : "(unnamed)");
+    LOGI("LINUXDROID_OUTPUT_DISABLED: output '%s' disabled", base->name ? base->name : "(unnamed)");
     return 0;
 }
 
@@ -52,7 +52,7 @@ linuxdroid_output_destroy_hook(struct weston_output *base)
 {
     struct linuxdroid_output *output = (struct linuxdroid_output *)base;
 
-    LOGI("WESTON_OUTPUT_DESTROY: output '%s' destroying", base->name ? base->name : "(unnamed)");
+    LOGI("LINUXDROID_OUTPUT_DESTROYED: output '%s' destroying", base->name ? base->name : "(unnamed)");
 
     if (base->enabled) {
         linuxdroid_output_disable(base);
@@ -95,7 +95,7 @@ linuxdroid_backend_create(struct weston_compositor *compositor,
         return NULL;
     }
 
-    LOGI("WESTON_BACKEND_INIT: LinuxDroid custom backend registered successfully");
+    LOGI("LINUXDROID_BACKEND_CREATED: LinuxDroid custom backend registered successfully");
     return b;
 }
 
@@ -108,7 +108,7 @@ linuxdroid_backend_destroy(struct weston_backend *backend)
     if (!b)
         return;
 
-    LOGI("WESTON_BACKEND_DESTROY: LinuxDroid backend destroying");
+    LOGI("LINUXDROID_BACKEND_DESTROY: LinuxDroid backend destroying");
 
     wl_list_remove(&b->base.link);
 
@@ -133,13 +133,13 @@ linuxdroid_head_create(struct linuxdroid_backend *backend,
     struct linuxdroid_head *head;
 
     if (!backend || !backend->compositor || !name) {
-        LOGE("WESTON_FAILURE: invalid arguments to linuxdroid_head_create");
+        LOGE("WESTON_START_FAILED: invalid arguments to linuxdroid_head_create");
         return NULL;
     }
 
     head = (struct linuxdroid_head *)calloc(1, sizeof(*head));
     if (!head) {
-        LOGE("WESTON_FAILURE: failed to allocate linuxdroid_head");
+        LOGE("WESTON_START_FAILED: failed to allocate linuxdroid_head");
         return NULL;
     }
 
@@ -154,7 +154,7 @@ linuxdroid_head_create(struct linuxdroid_backend *backend,
 
     weston_compositor_add_head(backend->compositor, &head->base);
 
-    LOGI("WESTON_HEAD_CREATE: head '%s' created and added to compositor", name);
+    LOGI("LINUXDROID_HEAD_CREATED: logical display head '%s' created and added to compositor", name);
     return head;
 }
 
@@ -164,6 +164,8 @@ linuxdroid_head_destroy(struct linuxdroid_head *head)
     if (!head)
         return;
 
+    LOGI("LINUXDROID_HEAD_DESTROYED: logical display head '%s' released and destroyed",
+         head->base.name ? head->base.name : "(unnamed)");
     weston_head_release(&head->base);
     free(head);
 }
@@ -175,7 +177,7 @@ linuxdroid_output_create(struct weston_backend *backend, const char *name)
     struct linuxdroid_output *output;
 
     if (!backend || !name) {
-        LOGE("WESTON_FAILURE: invalid arguments to linuxdroid_output_create");
+        LOGE("WESTON_START_FAILED: invalid arguments to linuxdroid_output_create");
         return NULL;
     }
 
@@ -183,7 +185,7 @@ linuxdroid_output_create(struct weston_backend *backend, const char *name)
 
     output = (struct linuxdroid_output *)calloc(1, sizeof(*output));
     if (!output) {
-        LOGE("WESTON_FAILURE: failed to allocate linuxdroid_output");
+        LOGE("WESTON_START_FAILED: failed to allocate linuxdroid_output");
         return NULL;
     }
 
@@ -199,7 +201,7 @@ linuxdroid_output_create(struct weston_backend *backend, const char *name)
 
     weston_compositor_add_pending_output(&output->base, b->compositor);
 
-    LOGI("WESTON_OUTPUT_CREATE: output '%s' created", name);
+    LOGI("LINUXDROID_OUTPUT_CREATED: logical compositor output '%s' created and pending", name);
     return &output->base;
 }
 

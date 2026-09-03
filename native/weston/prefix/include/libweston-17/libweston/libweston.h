@@ -49,6 +49,10 @@ struct weston_trace_flow {
 	uint64_t id;
 };
 
+struct weston_trace_track {
+	uint64_t id;
+};
+
 struct weston_log_pacer {
 	/** This must be set to zero before first use */
 	bool initialized;
@@ -139,7 +143,8 @@ enum weston_mode_aspect_ratio {
 
 enum weston_surface_protection_mode {
 	WESTON_SURFACE_PROTECTION_MODE_RELAXED,
-	WESTON_SURFACE_PROTECTION_MODE_ENFORCED
+	WESTON_SURFACE_PROTECTION_MODE_ENFORCED,
+	WESTON_SURFACE_PROTECTION_MODE_CENSORED, /* Can never be displayed */
 };
 
 enum weston_output_color_effect_type {
@@ -217,6 +222,22 @@ enum weston_hdcp_protection {
 	WESTON_HDCP_DISABLE = 0,
 	WESTON_HDCP_ENABLE_TYPE_0,
 	WESTON_HDCP_ENABLE_TYPE_1
+};
+
+/* enum for output policy for restricted client buffers
+ *
+ * This enum is for selecting the policy for output handling of restricted
+ * content from applications. If the level is CENSOR - the default, all
+ * restricted content will be unconditionally censored.
+ *
+ * Note: Restricted content may be censored even when the policy is set to
+ * allow its display, if the renderer is not using a restricted context.
+ */
+enum weston_output_restriction_policy {
+	WESTON_OUTPUT_RESTRICTION_POLICY_CENSOR = 0,
+	WESTON_OUTPUT_RESTRICTION_POLICY_DISPLAY,
+	WESTON_OUTPUT_RESTRICTION_POLICY_HDCP1,
+	WESTON_OUTPUT_RESTRICTION_POLICY_HDCP2,
 };
 
 /** Weston test suite quirks
@@ -405,6 +426,14 @@ enum weston_output_fb_alpha_encoding {
 	WESTON_OUTPUT_FB_ALPHA_STRAIGHT,
 };
 
+
+struct weston_trace_output {
+	struct weston_trace_track track;
+	struct weston_trace_track gpu_track;
+	struct weston_trace_track paint_track;
+	struct weston_trace_track presentation_track;
+};
+
 /** Content producer for heads
  *
  * \rst
@@ -413,6 +442,7 @@ enum weston_output_fb_alpha_encoding {
  * \ingroup output
  */
 struct weston_output {
+	struct weston_trace_output trace;
 	uint32_t id;
 	char *name;
 
@@ -443,10 +473,6 @@ struct weston_output {
 	struct wl_list animation_list;
 	struct weston_coord_global pos;
 	int32_t width, height;
-
-	uint64_t gpu_track_id;
-	uint64_t paint_track_id;
-	uint64_t presentation_track_id;
 
 	/** List of paint nodes in z-order, from top to bottom, maybe pruned
 	 *
@@ -545,6 +571,7 @@ struct weston_output {
 	void (*destroy)(struct weston_output *output);
 	void (*assign_planes)(struct weston_output *output);
 	int (*switch_mode)(struct weston_output *output, struct weston_mode *mode);
+	bool (*last_cycle_start)(const struct weston_output *output, struct timespec *time);
 
 	/* backlight values are on 0-255 range, where higher is brighter */
 	int32_t backlight_current;
@@ -606,6 +633,10 @@ struct weston_output {
 
 	enum weston_vrr_mode vrr_mode;
 
+	/** Preferred color_format, should be used if supported by heads. */
+	enum weston_color_format preferred_color_format;
+
+	/** Active color_format; AUTO when no heads or preferred unsupported. */
 	enum weston_color_format color_format;
 
 	enum weston_output_fb_alpha_encoding fb_alpha_encoding;
@@ -625,6 +656,8 @@ struct weston_output {
 
 	/** fifo_v1 - list of surfaces to clear next repaint */
 	struct wl_list fifo_barrier_surfaces;
+
+	enum weston_output_restriction_policy restriction_policy;
 };
 
 enum weston_pointer_motion_mask {
@@ -1284,7 +1317,7 @@ struct weston_seat {
 	struct wl_list tablet_tool_list;
 	struct wl_list tablet_seat_resource_list;
 	struct wl_signal tablet_tool_added_signal;
-	uint64_t track_id;
+	struct weston_trace_track track;
 };
 
 enum {
@@ -1464,11 +1497,19 @@ struct weston_dmabuf_feedback_format_table;
 struct weston_renderer;
 struct weston_content_update;
 
+
+struct weston_trace_compositor {
+	struct weston_trace_track repaint_track;
+	struct weston_trace_track timer_track;
+	struct weston_trace_flow repaint_flow;
+};
+
 /** Main object, container-like structure which aggregates all other objects.
  *
  * \ingroup compositor
  */
 struct weston_compositor {
+	struct weston_trace_compositor trace;
 	struct wl_signal destroy_signal;
 	bool shutting_down;
 
@@ -1522,11 +1563,20 @@ struct weston_compositor {
 	struct wl_list tablet_tool_binding_list;
 	struct wl_list axis_binding_list;
 	struct wl_list debug_binding_list;
+	struct wl_list client_list;
 
 	bool view_list_needs_rebuild;
 	int global_weston_surface_disambiguator; /* surface ids to avoid using PID-reuse */
 
 	uint32_t state;
+
+	/**
+	 * Controls whether compositor wakes up on user input. Enabled by
+	 * default. Disabling this gives more control over the wake-up policy,
+	 * see weston_compositor_set_wake_on_input() for details.
+	 */
+	bool wake_up_on_input;
+
 	struct wl_event_source *idle_source;
 	uint32_t idle_inhibit;
 	int idle_time;			/* timeout, s */
@@ -1657,6 +1707,12 @@ struct weston_compositor {
 	struct wl_listener client_created_listener;
 	uint64_t client_counter;
 	uint64_t internal_id_counter;
+
+	/**
+	 * When set the renderer must support, and must use, a restricted
+	 * context.
+	 */
+	bool renderer_restricted_context;
 };
 
 struct weston_solid_buffer_values {
@@ -1666,8 +1722,12 @@ struct weston_solid_buffer_values {
 enum weston_buffer_type {
 	WESTON_BUFFER_SHM,
 	WESTON_BUFFER_DMABUF,
-	WESTON_BUFFER_RENDERER_OPAQUE,
 	WESTON_BUFFER_SOLID,
+};
+
+enum weston_buffer_restriction {
+	WESTON_BUFFER_RESTRICTION_NO = 0,
+	WESTON_BUFFER_RESTRICTION_YES,
 };
 
 struct weston_buffer {
@@ -1680,7 +1740,6 @@ struct weston_buffer {
 	union {
 		struct wl_shm_buffer *shm_buffer;
 		void *dmabuf;
-		void *legacy_buffer;
 		struct weston_solid_buffer_values solid;
 	};
 
@@ -1693,6 +1752,7 @@ struct weston_buffer {
 		ORIGIN_BOTTOM_LEFT, /* buffer content starts at (0, height) */
 	} buffer_origin;
 	bool direct_display;
+	enum weston_buffer_restriction restriction;
 
 	void *renderer_private;
 	void *backend_private;
@@ -1738,11 +1798,19 @@ struct weston_buffer_viewport {
 };
 
 struct weston_buffer_release {
-	/* The associated zwp_linux_buffer_release_v1 resource. */
-	struct wl_resource *resource;
+	struct weston_compositor *compositor;
 	/* How many weston_buffer_release_reference objects point to this
 	 * object. */
 	uint32_t ref_count;
+
+	/* zwp_linux_buffer_release_v1 */
+	struct weston_buffer_release_explicit_sync *explicit_release;
+
+	/* wl_surface.get_release */
+	struct {
+		struct wl_list callback_list;
+	} get_release;
+
 	/* The fence fd, if any, associated with this release. If the fence fd
 	 * is -1 then this is considered an immediate release. */
 	int fence_fd;
@@ -1750,9 +1818,6 @@ struct weston_buffer_release {
 
 struct weston_buffer_release_reference {
 	struct weston_buffer_release *buffer_release;
-	/* Listener for the destruction of the wl_resource associated with the
-	 * referenced buffer_release object. */
-	struct wl_listener destroy_listener;
 };
 
 struct weston_region {
@@ -1946,7 +2011,6 @@ struct weston_surface_state {
 	/* zwp_surface_synchronization_v1.set_acquire_fence */
 	int acquire_fence_fd;
 
-	/* zwp_surface_synchronization_v1.get_release */
 	struct weston_buffer_release_reference buffer_release_ref;
 
 	/* weston_protected_surface.set_type */
@@ -1974,6 +2038,9 @@ struct weston_surface_state {
 
 	/* wp_alpha_modifier_v1 */
 	float alpha_modifier;
+
+	/* weston_fast_forward_v1 */
+	bool fast_forward;
 };
 
 struct weston_surface_activation_data {
@@ -2006,8 +2073,22 @@ struct weston_pointer_constraint {
 	struct wl_listener surface_activate_listener;
 };
 
-struct weston_surface {
+struct weston_trace_surface {
+	struct weston_trace_track client_track;
 	struct weston_trace_flow flow;
+	struct weston_trace_track damage_track;
+	struct weston_trace_track fifo_track;
+	struct weston_trace_flow fifo_flow;
+	struct weston_trace_track real_track;
+	struct weston_trace_track ideal_track;
+	uint64_t buffer_count;
+	uint32_t queue_depth;
+	char *label;
+};
+
+struct weston_surface {
+	struct weston_trace_surface trace;
+
 	/** Derived from weston_client::internal_id_counter */
 	uint64_t internal_id;
 	/** Short unique name derived from weston_client::internal_name and internal_id */
@@ -2146,8 +2227,6 @@ struct weston_surface {
 	struct wl_resource *color_representation_resource;
 	struct weston_color_representation color_representation;
 
-	uint64_t damage_track_id;
-
 	/** increments for each wl_surface::commit,
 	 * reset after each frame counter interval */
 	unsigned int frame_commit_counter;
@@ -2177,6 +2256,14 @@ struct weston_surface {
 	/** wp_alpha_modifier_v1 */
 	float alpha_modifier;
 	struct weston_alpha_modifier_surface *ams;
+
+	/** wl_surface v6 preferences */
+	int32_t preferred_buffer_scale;
+	uint32_t preferred_buffer_transform;
+
+	/** weston_fast_forward_v1 */
+	struct weston_fast_forward *fast_forwarder;
+	bool fast_forwarding;
 };
 
 struct weston_subsurface {
@@ -2217,7 +2304,6 @@ struct protected_surface {
 };
 
 struct content_protection {
-	struct weston_compositor *compositor;
 	struct wl_listener destroy_listener;
 	struct weston_log_scope *debug;
 	struct wl_list protected_list;
@@ -2403,6 +2489,9 @@ weston_binding_destroy(struct weston_binding *binding);
 void
 weston_install_debug_key_binding(struct weston_compositor *compositor,
 				 uint32_t mod);
+
+void
+weston_compositor_set_wake_on_input(struct weston_compositor *wc, bool enable);
 
 void
 weston_compositor_set_default_pointer_grab(struct weston_compositor *compositor,
@@ -2863,6 +2952,10 @@ void
 weston_output_allow_protection(struct weston_output *output,
 			       bool allow_protection);
 
+void
+weston_output_set_restriction_policy(struct weston_output *output,
+				     enum weston_output_restriction_policy policy);
+
 bool
 weston_output_contains_coord(struct weston_output *output,
 			     struct weston_coord_global pos);
@@ -2938,8 +3031,11 @@ void
 weston_compositor_disarm_surface_counter_fps(struct weston_compositor *ec);
 
 void
-weston_output_set_color_format(struct weston_output *output,
-			       enum weston_color_format color_format);
+weston_output_set_preferred_color_format(struct weston_output *output,
+					 enum weston_color_format color_format);
+
+void
+weston_output_update_color_format(struct weston_output *output);
 
 uint32_t
 weston_output_get_supported_color_formats(struct weston_output *output);

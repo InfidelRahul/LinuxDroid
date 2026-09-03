@@ -42,14 +42,25 @@ add_library(
 add_library(wayland-server SHARED IMPORTED)
 set_target_properties(wayland-server PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libwayland-server.so)
 
-add_library(weston-16 SHARED IMPORTED)
-set_target_properties(weston-16 PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libweston-16.so)
+# Dynamically locate active libweston shared library in jniLibs
+file(GLOB LIBWESTON_SO_FILES "${ARM64_JNILIBS}/libweston-*.so")
+if(NOT LIBWESTON_SO_FILES)
+    message(FATAL_ERROR "No libweston-*.so found in ${ARM64_JNILIBS}")
+endif()
+list(GET LIBWESTON_SO_FILES 0 LIBWESTON_ACTIVE_SO)
+message(STATUS "Using libweston artifact: ${LIBWESTON_ACTIVE_SO}")
+
+add_library(weston SHARED IMPORTED)
+set_target_properties(weston PROPERTIES IMPORTED_LOCATION ${LIBWESTON_ACTIVE_SO})
 
 add_library(pixman-1 SHARED IMPORTED)
 set_target_properties(pixman-1 PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libpixman-1.so)
 
 add_library(xkbcommon SHARED IMPORTED)
 set_target_properties(xkbcommon PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libxkbcommon.so)
+
+# Dynamically locate libweston include directories in prefix
+file(GLOB LIBWESTON_INC_DIRS "${WESTON_PREFIX}/include/libweston-*")
 
 # Link Android system and graphics/audio libraries + Wayland stack
 target_link_libraries(
@@ -60,7 +71,7 @@ target_link_libraries(
     EGL
     GLESv2
     wayland-server
-    weston-16
+    weston
     pixman-1
     xkbcommon
 )
@@ -71,10 +82,10 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
-    ${WESTON_PREFIX}/include/libweston-16
+    ${LIBWESTON_INC_DIRS}
 )
 
-# Standalone native GUI host test executable (minimal Phase 2 validation)
+# Standalone native GUI host test executable (minimal Phase 3 validation)
 add_executable(
     gui_host_test
     gui_host_test.cpp
@@ -87,7 +98,7 @@ target_link_libraries(
     android
     log
     wayland-server
-    weston-16
+    weston
     pixman-1
     xkbcommon
 )
@@ -98,6 +109,6 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
-    ${WESTON_PREFIX}/include/libweston-16
+    ${LIBWESTON_INC_DIRS}
 )
 

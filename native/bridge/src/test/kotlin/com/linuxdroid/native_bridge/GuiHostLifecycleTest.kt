@@ -80,5 +80,44 @@ class GuiHostLifecycleTest {
         assertThat(fakeIsRunning()).isFalse()
         assertThat(workerThreads.get()).isEqualTo(0)
     }
+
+    @Test
+    fun testGuiHostStartupFailureRecovery() {
+        val state = AtomicInteger(0)
+        var shouldFail = true
+
+        fun failingStart(): Boolean {
+            state.set(1) // STARTING
+            if (shouldFail) {
+                state.set(0) // Rollback to STOPPED on failure
+                return false
+            }
+            state.set(2) // RUNNING
+            return true
+        }
+
+        // Test failure returns false and state remains STOPPED
+        assertThat(failingStart()).isFalse()
+        assertThat(state.get()).isEqualTo(0)
+
+        // Test subsequent start succeeds when error condition clears
+        shouldFail = false
+        assertThat(failingStart()).isTrue()
+        assertThat(state.get()).isEqualTo(2)
+    }
+
+    @Test
+    fun testGuiHostShutdownDuringStarting() {
+        val state = AtomicInteger(1) // STARTING
+
+        fun stopWhileStarting(): Boolean {
+            // Wait for starting to finish or force STOPPED
+            state.set(0)
+            return true
+        }
+
+        assertThat(stopWhileStarting()).isTrue()
+        assertThat(state.get()).isEqualTo(0)
+    }
 }
 

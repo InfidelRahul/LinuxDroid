@@ -1,5 +1,5 @@
 /*
- * Copyright © 2019 Pengutronix, Michael Olbrich <m.olbrich@pengutronix.de>
+ * Copyright © 2013 Intel Corporation
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -23,40 +23,28 @@
  * SOFTWARE.
  */
 
-#ifndef PIPEWIRE_PLUGIN_H
-#define PIPEWIRE_PLUGIN_H
+#ifndef WESTON_VERSION_H
+#define WESTON_VERSION_H
 
-#include <libweston/libweston.h>
-#include <libweston/plugin-registry.h>
+#define WESTON_VERSION_MAJOR 16
+#define WESTON_VERSION_MINOR 0
+#define WESTON_VERSION_MICRO 90
+#define WESTON_VERSION "16.0.90"
 
-#define WESTON_PIPEWIRE_API_NAME	"weston_pipewire_api_v1"
+/* This macro may not do what you expect.  Weston doesn't guarantee
+ * a stable API between 1.X and 1.Y, and thus this macro will return
+ * FALSE on any WESTON_VERSION_AT_LEAST(1,X,0) if the actual version
+ * is 1.Y.0 and X != Y).  In particular, it fails if X < Y, that is,
+ * 1.3.0 is considered to not be "at least" 1.4.0.
+ *
+ * If you want to test for the version number being 1.3.0 or above or
+ * maybe in a range (eg 1.2.0 to 1.4.0), just use the WESTON_VERSION_*
+ * defines above directly.
+ */
 
-struct weston_pipewire_api {
-	/** Create pipewire outputs
-	 *
-	 * Returns 0 on success, -1 on failure.
-	 */
-	struct weston_output *(*create_output)(struct weston_compositor *c,
-					       char *name);
+#define WESTON_VERSION_AT_LEAST(major, minor, micro) \
+        (WESTON_VERSION_MAJOR == (major) && \
+         WESTON_VERSION_MINOR == (minor) && \
+         WESTON_VERSION_MICRO >= (micro))
 
-	/** Check if output is pipewire */
-	bool (*is_pipewire_output)(struct weston_output *output);
-
-	/** Set mode */
-	int (*set_mode)(struct weston_output *output, const char *modeline);
-
-	/** Set seat */
-	void (*set_seat)(struct weston_output *output, const char *seat);
-};
-
-static inline const struct weston_pipewire_api *
-weston_pipewire_get_api(struct weston_compositor *compositor)
-{
-	const void *api;
-	api = weston_plugin_api_get(compositor, WESTON_PIPEWIRE_API_NAME,
-				    sizeof(struct weston_pipewire_api));
-
-	return (const struct weston_pipewire_api *)api;
-}
-
-#endif /* PIPEWIRE_PLUGIN_H */
+#endif

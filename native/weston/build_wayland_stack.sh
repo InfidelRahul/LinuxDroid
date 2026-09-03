@@ -225,12 +225,24 @@ meson setup "$LIBDRM_DIR/build-android" "$LIBDRM_DIR" \
     -Dfreedreno=disabled -Dtegra=disabled -Dvc4=disabled -Detnaviv=disabled -Dcairo-tests=disabled -Dman-pages=disabled -Dvalgrind=disabled -Dtests=false
 ninja -C "$LIBDRM_DIR/build-android" install
 
-# --- Step I: Weston / libweston 16 ---
-WESTON_COMMIT="d1882b0a544ae2197b597a6e39478e719bc54302"
-fetch_repo "weston" "https://github.com/InfidelRahul/weston.git" "$WESTON_COMMIT"
+# --- Step I: Weston / libweston (Always latest main branch) ---
+WESTON_REPO="https://github.com/InfidelRahul/weston.git"
+WESTON_BRANCH="main"
+WESTON_DIR="$SRC_DIR/weston"
+
+if [[ ! -d "$WESTON_DIR/.git" ]]; then
+    info "Cloning weston from $WESTON_REPO ($WESTON_BRANCH)..."
+    git clone --branch "$WESTON_BRANCH" "$WESTON_REPO" "$WESTON_DIR"
+fi
+info "Fetching latest $WESTON_BRANCH for weston from $WESTON_REPO..."
+git -C "$WESTON_DIR" remote set-url origin "$WESTON_REPO" || true
+git -C "$WESTON_DIR" fetch origin "$WESTON_BRANCH"
+git -C "$WESTON_DIR" checkout -f "origin/$WESTON_BRANCH"
+WESTON_RESOLVED_SHA="$(git -C "$WESTON_DIR" rev-parse HEAD)"
+info "Weston resolved HEAD commit SHA: $WESTON_RESOLVED_SHA (branch: $WESTON_BRANCH)"
 
 info "Applying Android Bionic compatibility adjustments to Weston..."
-WESTON_SRC="$SRC_DIR/weston" python3 - << 'PYINNER'
+WESTON_SRC="$WESTON_DIR" python3 - << 'PYINNER'
 import os
 weston_src = os.environ['WESTON_SRC']
 # 1. shared/xalloc.h -> getprogname() on Android
@@ -334,6 +346,8 @@ endif"""
                   "dep_libinput = dependency('libinput', version: '>= 1.2.0', required: false)")
     m = m.replace("dep_libevdev = dependency('libevdev')",
                   "dep_libevdev = dependency('libevdev', required: false)")
+    m = m.replace("if dep_libinput.version().version_compare('>= 1.26.0')",
+                  "if dep_libinput.found() and dep_libinput.version().version_compare('>= 1.26.0')")
     m = m.replace("required: true,\n)", "required: false,\n)")
     m = m.replace("subdir('frontend')", "if get_option('frontend')\n  subdir('frontend')\nendif")
     m = m.replace("subdir('clients')",
@@ -460,9 +474,14 @@ endif""")
         f.write(l)
 PYINNER
 
-info "Building libweston 16 for ARM64 Android..."
-rm -rf "$SRC_DIR/weston/build-android"
-meson setup "$SRC_DIR/weston/build-android" "$SRC_DIR/weston" \
+# Extract libweston major dynamically
+LIBWESTON_MAJOR=$(grep "libweston_major = " "$WESTON_DIR/meson.build" | head -n1 | awk '{print $3}')
+[[ -n "$LIBWESTON_MAJOR" ]] || die "Failed to determine libweston_major from $WESTON_DIR/meson.build"
+info "Detected libweston major version: $LIBWESTON_MAJOR"
+
+info "Building libweston $LIBWESTON_MAJOR for ARM64 Android..."
+rm -rf "$WESTON_DIR/build-android"
+meson setup "$WESTON_DIR/build-android" "$WESTON_DIR" \
     --cross-file "$CROSS_FILE" \
     --prefix "$PREFIX" \
     -Dbackend-drm=false \
@@ -488,17 +507,40 @@ meson setup "$SRC_DIR/weston/build-android" "$SRC_DIR/weston" \
     -Dtools=[] \
     -Ddemo-clients=false \
     -Dsimple-clients=[] \
-    -Dtests=false
-ninja -C "$SRC_DIR/weston/build-android" install
-cp -f "$SRC_DIR/weston/libweston/backend.h" "$PREFIX/include/libweston-16/libweston/backend.h"
+    -Dtests=false \
+    -Dperfetto=false
+ninja -C "$WESTON_DIR/build-android" install
+mkdir -p "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston"
+cp -f "$WESTON_DIR/libweston/backend.h" "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston/backend.h"
+
+# --- Record Build Provenance ---
+PROVENANCE_FILE="$PROJECT_ROOT/native/weston/weston_provenance.json"
+cat << EOF > "$PROVENANCE_FILE"
+{
+  "dependency": "weston",
+  "repository": "$WESTON_REPO",
+  "branch": "$WESTON_BRANCH",
+  "resolved_commit_sha": "$WESTON_RESOLVED_SHA",
+  "libweston_major": $LIBWESTON_MAJOR,
+  "target_abi": "arm64-v8a",
+  "target_api": 35,
+  "toolchain": "$TOOLCHAIN_BIN",
+  "built_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+}
+EOF
+cp -f "$PROVENANCE_FILE" "$PREFIX/weston_provenance.json"
+info "Recorded build provenance -> $PROVENANCE_FILE"
 
 # --- Step J: Sync Artifacts to App jniLibs and assets ---
 info "Syncing shared libraries to Android jniLibs/arm64-v8a..."
 JNILIBS_DIR="$PROJECT_ROOT/app/src/main/jniLibs/arm64-v8a"
 mkdir -p "$JNILIBS_DIR"
 
+# Remove any previous or stale libweston libraries to avoid version conflicts
+rm -f "$JNILIBS_DIR"/libweston-*.so
+
 REQUIRED_LIBS=(
-    "libweston-16.so"
+    "libweston-${LIBWESTON_MAJOR}.so"
     "libwayland-server.so"
     "libwayland-client.so"
     "libwayland-cursor.so"
@@ -535,8 +577,8 @@ for lib in "${REQUIRED_LIBS[@]}"; do
     fi
 done
 
-info "Verifying libweston-16 dynamic dependencies (no X11 / XWayland / desktop deps)..."
-"$TOOLCHAIN_BIN/llvm-readelf" -d "$JNILIBS_DIR/libweston-16.so" | grep NEEDED
+info "Verifying libweston-${LIBWESTON_MAJOR} dynamic dependencies (no X11 / XWayland / desktop deps)..."
+"$TOOLCHAIN_BIN/llvm-readelf" -d "$JNILIBS_DIR/libweston-${LIBWESTON_MAJOR}.so" | grep NEEDED
 
 info "=========================================================="
 info "Native Wayland Dependency Foundation build SUCCESSFUL!"
