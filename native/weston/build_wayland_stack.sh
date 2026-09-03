@@ -168,9 +168,43 @@ meson setup "$SRC_DIR/wayland-protocols/build-android" "$SRC_DIR/wayland-protoco
     -Dtests=false
 ninja -C "$SRC_DIR/wayland-protocols/build-android" install
 
-# --- Step E: Pixman (with NEON) ---
-PIXMAN_COMMIT="9cc163c9da0fb4da430641715313d95a6ec466d9"
-fetch_repo "pixman" "https://github.com/InfidelRahul/pixman.git" "$PIXMAN_COMMIT"
+# --- Step E: Pixman (with NEON, Always latest main branch) ---
+PIXMAN_REPO="https://github.com/InfidelRahul/pixman.git"
+PIXMAN_BRANCH="main"
+PIXMAN_DIR="$SRC_DIR/pixman"
+
+if [[ ! -d "$PIXMAN_DIR/.git" ]]; then
+    info "Cloning pixman from $PIXMAN_REPO ($PIXMAN_BRANCH)..."
+    git clone --branch "$PIXMAN_BRANCH" "$PIXMAN_REPO" "$PIXMAN_DIR"
+fi
+info "Fetching latest $PIXMAN_BRANCH for pixman from $PIXMAN_REPO..."
+git -C "$PIXMAN_DIR" remote set-url origin "$PIXMAN_REPO" || true
+git -C "$PIXMAN_DIR" fetch origin "$PIXMAN_BRANCH"
+git -C "$PIXMAN_DIR" checkout -f "origin/$PIXMAN_BRANCH"
+PIXMAN_RESOLVED_SHA="$(git -C "$PIXMAN_DIR" rev-parse HEAD)"
+info "Pixman resolved HEAD commit SHA: $PIXMAN_RESOLVED_SHA (branch: $PIXMAN_BRANCH)"
+
+# Record Pixman build provenance
+PIXMAN_PROVENANCE_FILE="$DIR/pixman_provenance.json"
+cat << EOF > "$PIXMAN_PROVENANCE_FILE"
+{
+  "provenance_schema_version": "1.0.0",
+  "component": "pixman",
+  "repository": "$PIXMAN_REPO",
+  "requested_ref": "$PIXMAN_BRANCH",
+  "resolved_commit_sha": "$PIXMAN_RESOLVED_SHA",
+  "build_timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "build_toolchain": "NDK r29 Clang (Android API 36)",
+  "target_abi": "arm64-v8a",
+  "target_arch": "aarch64",
+  "build_options": [
+    "-Da64-neon=enabled",
+    "-Ddemos=disabled",
+    "-Dtests=disabled"
+  ]
+}
+EOF
+info "Wrote Pixman build provenance to $PIXMAN_PROVENANCE_FILE"
 
 info "Building Pixman (AArch64 NEON) for Android..."
 rm -rf "$SRC_DIR/pixman/build-android"

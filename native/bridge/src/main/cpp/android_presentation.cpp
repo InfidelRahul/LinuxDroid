@@ -275,6 +275,85 @@ public:
         }
     }
 
+    int lockBuffer(int slot_index, void** out_pixels, int32_t* out_stride_bytes) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!is_enabled_ || slot_index < 0 || slot_index >= LINUXDROID_BUFFER_POOL_CAPACITY) {
+            LOGE("PIXMAN_LOCK_FAILURE: invalid presentation state or slot index %d", slot_index);
+            return -EINVAL;
+        }
+
+        LinuxDroidBufferSlot& slot = slots_[slot_index];
+        if (slot.state != LINUXDROID_BUFFER_STATE_ACQUIRED || slot.buffer == nullptr) {
+            LOGE("PIXMAN_LOCK_FAILURE: slot %d not in ACQUIRED state (state=%d)", slot_index, slot.state);
+            return -EINVAL;
+        }
+
+        void* virtual_addr = nullptr;
+        int err = AHardwareBuffer_lock(slot.buffer,
+                                       AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN,
+                                       -1,
+                                       nullptr,
+                                       &virtual_addr);
+        if (err != 0 || virtual_addr == nullptr) {
+            LOGE("PIXMAN_LOCK_FAILURE: AHardwareBuffer_lock failed on slot %d: %d", slot_index, err);
+            return (err != 0) ? err : -EIO;
+        }
+
+        AHardwareBuffer_Desc desc{};
+        AHardwareBuffer_describe(slot.buffer, &desc);
+        int32_t stride_bytes = static_cast<int32_t>(desc.stride * 4);
+
+        slot.mapped_address = virtual_addr;
+        slot.stride_bytes = stride_bytes;
+        slot.state = LINUXDROID_BUFFER_STATE_LOCKED;
+
+        if (out_pixels) *out_pixels = virtual_addr;
+        if (out_stride_bytes) *out_stride_bytes = stride_bytes;
+
+        LOGI("PIXMAN_BUFFER_LOCK: slot=%d, mapped=%p, stride=%d bytes (%d px)",
+             slot_index, virtual_addr, stride_bytes, desc.stride);
+        return 0;
+    }
+
+    int unlockBuffer(int slot_index, int* out_release_fence) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (slot_index < 0 || slot_index >= LINUXDROID_BUFFER_POOL_CAPACITY) {
+            return -EINVAL;
+        }
+
+        LinuxDroidBufferSlot& slot = slots_[slot_index];
+        if (slot.state != LINUXDROID_BUFFER_STATE_LOCKED || slot.buffer == nullptr) {
+            LOGE("PIXMAN_UNLOCK_FAILURE: slot %d not in LOCKED state (state=%d)", slot_index, slot.state);
+            return -EINVAL;
+        }
+
+        int fence_fd = -1;
+        int err = AHardwareBuffer_unlock(slot.buffer, &fence_fd);
+        if (err != 0) {
+            LOGE("PIXMAN_UNLOCK_FAILURE: AHardwareBuffer_unlock failed on slot %d: %d", slot_index, err);
+            return err;
+        }
+
+        slot.mapped_address = nullptr;
+        slot.state = LINUXDROID_BUFFER_STATE_ACQUIRED;
+        if (out_release_fence) {
+            *out_release_fence = fence_fd;
+        } else if (fence_fd >= 0) {
+            close(fence_fd);
+        }
+
+        LOGI("PIXMAN_BUFFER_UNLOCK: slot=%d unlocked, fence=%d", slot_index, fence_fd);
+        return 0;
+    }
+
+    AHardwareBuffer* getBuffer(int slot_index) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (slot_index < 0 || slot_index >= LINUXDROID_BUFFER_POOL_CAPACITY) {
+            return nullptr;
+        }
+        return slots_[slot_index].buffer;
+    }
+
     int submitBuffer(int slot_index, int acquire_fence_fd) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!is_enabled_ || surface_control_ == nullptr) {
@@ -435,10 +514,18 @@ private:
     void freeBufferPoolLocked() {
         for (int i = 0; i < LINUXDROID_BUFFER_POOL_CAPACITY; ++i) {
             if (slots_[i].buffer != nullptr) {
+                if (slots_[i].state == LINUXDROID_BUFFER_STATE_LOCKED) {
+                    int fence = -1;
+                    AHardwareBuffer_unlock(slots_[i].buffer, &fence);
+                    if (fence >= 0) close(fence);
+                    slots_[i].mapped_address = nullptr;
+                }
                 AHardwareBuffer_release(slots_[i].buffer);
                 slots_[i].buffer = nullptr;
             }
             slots_[i].state = LINUXDROID_BUFFER_STATE_FREE;
+            slots_[i].mapped_address = nullptr;
+            slots_[i].stride_bytes = 0;
             if (slots_[i].release_fence_fd >= 0) {
                 close(slots_[i].release_fence_fd);
                 slots_[i].release_fence_fd = -1;
@@ -556,6 +643,27 @@ int android_presentation_acquire_buffer(android_presentation_t* pres,
                                         uint32_t timeout_ms) {
     if (!pres || !pres->impl) return -EINVAL;
     return pres->impl->acquireBuffer(out_index, out_buffer, timeout_ms);
+}
+
+int android_presentation_lock_buffer(android_presentation_t* pres,
+                                     int slot_index,
+                                     void** out_pixels,
+                                     int32_t* out_stride_bytes) {
+    if (!pres || !pres->impl) return -EINVAL;
+    return pres->impl->lockBuffer(slot_index, out_pixels, out_stride_bytes);
+}
+
+int android_presentation_unlock_buffer(android_presentation_t* pres,
+                                       int slot_index,
+                                       int* out_release_fence) {
+    if (!pres || !pres->impl) return -EINVAL;
+    return pres->impl->unlockBuffer(slot_index, out_release_fence);
+}
+
+struct AHardwareBuffer* android_presentation_get_buffer(android_presentation_t* pres,
+                                                        int slot_index) {
+    if (!pres || !pres->impl) return nullptr;
+    return pres->impl->getBuffer(slot_index);
 }
 
 int android_presentation_submit_buffer(android_presentation_t* pres,

@@ -52,16 +52,16 @@
       "name": "pixman",
       "source_repository": "https://github.com/InfidelRahul/pixman.git",
       "upstream_repository": "https://gitlab.freedesktop.org/pixman/pixman.git",
+      "branch": "main",
       "release": "0.46.4",
-      "resolved_commit": "9cc163c9da0fb4da430641715313d95a6ec466d9",
+      "resolved_commit": "cc03b56c7b2b2e06199bb9b115af55f5b42b12ba",
       "build_system": "meson",
       "build_options": [
         "-Da64-neon=enabled",
         "-Ddemos=disabled",
         "-Dtests=disabled"
       ],
-      "runtime_library": "libpixman-1.so",
-      "tag_hash": "3f63e263be9e7c17962918f9372600b5668b6856"
+      "runtime_library": "libpixman-1.so"
     },
     "libxkbcommon": {
       "name": "libxkbcommon",

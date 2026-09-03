@@ -1,0 +1,16 @@
+{
+  "provenance_schema_version": "1.0.0",
+  "component": "pixman",
+  "repository": "https://github.com/InfidelRahul/pixman.git",
+  "requested_ref": "main",
+  "resolved_commit_sha": "cc03b56c7b2b2e06199bb9b115af55f5b42b12ba",
+  "build_timestamp": "2026-09-03T22:15:00Z",
+  "build_toolchain": "NDK r29 Clang (Android API 36)",
+  "target_abi": "arm64-v8a",
+  "target_arch": "aarch64",
+  "build_options": [
+    "-Da64-neon=enabled",
+    "-Ddemos=disabled",
+    "-Dtests=disabled"
+  ]
+}

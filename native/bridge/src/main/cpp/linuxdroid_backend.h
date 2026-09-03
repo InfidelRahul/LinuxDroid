@@ -4,12 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <libweston/libweston.h>
-#include <libweston/backend.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <libweston/libweston.h>
+#include <libweston/backend.h>
 
 #define LINUXDROID_DEFAULT_REFRESH_MHZ 60000
 
@@ -54,13 +54,18 @@ struct linuxdroid_output {
     struct ANativeWindow *native_window;
     int32_t width;
     int32_t height;
+    bool pixman_initialized;
+    uint32_t frame_count;
+    struct weston_layer test_layer;
+    struct weston_surface *test_surface;
+    struct weston_view *test_view;
 };
 
 /*
- * Weston 16 C ABI exports called by custom backends.
- * These symbols are dynamically exported by libweston-16.so (T visibility),
+ * Weston C ABI exports called by custom backends and renderers.
+ * These symbols are dynamically exported by libweston-17.so (T visibility),
  * but Weston's build only declares them in internal private headers (libweston-internal.h).
- * We declare their exact C signatures here to cleanly link against the real libweston-16.so.
+ * We declare their exact C signatures here to cleanly link against the real libweston-17.so.
  */
 void
 weston_compositor_add_head(struct weston_compositor *compositor,
@@ -74,8 +79,119 @@ void
 weston_compositor_read_presentation_clock(struct weston_compositor *compositor,
                                           struct timespec *ts);
 
+struct weston_renderer_options {
+    int reserved;
+};
+
 int
 weston_compositor_backends_loaded(struct weston_compositor *compositor);
+
+int
+weston_compositor_init_renderer(struct weston_compositor *compositor,
+                                enum weston_renderer_type renderer_type,
+                                const struct weston_renderer_options *options);
+
+bool
+weston_renderer_resize_output(struct weston_output *output,
+                              const struct weston_size *fb_size,
+                              const struct weston_geometry *area);
+
+struct weston_buffer_reference *
+weston_buffer_create_solid_rgba(struct weston_compositor *compositor,
+                                float r, float g, float b, float a);
+
+void
+weston_surface_attach_solid(struct weston_surface *surface,
+                            struct weston_buffer_reference *buffer_ref,
+                            int w, int h);
+
+void
+weston_buffer_destroy_solid(struct weston_buffer_reference *buffer_ref);
+
+void
+weston_surface_map(struct weston_surface *surface);
+
+void
+weston_view_move_to_layer(struct weston_view *view,
+                          struct weston_layer_entry *layer);
+
+struct weston_paint_node;
+struct linux_dmabuf_buffer;
+struct linux_dmabuf_memory;
+struct weston_drm_format_array;
+struct pixel_format_info;
+
+typedef void *weston_renderbuffer_t;
+typedef bool (*weston_renderbuffer_discarded_func)(weston_renderbuffer_t renderbuffer, void *user_data);
+
+struct pixman_renderer_output_options {
+    bool use_shadow;
+    struct weston_size fb_size;
+    const struct pixel_format_info *format;
+};
+
+struct pixman_renderer_interface {
+    int (*output_create)(struct weston_output *output,
+                         const struct pixman_renderer_output_options *options);
+    void (*output_destroy)(struct weston_output *output);
+};
+
+struct weston_renderer {
+    void (*repaint_output)(struct weston_output *output,
+                           pixman_region32_t *output_damage,
+                           weston_renderbuffer_t renderbuffer);
+
+    bool (*resize_output)(struct weston_output *output,
+                          const struct weston_size *fb_size,
+                          const struct weston_geometry *area);
+
+    void (*flush_damage)(struct weston_paint_node *pnode);
+    void (*attach)(struct weston_paint_node *pnode);
+    void (*destroy)(struct weston_compositor *ec);
+
+    int (*surface_copy_content)(struct weston_surface *surface,
+                                void *target, size_t size,
+                                int src_x, int src_y,
+                                int width, int height);
+
+    bool (*import_dmabuf)(struct weston_compositor *ec,
+                          struct linux_dmabuf_buffer *buffer);
+
+    const struct weston_drm_format_array *
+            (*get_supported_dmabuf_formats)(struct weston_compositor *ec);
+
+    void (*buffer_init)(struct weston_compositor *ec,
+                        struct weston_buffer *buffer);
+
+    weston_renderbuffer_t
+    (*create_renderbuffer)(struct weston_output *output,
+                           const struct pixel_format_info *format,
+                           void *buffer,
+                           int stride,
+                           weston_renderbuffer_discarded_func discarded_cb,
+                           void *user_data);
+
+    weston_renderbuffer_t
+    (*create_renderbuffer_dmabuf)(struct weston_output *output,
+                                  struct linux_dmabuf_memory *dmabuf,
+                                  weston_renderbuffer_discarded_func discarded_cb,
+                                  void *user_data);
+
+    void (*destroy_renderbuffer)(weston_renderbuffer_t renderbuffer);
+
+    struct linux_dmabuf_memory *
+            (*dmabuf_alloc)(struct weston_renderer *renderer,
+                            unsigned int width, unsigned int height,
+                            uint32_t format,
+                            const uint64_t *modifiers, unsigned int count);
+
+    bool (*can_render_straight_alpha)(struct weston_compositor *wc);
+
+    enum weston_renderer_type type;
+    const void *gl;
+    const void *vulkan;
+    const struct pixman_renderer_interface *pixman;
+};
 
 /**
  * Creates and initializes the LinuxDroid custom backend on the compositor.
@@ -155,6 +271,13 @@ linuxdroid_output_set_window(struct weston_output *output, struct ANativeWindow 
  */
 int
 linuxdroid_output_resize(struct weston_output *output, int32_t width, int32_t height);
+
+/**
+ * Creates a deterministic test scene surface on the compositor to validate
+ * the first real visible Linux desktop frame through Pixman and SurfaceControl.
+ */
+int
+linuxdroid_output_create_test_scene(struct weston_output *output);
 
 #ifdef __cplusplus
 }

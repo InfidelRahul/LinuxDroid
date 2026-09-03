@@ -85,6 +85,7 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
     ${LIBWESTON_INC_DIRS}
 )
 
@@ -113,6 +114,7 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
     ${LIBWESTON_INC_DIRS}
 )
 
@@ -133,5 +135,27 @@ target_include_directories(
     android_presentation_test
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# Standalone native Pixman renderer test executable (Phase 5 validation)
+add_executable(
+    pixman_renderer_test
+    pixman_renderer_test.cpp
+    android_presentation.cpp
+)
+
+target_link_libraries(
+    pixman_renderer_test
+    android
+    log
+    pixman-1
+)
+
+target_include_directories(
+    pixman_renderer_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
 )
 
