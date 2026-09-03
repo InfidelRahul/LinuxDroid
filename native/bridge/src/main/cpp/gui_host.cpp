@@ -1,4 +1,5 @@
 #include "gui_host.h"
+#include "linuxdroid_backend.h"
 
 #include <wayland-server.h>
 #include <libweston-16/libweston/libweston.h>
@@ -8,6 +9,7 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 #include <cerrno>
+#include <cstdarg>
 #include <cstring>
 
 #define TAG "LinuxDroid/GuiHost"
@@ -38,6 +40,14 @@ int handleWakeEvent(int fd, uint32_t mask, void* data) {
     return 0;
 }
 
+int westonLogHandler(const char* fmt, va_list ap) {
+    return __android_log_vprint(ANDROID_LOG_INFO, "LinuxDroid/Weston", fmt, ap);
+}
+
+int westonLogContinueHandler(const char* fmt, va_list ap) {
+    return __android_log_vprint(ANDROID_LOG_INFO, "LinuxDroid/Weston", fmt, ap);
+}
+
 } // anonymous namespace
 
 GuiHost& GuiHost::getInstance() {
@@ -52,6 +62,9 @@ GuiHost::GuiHost()
       wake_source_(nullptr),
       log_ctx_(nullptr),
       compositor_(nullptr),
+      backend_(nullptr),
+      head_(nullptr),
+      output_(nullptr),
       init_success_(false) {}
 
 GuiHost::~GuiHost() {
@@ -62,7 +75,7 @@ bool GuiHost::start() {
     std::unique_lock<std::mutex> lock(lifecycle_mutex_);
 
     if (state_ == LifecycleState::RUNNING) {
-        LOGI("GUI host start requested while already running");
+        LOGI("WESTON_START: GUI host start requested while already running");
         return true;
     }
 
@@ -75,14 +88,14 @@ bool GuiHost::start() {
         init_cv_.wait(lock, [this] { return state_ == LifecycleState::STOPPED; });
     }
 
-    LOGI("GUI host starting");
+    LOGI("WESTON_START: GUI host starting");
     state_ = LifecycleState::STARTING;
     init_success_ = false;
 
     // Create wake eventfd to allow deterministic asynchronous interruption of the Wayland event loop
     wake_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (wake_fd_ < 0) {
-        LOGE("GUI host initialization failure (failed to create eventfd: %s)", strerror(errno));
+        LOGE("WESTON_FAILURE: failed to create eventfd: %s", strerror(errno));
         state_ = LifecycleState::STOPPED;
         return false;
     }
@@ -98,10 +111,10 @@ bool GuiHost::start() {
     });
 
     if (state_ == LifecycleState::RUNNING) {
-        LOGI("GUI host started");
+        LOGI("WESTON_RUNNING: GUI host started successfully");
         return true;
     } else {
-        LOGE("GUI host initialization failure");
+        LOGE("WESTON_FAILURE: GUI host initialization failed");
         if (worker_thread_.joinable()) {
             worker_thread_.join();
         }
@@ -118,7 +131,7 @@ bool GuiHost::stop() {
     std::unique_lock<std::mutex> lock(lifecycle_mutex_);
 
     if (state_ == LifecycleState::STOPPED) {
-        LOGI("GUI host stop requested while already stopped");
+        LOGI("WESTON_STOP_REQUEST: GUI host stop requested while already stopped");
         return true;
     }
 
@@ -134,7 +147,7 @@ bool GuiHost::stop() {
         return true;
     }
 
-    LOGI("GUI host stopping");
+    LOGI("WESTON_STOP_REQUEST: GUI host stopping");
     state_ = LifecycleState::STOPPING;
 
     // Signal Wayland display loop to terminate
@@ -165,7 +178,7 @@ bool GuiHost::stop() {
     state_ = LifecycleState::STOPPED;
     init_cv_.notify_all();
 
-    LOGI("GUI host stopped");
+    LOGI("WESTON_STOPPED: GUI host stopped");
     return true;
 }
 
@@ -181,7 +194,7 @@ void GuiHost::workerMain() {
     // 1. Create Wayland Server Display
     display_ = wl_display_create();
     if (display_ == nullptr) {
-        LOGE("Failed to create Wayland display");
+        LOGE("WESTON_FAILURE: failed to create Wayland display");
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         state_ = LifecycleState::STOPPED;
         init_cv_.notify_all();
@@ -191,7 +204,7 @@ void GuiHost::workerMain() {
     // 2. Register wake_fd_ with Wayland event loop for deterministic termination
     struct wl_event_loop* loop = wl_display_get_event_loop(display_);
     if (loop == nullptr) {
-        LOGE("Failed to get Wayland event loop");
+        LOGE("WESTON_FAILURE: failed to get Wayland event loop");
         wl_display_destroy(display_);
         display_ = nullptr;
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
@@ -202,7 +215,7 @@ void GuiHost::workerMain() {
 
     wake_source_ = wl_event_loop_add_fd(loop, wake_fd_, WL_EVENT_READABLE, handleWakeEvent, nullptr);
     if (wake_source_ == nullptr) {
-        LOGE("Failed to add wake event source to Wayland event loop");
+        LOGE("WESTON_FAILURE: failed to add wake event source to Wayland event loop");
         wl_display_destroy(display_);
         display_ = nullptr;
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
@@ -211,46 +224,164 @@ void GuiHost::workerMain() {
         return;
     }
 
-    // 3. Initialize minimal Weston log context and compositor runtime
+    // 3. Route Weston logging to Android logcat
+    weston_log_set_handler(westonLogHandler, westonLogContinueHandler);
+
+    // 4. Initialize Weston log context and compositor runtime
     log_ctx_ = weston_log_ctx_create();
-    if (log_ctx_ != nullptr) {
-        compositor_ = weston_compositor_create(display_, log_ctx_, nullptr, nullptr);
-    }
-
-    if (compositor_ == nullptr) {
-        LOGE("Failed to create libweston compositor");
-        if (log_ctx_ != nullptr) {
-            weston_log_ctx_destroy(log_ctx_);
-            log_ctx_ = nullptr;
-        }
-        if (wake_source_ != nullptr) {
-            wl_event_source_remove(wake_source_);
-            wake_source_ = nullptr;
-        }
+    if (log_ctx_ == nullptr) {
+        LOGE("WESTON_FAILURE: failed to create Weston log context");
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
         wl_display_destroy(display_);
         display_ = nullptr;
-
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         state_ = LifecycleState::STOPPED;
         init_cv_.notify_all();
         return;
     }
 
-    // 4. Initialization successful: signal RUNNING to waiter
+    compositor_ = weston_compositor_create(display_, log_ctx_, nullptr, nullptr);
+    if (compositor_ == nullptr) {
+        LOGE("WESTON_FAILURE: failed to create libweston compositor");
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 5. Initialize LinuxDroid custom backend
+    struct linuxdroid_backend_config backend_config = {
+        .refresh_mhz = LINUXDROID_DEFAULT_REFRESH_MHZ
+    };
+    backend_ = linuxdroid_backend_create(compositor_, &backend_config);
+    if (backend_ == nullptr) {
+        LOGE("WESTON_FAILURE: failed to create LinuxDroid backend");
+        weston_compositor_destroy(compositor_);
+        compositor_ = nullptr;
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 6. Create logical display head
+    head_ = linuxdroid_head_create(backend_, "linuxdroid-head-0", 70, 150);
+    if (head_ == nullptr) {
+        LOGE("WESTON_FAILURE: failed to create LinuxDroid head");
+        weston_compositor_destroy(compositor_);
+        compositor_ = nullptr;
+        backend_ = nullptr;
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 7. Create compositor output and attach head
+    output_ = weston_compositor_create_output(compositor_, &head_->base, "linuxdroid-output-0");
+    if (output_ == nullptr) {
+        LOGE("WESTON_FAILURE: failed to create LinuxDroid output");
+        weston_compositor_destroy(compositor_);
+        compositor_ = nullptr;
+        backend_ = nullptr;
+        head_ = nullptr;
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 8. Configure output mode (geometry, refresh, scale)
+    if (linuxdroid_output_set_mode(output_, 1920, 1080, LINUXDROID_DEFAULT_REFRESH_MHZ, 1) < 0) {
+        LOGE("WESTON_FAILURE: failed to set mode on LinuxDroid output");
+        weston_compositor_destroy(compositor_);
+        compositor_ = nullptr;
+        backend_ = nullptr;
+        head_ = nullptr;
+        output_ = nullptr;
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 9. Enable output
+    if (weston_output_enable(output_) < 0) {
+        LOGE("WESTON_FAILURE: failed to enable LinuxDroid output");
+        weston_compositor_destroy(compositor_);
+        compositor_ = nullptr;
+        backend_ = nullptr;
+        head_ = nullptr;
+        output_ = nullptr;
+        weston_log_ctx_destroy(log_ctx_);
+        log_ctx_ = nullptr;
+        wl_event_source_remove(wake_source_);
+        wake_source_ = nullptr;
+        wl_display_destroy(display_);
+        display_ = nullptr;
+        std::lock_guard<std::mutex> lock(lifecycle_mutex_);
+        state_ = LifecycleState::STOPPED;
+        init_cv_.notify_all();
+        return;
+    }
+
+    // 10. Initialization successful: signal RUNNING to waiter
     {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         state_ = LifecycleState::RUNNING;
         init_success_ = true;
         init_cv_.notify_all();
     }
+    LOGI("WESTON_RUNNING: libweston compositor running with LinuxDroid backend");
 
-    // 5. Run Wayland event loop (blocks until wl_display_terminate is called)
+    // 11. Run Wayland event loop (blocks until wl_display_terminate is called)
     wl_display_run(display_);
 
-    // 6. Teardown native state deterministically in reverse order of ownership
+    // 12. Teardown native state deterministically in reverse order of ownership
+    LOGI("WESTON_STOP_REQUEST: tearing down native Weston resources");
+
+    if (output_ != nullptr && output_->enabled) {
+        weston_output_disable(output_);
+    }
+
+    // weston_compositor_destroy shuts down outputs and backends, releases heads, and frees compositor
     if (compositor_ != nullptr) {
         weston_compositor_destroy(compositor_);
         compositor_ = nullptr;
+        backend_ = nullptr;
+        head_ = nullptr;
+        output_ = nullptr;
     }
 
     if (log_ctx_ != nullptr) {
@@ -267,8 +398,9 @@ void GuiHost::workerMain() {
         wl_display_destroy(display_);
         display_ = nullptr;
     }
+
+    LOGI("WESTON_STOPPED: native GUI host stopped");
 }
 
 } // namespace gui
 } // namespace linuxdroid
-

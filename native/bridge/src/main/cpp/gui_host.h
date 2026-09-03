@@ -11,6 +11,9 @@ struct wl_display;
 struct wl_event_source;
 struct weston_compositor;
 struct weston_log_context;
+struct weston_output;
+struct linuxdroid_backend;
+struct linuxdroid_head;
 
 namespace linuxdroid {
 namespace gui {
@@ -84,6 +87,9 @@ private:
     struct wl_event_source* wake_source_ = nullptr;
     struct weston_log_context* log_ctx_ = nullptr;
     struct weston_compositor* compositor_ = nullptr;
+    struct linuxdroid_backend* backend_ = nullptr;
+    struct linuxdroid_head* head_ = nullptr;
+    struct weston_output* output_ = nullptr;
 
     bool init_success_ = false;
 };

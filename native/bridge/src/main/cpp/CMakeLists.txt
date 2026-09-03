@@ -34,6 +34,7 @@ add_library(
     input_bridge.cpp
     audio_bridge.cpp
     wayland_foundation_test.cpp
+    linuxdroid_backend.c
     gui_host.cpp
 )
 
@@ -77,6 +78,7 @@ target_include_directories(
 add_executable(
     gui_host_test
     gui_host_test.cpp
+    linuxdroid_backend.c
     gui_host.cpp
 )
 

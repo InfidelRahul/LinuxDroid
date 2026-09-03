@@ -490,6 +490,7 @@ meson setup "$SRC_DIR/weston/build-android" "$SRC_DIR/weston" \
     -Dsimple-clients=[] \
     -Dtests=false
 ninja -C "$SRC_DIR/weston/build-android" install
+cp -f "$SRC_DIR/weston/libweston/backend.h" "$PREFIX/include/libweston-16/libweston/backend.h"
 
 # --- Step J: Sync Artifacts to App jniLibs and assets ---
 info "Syncing shared libraries to Android jniLibs/arm64-v8a..."
