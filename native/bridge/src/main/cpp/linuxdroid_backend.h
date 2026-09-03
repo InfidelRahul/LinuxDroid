@@ -28,6 +28,11 @@ struct linuxdroid_backend {
     struct weston_backend base;
     struct weston_compositor *compositor;
     int refresh_mhz;
+
+    // Phase 6: Seat & input devices
+    struct weston_seat seat;
+    struct weston_touch_device *touch_device;
+    bool seat_initialized;
 };
 
 /**
@@ -278,6 +283,52 @@ linuxdroid_output_resize(struct weston_output *output, int32_t width, int32_t he
  */
 int
 linuxdroid_output_create_test_scene(struct weston_output *output);
+
+/* ─── Phase 6: Seat & Input Subsystem ABI ────────────────────────────────── */
+
+void
+weston_seat_init(struct weston_seat *seat, struct weston_compositor *ec,
+                 const char *seat_name);
+
+void
+weston_seat_release(struct weston_seat *seat);
+
+int
+weston_seat_init_pointer(struct weston_seat *seat);
+
+int
+weston_seat_init_keyboard(struct weston_seat *seat, struct xkb_keymap *keymap);
+
+int
+weston_seat_init_touch(struct weston_seat *seat);
+
+void
+weston_seat_release_keyboard(struct weston_seat *seat);
+
+void
+weston_seat_release_pointer(struct weston_seat *seat);
+
+void
+weston_seat_release_touch(struct weston_seat *seat);
+
+struct weston_touch_device *
+weston_touch_create_touch_device(struct weston_touch *touch,
+                                 const char *syspath,
+                                 void *backend_data,
+                                 const struct weston_touch_device_ops *ops,
+                                 weston_touch_device_set_output_func_t set_output);
+
+void
+weston_touch_device_destroy(struct weston_touch_device *device);
+
+struct weston_seat *
+linuxdroid_backend_get_seat(struct linuxdroid_backend *b);
+
+struct weston_touch_device *
+linuxdroid_backend_get_touch_device(struct linuxdroid_backend *b);
+
+void
+linuxdroid_backend_reset_input(struct linuxdroid_backend *b);
 
 #ifdef __cplusplus
 }

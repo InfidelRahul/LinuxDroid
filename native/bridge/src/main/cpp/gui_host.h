@@ -88,6 +88,11 @@ public:
      */
     void destroyNativeWindow();
 
+    /**
+     * Drains pending events from InputBridge and dispatches them on the compositor event loop.
+     */
+    void processQueuedInput();
+
 private:
     void workerMain();
 

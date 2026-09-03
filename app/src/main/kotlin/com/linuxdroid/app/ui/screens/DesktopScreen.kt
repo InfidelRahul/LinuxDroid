@@ -31,12 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.linuxdroid.app.ui.components.DistroIcon
 import com.linuxdroid.app.ui.navigation.Screen
 import com.linuxdroid.app.ui.theme.*
 import com.linuxdroid.app.ui.viewmodel.EnvironmentViewModel
+import com.linuxdroid.core.display.GuiSurfaceView
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.EnvironmentState
 import kotlinx.coroutines.delay
@@ -686,14 +688,20 @@ private fun LinuxDesktopWorkspace(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF1E222B))
-                .padding(padding)
-                .padding(16.dp),
+                .padding(padding),
             contentAlignment = Alignment.Center,
         ) {
+            AndroidView(
+                factory = { ctx ->
+                    GuiSurfaceView(ctx)
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp).padding(16.dp),
             ) {
                 // Desktop Emblem
                 DistroIcon(distribution = environment.distribution, size = 72.dp)

@@ -274,6 +274,20 @@ linuxdroid_backend_create(struct weston_compositor *compositor,
         return NULL;
     }
 
+    // Initialize seat and input devices for Phase 6
+    weston_seat_init(&b->seat, compositor, "default");
+    weston_seat_init_pointer(&b->seat);
+    if (weston_seat_init_keyboard(&b->seat, NULL) < 0) {
+        LOGW("INPUT_DEVICE_INIT: failed to initialize seat keyboard");
+    }
+    weston_seat_init_touch(&b->seat);
+    if (b->seat.touch_state) {
+        b->touch_device = weston_touch_create_touch_device(
+            b->seat.touch_state, "linuxdroid-touch", NULL, NULL, NULL);
+    }
+    b->seat_initialized = true;
+    LOGI("INPUT_DEVICE_INIT: LinuxDroid seat initialized with pointer, keyboard, and touch");
+
     LOGI("LINUXDROID_BACKEND_CREATED: LinuxDroid custom backend registered successfully");
     return b;
 }
@@ -288,6 +302,25 @@ linuxdroid_backend_destroy(struct weston_backend *backend)
         return;
 
     LOGI("LINUXDROID_BACKEND_DESTROY: LinuxDroid backend destroying");
+
+    if (b->seat_initialized) {
+        LOGI("INPUT_DEVICE_DESTROY: releasing seat and input devices");
+        if (b->touch_device) {
+            weston_touch_device_destroy(b->touch_device);
+            b->touch_device = NULL;
+        }
+        if (b->seat.touch_state) {
+            weston_seat_release_touch(&b->seat);
+        }
+        if (b->seat.keyboard_state) {
+            weston_seat_release_keyboard(&b->seat);
+        }
+        if (b->seat.pointer_state) {
+            weston_seat_release_pointer(&b->seat);
+        }
+        weston_seat_release(&b->seat);
+        b->seat_initialized = false;
+    }
 
     wl_list_remove(&b->base.link);
 
@@ -534,3 +567,47 @@ linuxdroid_output_create_test_scene(struct weston_output *output)
     LOGI("LINUXDROID_TEST_SCENE_CREATED: deterministic visible test scene attached (%dx%d)", w, h);
     return 0;
 }
+
+struct weston_seat *
+linuxdroid_backend_get_seat(struct linuxdroid_backend *b)
+{
+    return (b && b->seat_initialized) ? &b->seat : NULL;
+}
+
+struct weston_touch_device *
+linuxdroid_backend_get_touch_device(struct linuxdroid_backend *b)
+{
+    return (b && b->seat_initialized) ? b->touch_device : NULL;
+}
+
+void
+linuxdroid_backend_reset_input(struct linuxdroid_backend *b)
+{
+    if (!b || !b->seat_initialized) return;
+
+    LOGI("INPUT_STATE_RESET: resetting active touch contacts and modifier state");
+    if (b->touch_device) {
+        notify_touch_cancel(b->touch_device);
+    }
+    if (b->seat.keyboard_state) {
+        struct weston_keyboard *kbd = b->seat.keyboard_state;
+        while (kbd->keys.size > 0) {
+            uint32_t *keys = (uint32_t *)kbd->keys.data;
+            uint32_t key = keys[0];
+            struct weston_key_event key_event = {
+                .base = {
+                    .ts = { 0, 0 },
+                    .seat = &b->seat,
+                },
+                .key = key,
+                .key_state = WL_KEYBOARD_KEY_STATE_RELEASED,
+                .key_update_state = STATE_UPDATE_AUTOMATIC,
+            };
+            notify_key(&key_event);
+        }
+    }
+    if (b->seat.pointer_state) {
+        notify_pointer_frame(&b->seat);
+    }
+}
+

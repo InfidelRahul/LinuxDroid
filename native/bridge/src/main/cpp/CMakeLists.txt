@@ -34,6 +34,7 @@ add_library(
     gpu_detector.cpp
     display_bridge.cpp
     input_bridge.cpp
+    input_translator.cpp
     audio_bridge.cpp
     wayland_foundation_test.cpp
     android_presentation.cpp
@@ -93,6 +94,8 @@ target_include_directories(
 add_executable(
     gui_host_test
     gui_host_test.cpp
+    input_translator.cpp
+    input_bridge.cpp
     android_presentation.cpp
     linuxdroid_backend.c
     gui_host.cpp
@@ -157,5 +160,36 @@ target_include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm
+)
+
+# Standalone native input integration test executable (Phase 6 validation)
+add_executable(
+    input_integration_test
+    input_integration_test.cpp
+    input_translator.cpp
+    input_bridge.cpp
+    android_presentation.cpp
+    linuxdroid_backend.c
+    gui_host.cpp
+)
+
+target_link_libraries(
+    input_integration_test
+    android
+    log
+    wayland-server
+    weston
+    pixman-1
+    xkbcommon
+)
+
+target_include_directories(
+    input_integration_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
 )
 

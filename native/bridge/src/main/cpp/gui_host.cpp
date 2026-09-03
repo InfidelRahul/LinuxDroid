@@ -1,6 +1,8 @@
 #include "gui_host.h"
 #include "linuxdroid_backend.h"
 #include "android_presentation.h"
+#include "input_bridge.h"
+#include "input_translator.h"
 
 #include <wayland-server.h>
 #include <libweston/libweston.h>
@@ -38,6 +40,7 @@ int handleWakeEvent(int fd, uint32_t mask, void* data) {
     (void)data;
     uint64_t val = 0;
     while (read(fd, &val, sizeof(val)) > 0) {}
+    GuiHost::getInstance().processQueuedInput();
     return 0;
 }
 
@@ -112,10 +115,12 @@ bool GuiHost::start() {
     });
 
     if (state_ == LifecycleState::RUNNING) {
+        InputBridge::getInstance().setWakeFd(wake_fd_);
         LOGI("WESTON_START_BEGIN: GUI host started successfully");
         return true;
     } else {
         LOGE("WESTON_START_FAILED: GUI host initialization failed");
+        InputBridge::getInstance().setWakeFd(-1);
         if (worker_thread_.joinable()) {
             worker_thread_.join();
         }
@@ -150,6 +155,11 @@ bool GuiHost::stop() {
 
     LOGI("WESTON_STOP_REQUEST: GUI host stopping");
     state_ = LifecycleState::STOPPING;
+
+    InputBridge::getInstance().setWakeFd(-1);
+    if (backend_ != nullptr) {
+        linuxdroid_backend_reset_input(backend_);
+    }
 
     // Signal Wayland display loop to terminate
     if (display_ != nullptr) {
@@ -212,6 +222,10 @@ void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, i
     window_height_ = height;
     window_format_ = format;
 
+    if (backend_ != nullptr) {
+        linuxdroid_backend_reset_input(backend_);
+    }
+
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, window);
         if (width > 0 && height > 0) {
@@ -223,6 +237,9 @@ void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, i
 void GuiHost::destroyNativeWindow() {
     std::lock_guard<std::mutex> lock(window_mutex_);
     native_window_ = nullptr;
+    if (backend_ != nullptr) {
+        linuxdroid_backend_reset_input(backend_);
+    }
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, nullptr);
     }
@@ -462,6 +479,135 @@ void GuiHost::workerMain() {
     }
 
     LOGI("WESTON_STOPPED: native GUI host stopped");
+}
+
+void GuiHost::processQueuedInput() {
+    if (state_.load(std::memory_order_relaxed) != LifecycleState::RUNNING ||
+        backend_ == nullptr || compositor_ == nullptr) {
+        return;
+    }
+
+    struct weston_seat* seat = linuxdroid_backend_get_seat(backend_);
+    if (seat == nullptr) return;
+
+    struct weston_touch_device* touch_dev = linuxdroid_backend_get_touch_device(backend_);
+
+    NativeInputEvent evt;
+    while (InputBridge::getInstance().popEvent(&evt)) {
+        struct timespec ts;
+        if (evt.timestampNs > 0) {
+            ts.tv_sec = static_cast<time_t>(evt.timestampNs / 1000000000ULL);
+            ts.tv_nsec = static_cast<long>(evt.timestampNs % 1000000000ULL);
+        } else {
+            weston_compositor_read_presentation_clock(compositor_, &ts);
+        }
+
+        switch (evt.type) {
+            case InputEventType::KEY_PRESS:
+            case InputEventType::KEY_RELEASE: {
+                uint32_t key = InputTranslator::androidKeycodeToLinux(evt.keyCode);
+                if (key == KEY_RESERVED) {
+                    LOGW("INPUT_UNKNOWN_KEYCODE: unmapped android_kc=%d", evt.keyCode);
+                    break;
+                }
+                struct weston_key_event key_event = {};
+                key_event.base.ts = ts;
+                key_event.base.seat = seat;
+                key_event.key = key;
+                key_event.key_state = (evt.type == InputEventType::KEY_PRESS)
+                                          ? WL_KEYBOARD_KEY_STATE_PRESSED
+                                          : WL_KEYBOARD_KEY_STATE_RELEASED;
+                key_event.key_update_state = STATE_UPDATE_AUTOMATIC;
+                notify_key(&key_event);
+                break;
+            }
+
+            case InputEventType::MOUSE_MOVE: {
+                int w = output_ ? output_->width : window_width_;
+                int h = output_ ? output_->height : window_height_;
+                double cx = InputTranslator::clampCoordinate(evt.x, w);
+                double cy = InputTranslator::clampCoordinate(evt.y, h);
+                struct weston_coord_global pos = { .c = { .x = cx, .y = cy } };
+                struct weston_pointer_motion_event motion_event = {};
+                motion_event.base.ts = ts;
+                motion_event.base.seat = seat;
+                motion_event.mask = WESTON_POINTER_MOTION_ABS;
+                motion_event.abs = pos;
+                notify_motion(&motion_event);
+                notify_pointer_frame(seat);
+                break;
+            }
+
+            case InputEventType::MOUSE_DOWN:
+            case InputEventType::MOUSE_UP: {
+                uint32_t button = InputTranslator::androidButtonToLinux(evt.id);
+                struct weston_pointer_button_event btn_event = {};
+                btn_event.base.ts = ts;
+                btn_event.base.seat = seat;
+                btn_event.button = button;
+                btn_event.button_state = (evt.type == InputEventType::MOUSE_DOWN)
+                                             ? WL_POINTER_BUTTON_STATE_PRESSED
+                                             : WL_POINTER_BUTTON_STATE_RELEASED;
+                notify_button(&btn_event);
+                notify_pointer_frame(seat);
+                break;
+            }
+
+            case InputEventType::MOUSE_SCROLL: {
+                if (evt.scrollY != 0.0f) {
+                    struct weston_pointer_axis_event axis_ev = {};
+                    axis_ev.base.ts = ts;
+                    axis_ev.base.seat = seat;
+                    axis_ev.axis = WL_POINTER_AXIS_VERTICAL_SCROLL;
+                    axis_ev.value = InputTranslator::translateScrollAxis(evt.scrollY);
+                    notify_axis(&axis_ev);
+                }
+                if (evt.scrollX != 0.0f) {
+                    struct weston_pointer_axis_event axis_ev = {};
+                    axis_ev.base.ts = ts;
+                    axis_ev.base.seat = seat;
+                    axis_ev.axis = WL_POINTER_AXIS_HORIZONTAL_SCROLL;
+                    axis_ev.value = -InputTranslator::translateScrollAxis(evt.scrollX);
+                    notify_axis(&axis_ev);
+                }
+                notify_pointer_frame(seat);
+                break;
+            }
+
+            case InputEventType::TOUCH_DOWN:
+            case InputEventType::TOUCH_MOVE:
+            case InputEventType::TOUCH_UP: {
+                if (touch_dev != nullptr) {
+                    int w = output_ ? output_->width : window_width_;
+                    int h = output_ ? output_->height : window_height_;
+                    double cx = InputTranslator::clampCoordinate(evt.x, w);
+                    double cy = InputTranslator::clampCoordinate(evt.y, h);
+                    struct weston_coord_global pos = { .c = { .x = cx, .y = cy } };
+                    int32_t ttype = WL_TOUCH_MOTION;
+                    if (evt.type == InputEventType::TOUCH_DOWN) ttype = WL_TOUCH_DOWN;
+                    else if (evt.type == InputEventType::TOUCH_UP) ttype = WL_TOUCH_UP;
+
+                    struct weston_touch_event touch_ev = {};
+                    touch_ev.base.ts = ts;
+                    touch_ev.base.seat = seat;
+                    touch_ev.device = touch_dev;
+                    touch_ev.touch_type = ttype;
+                    touch_ev.touch_id = evt.id;
+                    touch_ev.pos = pos;
+                    notify_touch(&touch_ev);
+                    notify_touch_frame(touch_dev);
+                }
+                break;
+            }
+
+            case InputEventType::TOUCH_CANCEL: {
+                if (touch_dev != nullptr) {
+                    notify_touch_cancel(touch_dev);
+                }
+                break;
+            }
+        }
+    }
 }
 
 } // namespace gui
