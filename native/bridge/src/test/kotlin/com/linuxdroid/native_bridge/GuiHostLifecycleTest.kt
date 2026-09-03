@@ -81,3 +81,4 @@ class GuiHostLifecycleTest {
         assertThat(workerThreads.get()).isEqualTo(0)
     }
 }
+

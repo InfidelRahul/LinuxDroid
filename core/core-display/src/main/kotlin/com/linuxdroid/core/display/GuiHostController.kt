@@ -63,3 +63,4 @@ class GuiHostController(
      */
     fun getState(): State = State.fromValue(bridge.guiGetState())
 }
+

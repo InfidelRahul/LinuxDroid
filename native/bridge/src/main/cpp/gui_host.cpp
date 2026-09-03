@@ -271,3 +271,4 @@ void GuiHost::workerMain() {
 
 } // namespace gui
 } // namespace linuxdroid
+
