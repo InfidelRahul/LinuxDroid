@@ -166,7 +166,7 @@ class GuestRootIsolationTest {
         assertThat(isolatedEnv["PROOT_LOADER"]).isEqualTo(loader.absolutePath)
         assertThat(isolatedEnv["PROOT_LOG_FILE"]).isEqualTo(logFile.absolutePath)
         assertThat(isolatedEnv["PROOT_VERBOSE"]).isEqualTo("9")
-        assertThat(isolatedEnv["PROOT_NO_SECCOMP"]).isEqualTo("1")
+        assertThat(isolatedEnv).doesNotContainKey("PROOT_NO_SECCOMP")
 
         // Verifies guest variables are preserved
         assertThat(isolatedEnv["PATH"]).isEqualTo("/usr/bin:/bin")

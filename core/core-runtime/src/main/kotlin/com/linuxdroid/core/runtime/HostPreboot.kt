@@ -196,13 +196,15 @@ class HostPreboot(
         if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
             put("PROOT_VERBOSE", "9")
         }
-        if (!spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
-            put("PROOT_NO_SECCOMP", "1")
+        // Seccomp mode 2 is enabled by default for optimal syscall filtering performance.
+        // PROOT_NO_SECCOMP is only set if explicitly specified in spec.environmentVariables.
+        if (spec.environmentVariables.containsKey("PROOT_NO_SECCOMP")) {
+            put("PROOT_NO_SECCOMP", spec.environmentVariables["PROOT_NO_SECCOMP"]!!)
         }
 
         // Propagate only explicitly specified variables, excluding Android host library variables
         spec.environmentVariables.forEach { (k, v) ->
-            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH" && !k.startsWith("ANDROID_")) {
+            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH" && !k.startsWith("ANDROID_") && !k.startsWith("TERMUX_") && k != "PROOT_NO_SECCOMP") {
                 put(k, v)
             }
         }

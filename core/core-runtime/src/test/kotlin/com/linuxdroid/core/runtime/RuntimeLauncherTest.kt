@@ -145,7 +145,7 @@ class RuntimeLauncherTest {
         every { builder.build(spec, sh) } returns listOf(
             sh.absolutePath,
             "-c",
-            "echo PRELOAD=\${LD_PRELOAD:-unset} LIBPATH=\${LD_LIBRARY_PATH:-unset} USER=\$USER PROOT_NO_SECCOMP=\$PROOT_NO_SECCOMP"
+            "echo PRELOAD=\${LD_PRELOAD:-unset} LIBPATH=\${LD_LIBRARY_PATH:-unset} USER=\$USER PROOT_NO_SECCOMP=\${PROOT_NO_SECCOMP:-unset}"
         )
 
         val process = launcher.launchProcess(spec, sh, null, File(spec.rootfsPath), tmpDir)
@@ -153,7 +153,7 @@ class RuntimeLauncherTest {
         val out = process.inputStream.bufferedReader().readText().trim()
 
         assert(exit == 0)
-        assert(out == "PRELOAD=unset LIBPATH=unset USER=root PROOT_NO_SECCOMP=1") {
+        assert(out == "PRELOAD=unset LIBPATH=unset USER=root PROOT_NO_SECCOMP=unset") {
             "Expected sanitized environment, got: '$out'"
         }
 
