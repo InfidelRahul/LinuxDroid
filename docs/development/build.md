@@ -7,25 +7,29 @@
 - **JDK:** OpenJDK 21 (Temurin / SDKMAN)
 - **Gradle:** 8.12 (via Gradle Wrapper `./gradlew`)
 
-## 2. Runtime prerequisite
-
-The target LinuxDroid build consumes a versioned `proot` and `loader` release from [LinuxDroid_proot](https://github.com/InfidelRahul/LinuxDroid_proot). Build and test that repository independently before integrating an artifact into the APK. Its release metadata must identify the source commit, ABI, Android minimum, toolchain, SHA-256 values, and features.
-
-The current Gradle build still contains the legacy `native/proot` module so the baseline can be reproduced during migration. That module and its `jniLibs` packaging are not the target dependency model and must not receive native compatibility fixes. Follow [Updated Final Migration Plan](../migration-plan.md) for the gates that replace this path with `RuntimeAssetsManager` and APK `assets/proot/<abi>/`.
+## 2. Runtime Dependencies
+LinuxDroid bundles its runtime components and native engines directly in the application build. The core execution engine is built on PRoot with Android Bionic syscall compatibility patches. Build artifacts are integrated into `app/src/main/jniLibs/arm64-v8a/` and `app/src/main/assets/`.
 
 ## 3. Build Commands
-Set environment paths and assemble APK:
+Set environment paths and assemble the APK:
+
 ```bash
-export ANDROID_SDK_ROOT=/workspaces/android-sdk
-export ANDROID_HOME=/workspaces/android-sdk
-export JAVA_HOME=/usr/local/sdkman/candidates/java/21.0.12+1.1-tem
+# Set Android SDK and NDK environment variables
+export ANDROID_HOME=/path/to/android-sdk
+export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865
 
-# Run all unit tests
-./gradlew test --no-daemon
+# Run unit tests across all modules
+./gradlew testDebugUnitTest --no-daemon
 
-# Assemble debug APK
-./gradlew assembleDebug --no-daemon
+# Compile and package Debug APK
+./gradlew :app:assembleDebug --no-daemon
+
+# Compile and package Release APK
+./gradlew :app:assembleRelease --no-daemon
 ```
 
-Output APK will be located at:
-`app/build/outputs/apk/debug/app-debug.apk`
+### Build Outputs
+- **Debug APK**: `app/build/outputs/apk/debug/app-debug.apk`
+- **Release APK**: `app/build/outputs/apk/release/app-release.apk`
+- **Native Test Binaries**: `native/bridge/build/intermediates/cxx/...`
+

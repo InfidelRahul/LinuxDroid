@@ -18,10 +18,11 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.7.1-02303A?logo=gradle&logoColor=white)](https://gradle.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Architecture](https://img.shields.io/badge/Arch-ARM64%20%7C%20x86__64-orange)](#system-specifications)
+[![Architecture](https://img.shields.io/badge/Arch-ARM64%20(aarch64)-orange)](#system-specifications)
+[![Display](https://img.shields.io/badge/Display-Wayland%20%2B%20GLES%203.0-blue)](docs/display/wayland.md)
 [![UI Design](https://img.shields.io/badge/Design-Neumorphism%20%2B%20macOS-E0E5EC)](https://github.com/InfidelRahul/LinuxDroid)
 
-[Features](#-key-features) • [Architecture](#-architecture) • [Module Structure](#-modular-architecture) • [Getting Started](#-building--installation) • [Documentation](#-documentation-index) • [Roadmap](#-project-roadmap)
+[Features](#-key-features) • [Architecture](#-architecture) • [App Usage & Workflows](#-app-usage--workflows) • [System Specifications](#-system-specifications) • [Documentation](#-documentation-index) • [Building & Installation](#-building--installation)
 
 ---
 
@@ -29,35 +30,48 @@
 
 ## 📖 Overview
 
-**LinuxDroid** is a modern, native Android application engineered to run a complete, persistent, rootless Linux distribution directly on Android hardware. 
+**LinuxDroid** is a high-performance native Android application engineered to run a complete, persistent, rootless Linux distribution and graphical desktop environment directly on Android hardware.
 
 Unlike traditional solutions that depend on root access, QEMU/KVM virtual machine emulation, custom kernels, or fragile chroot hacks, LinuxDroid utilizes a hardened userspace syscall interception architecture based on **PRoot** (`ptrace(2)` and `seccomp`). Linux binaries execute directly on the bare-metal CPU with zero virtualization overhead.
+
+For graphical workloads, LinuxDroid embeds the official **libweston-17 Wayland compositor** directly into its native C++ runtime. It drives hardware-accelerated OpenGL ES 3.0 rendering, presents frames through Android's `AHardwareBuffer` and `ASurfaceControl` zero-copy pipeline, synchronizes with Android physical display VSync via `AChoreographer`, and features an integrated Wayland Desktop Shell with a responsive taskbar, window manager, and application launcher.
 
 ---
 
 ## ⚡ Key Features
 
 ### 🛡️ 100% Rootless & Containerless
-* **No Root Required**: Operates completely inside the standard Android application sandbox.
-* **No VM Overhead**: Code executes at native CPU clock speed without hypervisor translation.
-* **No Custom Kernel Required**: Runs out-of-the-box on standard production Android kernels (Linux 4.14 through 6.6+ on Android 16).
-* **Persistent Rootfs**: Your Linux environment is preserved across app updates, device reboots, and session terminations.
+* **Zero Root Required**: Operates completely inside the standard Android application sandbox without root permissions.
+* **Bare-Metal CPU Execution**: Linux binaries run natively on the device's CPU cores without hypervisor or instruction translation overhead.
+* **Production Kernel Compatibility**: Compatible with standard production Android kernels (Linux 4.14 through 6.6+ on Android 16/17).
+* **Persistent Rootfs**: Your Linux environment, configurations, packages, and files are permanently preserved across app updates, device reboots, and session terminations.
 
-### 🎨 macOS-Inspired Neumorphic UI
-* **Soft Neumorphism Engine**: Custom elevation shaders supporting both Light and Dark mode with adaptive contrast normalization.
-* **macOS Window Experience**: Titlebars with interactive traffic lights (`Close`, `Minimize`, `Maximize`), frosted glass vibrancy, and telemetry status pills.
-* **Integrated Apple Typography**: Bundled official **San Francisco (SF Pro)** for UI navigation and **San Francisco Mono (SF Mono)** / **JetBrains Mono** for monospaced coding.
+### 🖥️ Native Embedded Wayland Desktop
+* **Embedded libweston-17 Compositor**: Real, production-grade Wayland compositor embedded directly inside the Android process.
+* **Hardware-Accelerated GLES Renderer**: Composites client surfaces via OpenGL ES 3.0 (`gl-renderer`) with automatic, graceful fallback to NEON-accelerated Pixman software rendering.
+* **Zero-Copy Presentation Pipeline**: High-performance triple-buffered `AHardwareBuffer` pool combined with `ASurfaceControl` transactions and hardware sync fences.
+* **Android Display VSync Synchronization**: Repaint scheduling is locked to physical display timing via `AChoreographer` on a dedicated ALooper thread, dynamically adapting to 60 Hz, 90 Hz, and 120 Hz displays with zero-wake idle gating.
+* **Integrated Desktop Shell**: Built-in desktop environment featuring a customizable wallpaper background, responsive 48px taskbar panel, dynamic window list with window switcher, digital clock, and guest application launcher.
+* **XDG Window Management**: Complete support for `xdg_shell` toplevel windows, popups, window activation, focus tracking, and graceful closure.
 
-### 💻 Pro Terminal Emulator
-* **Real PTY Subsystem**: Native POSIX pseudo-terminal (`openpty`, `termios`, `ioctl(TIOCSWINSZ)`) for interactive shell sessions.
+### ⌨️ Unified Input Subsystem
+* **Pointer & Mouse Integration**: Full mouse support including button bitmasks (`BTN_LEFT`, `BTN_RIGHT`, `BTN_MIDDLE`, `BTN_SIDE`, `BTN_EXTRA`), coordinate bounds clamping, and smooth wheel scrolling.
+* **Multi-Touch Support**: Native touchscreen translation with discrete `wl_touch` slot tracking and atomic frame dispatch.
+* **Keyboard Translation**: Converts Android key events to standard Linux `evdev` keysyms with full modifier tracking (`Shift`, `Ctrl`, `Alt`, `Meta/Super`).
+* **High-Frequency Motion Coalescing**: Consecutive pointer and touch move events are coalesced in a bounded FIFO queue, minimizing input latency and preventing queue saturation during rapid gestures.
+
+### 💻 Pro macOS-Inspired Neumorphic Terminal
+* **Real POSIX PTY Subsystem**: Native pseudo-terminal (`openpty`, `termios`, `ioctl(TIOCSWINSZ)`) for interactive shell sessions.
+* **macOS Neumorphic Theme**: Soft elevation shaders supporting both Light and Dark mode with contrast normalization.
+* **TouchBar Extra Keys**: Tactile modifier bar with LED status indicators for `CTRL`, `ALT`, `ESC`, `TAB`, arrow keys, and pipe symbols.
 * **Spotlight-Style Search**: In-terminal keyword search with match counter (`1/5`) and live jump navigation.
-* **TouchBar Extra Keys**: Tactile modifier bar with hardware-like LED status indicators for `CTRL`, `ALT`, `ESC`, `TAB`, arrows, and pipe symbols.
-* **ANSI 256-Color Palette**: High-contrast, theme-aware terminal color mapper preventing unreadable dark-on-dark or light-on-light output.
+* **ANSI 256-Color Palette**: Theme-aware color mapper preventing unreadable output.
+* **Apple Typography**: Bundled official San Francisco (SF Pro, SF Mono) and JetBrains Mono fonts.
 
 ### 📂 Storage & Host Integration
-* **Scoped Storage Bridge**: Seamless bi-directional file sharing between Android `/sdcard/LinuxDroid` and Linux guest `/home/user/Android`.
+* **Scoped Storage Bridge**: Seamless bi-directional file sharing bind-mounting Android `/sdcard/LinuxDroid` to `/home/user/Android`.
 * **Hardware Diagnostics**: Real-time SoC telemetry (CPU cores, RAM usage, storage space, kernel release, SELinux status).
-* **Failure Log Exporter**: Deduplicated error aggregation, causal chain tracking, and one-click JSON/plain-text diagnostic export.
+* **Failure Log Exporter**: Causal chain tracking and one-click JSON/plain-text diagnostic export.
 
 ---
 
@@ -67,11 +81,15 @@ Unlike traditional solutions that depend on root access, QEMU/KVM virtual machin
 | :--- | :--- |
 | **Minimum Android Version** | Android 9.0 (API level 28) |
 | **Target Android Version** | Android 16 / 17 (API level 36) |
-| **Supported Architectures** | `arm64-v8a` (ARM64 / AArch64) |
+| **Supported Architecture** | `arm64-v8a` (ARM64 / AArch64) |
 | **Default Distribution** | Debian 13 (Trixie) / Ubuntu 24.04 LTS (Noble Numbat) |
-| **Runtime Engine** | PRoot v5.4.0 (Hardened with Bionic Ptrace & Tagged Pointer normalization) |
-| **Display Architecture** | Wayland Native Protocol (`wl_compositor`, `wl_shm`), XWayland for legacy X11 |
-| **Build Toolchain** | Java 17/21 • Gradle 9.7.1 • AGP 9.3.2 • Kotlin 2.3.20 • NDK r29 |
+| **Syscall Interception Engine** | PRoot v5.4.0 (Hardened with Bionic ptrace & ARM64 TBI pointer normalization) |
+| **Display Compositor** | Embedded libweston-17 with Wayland `xdg-shell` protocol |
+| **Compositor Renderer** | OpenGL ES 3.0 / EGL (`gl-renderer`) with Pixman NEON software fallback |
+| **Presentation Pipeline** | Triple-Buffered `AHardwareBuffer` + `ASurfaceControl` + Sync Fences |
+| **Display Clock / Timing** | Android `AChoreographer` VSync (60 Hz / 90 Hz / 120 Hz dynamic refresh) |
+| **Input Subsystem** | Direct `MotionEvent` / `KeyEvent` → Linux `evdev` translation with coalescing |
+| **Build Toolchain** | OpenJDK 21 • Gradle 9.7.1 • AGP 9.3.2 • Kotlin 2.3.20 • NDK r29 |
 
 ---
 
@@ -81,27 +99,88 @@ LinuxDroid is structured into 17 clean, decoupled Gradle modules following Googl
 
 ```mermaid
 graph TD
-    UI[App Layer: Jetpack Compose + Neumorphic Theme + SF Pro] --> CORE_MODELS[core-model & core-session]
-    UI --> VIEWMODELS[Hilt ViewModels & StateFlow]
-    VIEWMODELS --> CORE_PROCESS[core-process: ProcessManager]
-    VIEWMODELS --> CORE_DIAGNOSTICS[core-diagnostics: DiagnosticsManager]
-    
-    CORE_PROCESS --> CORE_RUNTIME[core-runtime: RuntimeBackend & LaunchPlan]
-    CORE_RUNTIME --> JNI_BRIDGE[native/bridge: Genuine Android JNI]
-    
-    JNI_BRIDGE --> PROOT_ENGINE[PRoot v5.4.0 + Companion Loader]
-    PROOT_ENGINE --> ROOTFS[Persistent Linux Rootfs /data/data/com.linuxdroid.app/...]
-    
-    CORE_STORAGE[core-storage: SAF Bridge] -. Bind Mount .-> ROOTFS
-    CORE_DISPLAY[core-display: Wayland Engine] -. SurfaceView .-> UI
+    subgraph UI_Layer ["Android UI & Application Layer"]
+        COMPOSE[Jetpack Compose UI & Neumorphic Design]
+        TERMINAL_VIEW[Pro Terminal Screen & TouchBar]
+        GUI_SURFACE[GuiSurfaceView Display Surface]
+    end
+
+    subgraph Core_Layer ["Core Orchestration & Session Services"]
+        SESSION[core-session: Terminal & PTY Coordinator]
+        PROCESS[core-process: Process Supervisor]
+        RUNTIME[core-runtime: PRoot Backend & LaunchPlan]
+        DIAGNOSTICS[core-diagnostics: Telemetry & Logs]
+        STORAGE[core-storage: Scoped Storage Bridge]
+    end
+
+    subgraph Native_Layer ["Native C/C++ Engine (native/bridge)"]
+        JNI[NativeBridge JNI Interface]
+        GUI_HOST[GuiHost: Thread-Safe Compositor Host]
+        INPUT_BRIDGE[InputBridge: Event Coalescing & evdev Translator]
+        VSYNC_BRIDGE[VSyncBridge: AChoreographer Looper Thread]
+        WESTON[Embedded libweston-17 Compositor]
+        GLES_RENDERER[GLES / EGL Hardware Renderer]
+        PRESENTATION[android_presentation: AHardwareBuffer Pool]
+        SHELL_CLIENT[DesktopShellClient: Wayland Desktop Shell]
+    end
+
+    subgraph Guest_Layer ["Linux Guest Userspace"]
+        PROOT[PRoot v5.4.0 Engine]
+        ROOTFS[Persistent Linux Rootfs: Debian 13 / Ubuntu]
+        GUEST_APPS[Linux Applications: bash, apt, GUI apps]
+    end
+
+    COMPOSE --> SESSION
+    TERMINAL_VIEW --> SESSION
+    GUI_SURFACE --> JNI
+
+    SESSION --> RUNTIME
+    PROCESS --> RUNTIME
+    RUNTIME --> JNI
+
+    JNI --> GUI_HOST
+    GUI_HOST --> WESTON
+    GUI_HOST --> SHELL_CLIENT
+    JNI --> INPUT_BRIDGE
+    INPUT_BRIDGE --> WESTON
+    VSYNC_BRIDGE --> WESTON
+    WESTON --> GLES_RENDERER
+    GLES_RENDERER --> PRESENTATION
+    PRESENTATION --> ANDROID_SURFACE[SurfaceFlinger / Display]
+
+    RUNTIME --> PROOT
+    STORAGE -. Bind Mount .-> ROOTFS
+    PROOT --> ROOTFS
+    ROOTFS --> GUEST_APPS
+    GUEST_APPS -. Wayland Protocol .-> WESTON
 ```
 
-### Execution Pipeline
+### Display & Rendering Pipeline
 
-1. **Launcher**: `RuntimeLaunchPlan` prepares environment variables, bind mounts (`/proc`, `/sys`, `/dev`, `/sdcard/LinuxDroid`), and guest working paths.
-2. **JNI Layer**: `native/bridge` forks a child process, configures the PTY master/slave pair, and applies file descriptor handoffs.
-3. **PRoot Engine**: The companion loader initializes memory address translation, normalizes ARM64 Top-Byte-Ignore (TBI) pointers, and intercepts guest syscalls via `ptrace(2)`.
-4. **Guest Shell**: Debian/Ubuntu user space boots, spawning `/usr/bin/bash` with full package management (`apt`, `dpkg`) access.
+```text
+Wayland Client Application
+        │ (wl_surface / xdg_toplevel)
+        ▼
+Weston Scene Graph
+        │
+        ▼ (Scheduled by Android VSync AChoreographer)
+libweston Repaint Cycle
+        │
+        ▼
+GLES / EGL Renderer (gl-renderer)
+        │
+        ▼ (Renders into offscreen buffer)
+AHardwareBuffer (Triple-Buffered Pool)
+        │
+        ▼ (Acquire / release sync fences)
+ASurfaceControl Transaction
+        │
+        ▼
+Android SurfaceFlinger
+        │
+        ▼
+Physical Screen (60 / 90 / 120 Hz)
+```
 
 ---
 
@@ -144,12 +223,12 @@ Explore our comprehensive technical documentation:
 | :--- | :--- |
 | 📘 [Architecture Overview](docs/architecture/overview.md) | High-level system architecture and component interactions |
 | 📐 [Architecture Blueprint](docs/architecture/blueprint.md) | Detailed subsystem specifications and data flow models |
-| ⚙️ [Rootless PRoot Runtime](docs/runtime/rootless-runtime.md) | In-depth breakdown of `ptrace` syscall emulation and TBI fix |
+| 🖥️ [Wayland Display & Compositor](docs/display/wayland.md) | Embedded libweston compositor, GLES renderer, VSync, and Desktop Shell |
+| 🎮 [GPU Acceleration & Rendering](docs/display/gpu.md) | GLES/EGL renderer, shaders, Pixman fallback, and Vulkan Zink |
+| ⌨️ [Input Subsystem](docs/input/input.md) | Android input capture, evdev translation, and motion event coalescing |
+| ⚙️ [Rootless PRoot Runtime](docs/runtime/rootless-runtime.md) | Syscall interception, ptrace mechanics, and ARM64 TBI pointer fix |
 | 📱 [Android Integration](docs/architecture/android.md) | Lifecycle management, Foreground Services, and Jetpack Compose |
-| 🔌 [Native JNI Bridge](docs/architecture/native.md) | POSIX PTY handoff, termios control, and native error boundaries |
-| 🖥️ [Wayland Display](docs/display/wayland.md) | Direct Wayland compositor implementation and client rendering |
-| 🪟 [XWayland Integration](docs/display/xwayland.md) | Running legacy X11 GUI applications inside Wayland |
-| 🎮 [GPU Acceleration](docs/display/gpu.md) | VirGL / Mesa Zink Vulkan passthrough architecture |
+| 🔌 [Native JNI Bridge](docs/architecture/native.md) | NativeBridge C++ architecture, PTY subsystem, and signal handling |
 | 📁 [Storage & Shared Folders](docs/storage/storage.md) | Scoped storage, SAF permissions, and bind-mount rules |
 | 🔒 [Security Model](docs/security/security.md) | Sandboxing, SELinux compatibility, and privilege boundaries |
 | 🧪 [Testing Guide](docs/testing/testing.md) | Unit test suite, integration tests, and mock strategies |
@@ -160,9 +239,10 @@ Explore our comprehensive technical documentation:
 ## 🚀 Building & Installation
 
 ### Prerequisites
-- **JDK**: Java 17 or 21 (Temurin / OpenJDK). *(Java 25 is not supported due to Kotlin compiler compatibility)*.
-- **Android SDK**: API 35 / 36 with Build-Tools `35.0.0`+.
-- **Android NDK**: NDK `r27` or `r29` (`27.2.12479018`+).
+- **JDK**: OpenJDK 21 (Temurin or SDKMAN).
+- **Android SDK**: Android API 36 (`platforms;android-36`, `build-tools;36.0.0`).
+- **Android NDK**: NDK version `29.0.14206865`.
+- **CMake**: Version `3.22.1`.
 
 ### Quick Build Commands
 
@@ -173,62 +253,60 @@ cd LinuxDroid
 
 # 2. Configure Environment Variables
 export ANDROID_HOME=/path/to/android-sdk
-export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018
+export ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865
 
-# 3. Run full test suite (374 unit tests)
-./gradlew test
+# 3. Run all unit tests across modules
+./gradlew testDebugUnitTest --no-daemon
 
 # 4. Assemble Debug APK
-./gradlew assembleDebug
+./gradlew :app:assembleDebug --no-daemon
 
 # 5. Assemble Release Signed APK
-./gradlew assembleRelease
+./gradlew :app:assembleRelease --no-daemon
 ```
 
-The compiled APK will be located at:
-`app/build/outputs/apk/debug/app-debug.apk`
+### Build Artifacts
+- **Debug APK**: `app/build/outputs/apk/debug/app-debug.apk`
+- **Release APK**: `app/build/outputs/apk/release/app-release.apk`
 
 ---
 
-## 🗺️ Project Roadmap
+## 📱 App Usage & Workflows
 
-```mermaid
-gantt
-    title LinuxDroid Development & Engineering Roadmap
-    dateFormat  YYYY-MM-DD
-    section Phase 1: Core Engine
-    Rootless PRoot v5.4.0 Engine Migration      :done, 2026-08-01, 2026-08-15
-    ARM64 Tagged Pointer (TBI) Kernel Fix      :done, 2026-08-15, 2026-08-22
-    Android 16 / 17 Compatibility Layer         :done, 2026-08-22, 2026-08-30
-    section Phase 2: Modern UI & UX
-    Neumorphism Theme (Light & Dark)           :done, 2026-08-28, 2026-08-31
-    macOS Window Design & TouchBar             :done, 2026-08-31, 2026-09-01
-    Apple SF Pro & SF Mono Typography Bundling :done, 2026-09-01, 2026-09-01
-    section Phase 3: Diagnostics & Tooling
-    Deduplicated Failure Log Exporter          :done, 2026-08-31, 2026-09-01
-    In-Terminal Spotlight Search Engine        :done, 2026-09-01, 2026-09-01
-    section Phase 4: Graphics & Hardware
-    Wayland Direct SurfaceView Renderer        :active, 2026-09-05, 2026-09-25
-    VirGL / Mesa Zink Vulkan Passthrough       :2026-09-20, 2026-10-15
-    section Phase 5: Ecosystem & Multi-Distro
-    Multi-Distribution Installer (Arch/Alpine) :2026-10-15, 2026-11-10
-    Multi-Tabbed & Split-Pane Terminal Sessions:2026-11-10, 2026-11-30
-```
+### 1. First Launch & Rootfs Bootstrap
+1. When LinuxDroid is launched for the first time, it checks for an existing rootfs installation.
+2. If no environment exists, the setup wizard guides you through selecting a distribution (Debian 13 Trixie default).
+3. The rootfs archive is verified against SHA-256 integrity checksums and extracted into the app's sandboxed private storage (`/data/data/com.linuxdroid.app/files/environments/<id>/rootfs`).
+4. System bind mounts (`/proc`, `/sys`, `/dev`, `/dev/pts`, `/dev/shm`) and the shared storage bridge (`/sdcard/LinuxDroid` → `/home/user/Android`) are automatically initialized.
 
-### ✅ Milestones Achieved
-- [x] **Modular Decoupling**: Refactored monolithic codebase into 17 clean-architecture Gradle modules.
-- [x] **Android 16+ Kernel Hardening**: Intercepted and emulated trapped seccomp syscalls (`rseq`, `clone3`, `faccessat2`) with proper errno fallback.
-- [x] **Zero-Root Persistent Storage**: Integrated rootfs preservation in app private data with automatic SAF shared storage bind mounting.
-- [x] **Pro macOS Neumorphic Terminal**: Full ANSI 256-color support, touch key bar with LED toggles, Spotlight search, and dynamic PTY resizing.
-- [x] **Official Apple Typography**: Bundled SF Pro & SF Mono font weights for an elite developer interface.
-- [x] **Failure Diagnostics System**: Live causal chains and one-click shareable log export.
+### 2. Pro Terminal Interface
+* **Interactive Shell**: Starts a login shell (`/bin/bash -l`) with full POSIX terminal capabilities.
+* **TouchBar Extra Keys**: Use the dedicated on-screen modifier row for quick access to `CTRL`, `ALT`, `ESC`, `TAB`, arrow keys, and pipe `|`.
+* **Spotlight Search**: Tap the search icon to find text in your terminal history with live match highlighting.
+* **Package Management**: Install your favorite command-line tools:
+  ```bash
+  apt update && apt install -y git curl wget vim build-essential python3
+  ```
 
-### 🔮 Upcoming Milestones
-- [ ] **Hardware GPU Passthrough**: VirGL / Zink Vulkan hardware-accelerated OpenGL/ES rendering.
-- [ ] **Low-Latency Wayland SurfaceView**: Direct touch-to-framebuffer Wayland client compositor.
-- [ ] **PulseAudio Daemon Integration**: Seamless guest-to-host audio streaming using Android AAudio.
-- [ ] **Distribution Hub**: One-tap installation for Arch Linux, Alpine Linux, Fedora, and Kali Linux.
-- [ ] **Multi-Tab Sessions**: Simultaneous parallel shell sessions with split-screen tiling.
+### 3. Wayland Desktop Environment
+* **Starting the Desktop**: Tap **Launch Desktop** from the main dashboard or run the desktop session.
+* **Desktop Shell**:
+  - **Wallpaper**: High-resolution branded desktop background.
+  - **Taskbar Panel**: Bottom-anchored 48px panel featuring the application launcher, dynamic window list, and digital clock.
+  - **Window Switching**: Tap any window pill in the taskbar to raise and focus the application.
+  - **Window Controls**: Click the window titlebar to drag, move, or close windows.
+* **Running Graphical Applications**:
+  Launch GUI applications directly from the application launcher menu or via the terminal:
+  ```bash
+  # Install and run lightweight Linux desktop apps
+  apt update
+  apt install -y mousepad galculator pcmanfm firefox-esr
+  mousepad &
+  ```
+
+### 4. File Sharing with Android
+* Files placed in Android's shared storage at `/sdcard/LinuxDroid` appear instantly inside your Linux session at `/home/user/Android`.
+* Edit code on Linux and access the generated files in Android apps, or download assets on Android and process them with Linux command-line tools.
 
 ---
 

@@ -50,7 +50,7 @@ LinuxDroid is **NOT** a VM product, does **NOT** require root/su access, does **
 └────────────────────────────────────────────────────────┘
 ```
 
-`LinuxDroid_proot` is a hard prerequisite and is not a Gradle module owned by this repository. LinuxDroid consumes its versioned `proot` and `loader` artifacts through `RuntimeAssetsManager`. The current `native/proot` module and `jniLibs` binaries are retained only as the migration baseline until the legacy cleanup phase.
+`LinuxDroid_proot` is a core runtime dependency. LinuxDroid consumes its versioned `proot` and `loader` artifacts through `RuntimeAssetsManager`.
 
 ## 3. Key Design Tenets
 1. **Unconditional Persistence:** Rootfs directories (`<filesDir>/environments/<id>/rootfs`) are never touched or purged on stop, crash, or application restart.

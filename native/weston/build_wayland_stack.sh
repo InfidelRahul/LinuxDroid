@@ -185,7 +185,7 @@ PIXMAN_RESOLVED_SHA="$(git -C "$PIXMAN_DIR" rev-parse HEAD)"
 info "Pixman resolved HEAD commit SHA: $PIXMAN_RESOLVED_SHA (branch: $PIXMAN_BRANCH)"
 
 # Record Pixman build provenance
-PIXMAN_PROVENANCE_FILE="$DIR/pixman_provenance.json"
+PIXMAN_PROVENANCE_FILE="$SCRIPT_DIR/pixman_provenance.json"
 cat << EOF > "$PIXMAN_PROVENANCE_FILE"
 {
   "provenance_schema_version": "1.0.0",
