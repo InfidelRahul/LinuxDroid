@@ -24,6 +24,7 @@
 #include <pty.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <csignal>
 
 #define TAG "LinuxDroid/Bridge"
@@ -261,6 +262,19 @@ Java_com_linuxdroid_native_1bridge_NativeBridge_nativeCreatePtyProcess(
 
         close(master_fd);
         close(slave_fd);
+
+        // Sanitize file descriptors: close all leaked file descriptors >= 3 to prevent
+        // leaking host Android JVM sockets, binders, or database handles into guest tracees.
+#if defined(__NR_close_range)
+        if (syscall(__NR_close_range, 3, ~0U, 0) < 0)
+#endif
+        {
+            int max_fd = sysconf(_SC_OPEN_MAX);
+            if (max_fd < 0 || max_fd > 4096) max_fd = 4096;
+            for (int fd = 3; fd < max_fd; ++fd) {
+                close(fd);
+            }
+        }
 
         if (!cwd.empty()) {
             chdir(cwd.c_str());
