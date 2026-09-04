@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
 
@@ -41,9 +42,16 @@ pixel_format_get_info(uint32_t format);
 static int
 linuxdroid_output_start_repaint_loop(struct weston_output *output)
 {
+    struct linuxdroid_output *droid_output = (struct linuxdroid_output *)output;
     struct timespec ts;
-    weston_compositor_read_presentation_clock(output->compositor, &ts);
-    weston_output_finish_frame(output, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+
+    if (droid_output && droid_output->vsync_bridge &&
+        linuxdroid_vsync_bridge_get_last_timestamp(droid_output->vsync_bridge, &ts) == 0) {
+        weston_output_finish_frame(output, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+    } else {
+        weston_compositor_read_presentation_clock(output->compositor, &ts);
+        weston_output_finish_frame(output, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+    }
     return 0;
 }
 
@@ -53,6 +61,7 @@ linuxdroid_output_repaint_pixman(struct weston_output *base)
     struct linuxdroid_output *output = (struct linuxdroid_output *)base;
     struct weston_renderer *renderer = base->compositor->renderer;
     struct timespec ts;
+    struct timespec start_ts, end_ts;
 
     if (!output->presentation || !android_presentation_is_enabled(output->presentation) ||
         !output->pixman_initialized || !renderer) {
@@ -60,6 +69,8 @@ linuxdroid_output_repaint_pixman(struct weston_output *base)
         weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
         return 0;
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
     if (output->frame_count < 5) {
         LOGI("PIXMAN_REPAINT_BEGIN: frame=%u, output='%s' (%dx%d)",
@@ -74,7 +85,7 @@ linuxdroid_output_repaint_pixman(struct weston_output *base)
     if (err < 0) {
         LOGW("PIXMAN_BUFFER_ACQUIRE: no buffer available (err=%d), deferring repaint", err);
         weston_output_schedule_repaint(base);
-        return 0;
+        return -EBUSY;
     }
 
     // 2. Lock AHardwareBuffer for direct CPU write access
@@ -135,13 +146,18 @@ linuxdroid_output_repaint_pixman(struct weston_output *base)
         LOGE("PIXMAN_RENDERER_ERROR: PIXMAN_SUBMIT_FAILURE - submit failed on slot %d: %d", slot_index, err);
     }
 
-    // 9. Advance presentation clock and complete Weston frame
-    weston_compositor_read_presentation_clock(base->compositor, &ts);
-    weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+    // 9. Phase 9: Record render duration and request VSync wake for presentation completion
+    clock_gettime(CLOCK_MONOTONIC, &end_ts);
+    int64_t duration_ns = ((int64_t)end_ts.tv_sec - start_ts.tv_sec) * 1000000000LL + (end_ts.tv_nsec - start_ts.tv_nsec);
+    if (output->vsync_bridge) {
+        linuxdroid_vsync_bridge_record_render(output->vsync_bridge, duration_ns, true);
+        linuxdroid_vsync_bridge_request_wake(output->vsync_bridge);
+    }
 
     output->frame_count++;
     if (output->frame_count <= 5) {
-        LOGI("PIXMAN_REPAINT_END: frame=%u submitted successfully (slot=%d)", output->frame_count, slot_index);
+        LOGI("PIXMAN_REPAINT_END: frame=%u submitted successfully (slot=%d, duration=%" PRId64 " ns)",
+             output->frame_count, slot_index, duration_ns);
     }
     return 0;
 }
@@ -152,6 +168,7 @@ linuxdroid_output_repaint_gles(struct weston_output *base)
     struct linuxdroid_output *output = (struct linuxdroid_output *)base;
     struct weston_renderer *renderer = base->compositor->renderer;
     struct timespec ts;
+    struct timespec start_ts, end_ts;
 
     if (!output->presentation || !android_presentation_is_enabled(output->presentation) ||
         !output->gles_initialized || !renderer || !renderer->gl) {
@@ -159,6 +176,8 @@ linuxdroid_output_repaint_gles(struct weston_output *base)
         weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
         return 0;
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
     if (output->frame_count < 5) {
         LOGI("GLES_REPAINT_BEGIN: frame=%u, output='%s' (%dx%d)",
@@ -173,7 +192,7 @@ linuxdroid_output_repaint_gles(struct weston_output *base)
     if (err < 0) {
         LOGW("GLES_BUFFER_ACQUIRE: no buffer available (err=%d), deferring repaint", err);
         weston_output_schedule_repaint(base);
-        return 0;
+        return -EBUSY;
     }
 
     if (slot_index < 0 || slot_index >= 3 || !output->gles_renderbuffers[slot_index]) {
@@ -210,14 +229,18 @@ linuxdroid_output_repaint_gles(struct weston_output *base)
         LOGE("GLES_RENDERER_ERROR: GLES_SUBMIT_FAILURE - submit failed on slot %d: %d", slot_index, err);
     }
 
-    // 6. Complete frame presentation
-    weston_compositor_read_presentation_clock(base->compositor, &ts);
-    weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+    // 6. Phase 9: Record render duration and request VSync wake for presentation completion
+    clock_gettime(CLOCK_MONOTONIC, &end_ts);
+    int64_t duration_ns = ((int64_t)end_ts.tv_sec - start_ts.tv_sec) * 1000000000LL + (end_ts.tv_nsec - start_ts.tv_nsec);
+    if (output->vsync_bridge) {
+        linuxdroid_vsync_bridge_record_render(output->vsync_bridge, duration_ns, true);
+        linuxdroid_vsync_bridge_request_wake(output->vsync_bridge);
+    }
 
     output->frame_count++;
     if (output->frame_count <= 5) {
-        LOGI("GLES_REPAINT_END: frame=%u submitted successfully (slot=%d, fence=%d)",
-             output->frame_count, slot_index, release_fence);
+        LOGI("GLES_REPAINT_END: frame=%u submitted successfully (slot=%d, fence=%d, duration=%" PRId64 " ns)",
+             output->frame_count, slot_index, release_fence, duration_ns);
     }
     return 0;
 }
@@ -449,6 +472,8 @@ linuxdroid_output_destroy_hook(struct weston_output *base)
         output->presentation = NULL;
     }
 
+    output->vsync_bridge = NULL;
+
     weston_output_release(base);
     free(output);
 }
@@ -667,6 +692,7 @@ linuxdroid_output_create(struct weston_backend *backend, const char *name)
     output->base.repaint = linuxdroid_output_repaint;
 
     output->backend = b;
+    output->vsync_bridge = b->vsync_bridge;
 
     weston_compositor_add_pending_output(&output->base, b->compositor);
 
@@ -907,5 +933,70 @@ enum linuxdroid_renderer_type
 linuxdroid_backend_get_renderer_type(struct linuxdroid_backend *b)
 {
     return b ? b->renderer_type : LINUXDROID_RENDERER_GLES;
+}
+
+/* ─── Phase 9: Frame Timing & Android VSync ABI ──────────────────────────── */
+
+int
+linuxdroid_backend_handle_vsync_event(int fd, uint32_t mask, void *data)
+{
+    (void)mask;
+    uint64_t count = 0;
+    while (read(fd, &count, sizeof(count)) > 0) {}
+
+    struct linuxdroid_backend *b = (struct linuxdroid_backend *)data;
+    if (!b || !b->compositor) return 0;
+
+    struct weston_output *output_base;
+    wl_list_for_each(output_base, &b->compositor->output_list, link) {
+        struct linuxdroid_output *output = (struct linuxdroid_output *)output_base;
+        if (!output_base->enabled) continue;
+
+        if (output_base->repaint_status == REPAINT_AWAITING_COMPLETION) {
+            struct timespec vblank_ts;
+            if (output->vsync_bridge &&
+                linuxdroid_vsync_bridge_get_last_timestamp(output->vsync_bridge, &vblank_ts) == 0) {
+                weston_output_finish_frame(output_base, &vblank_ts, 0);
+            } else {
+                weston_compositor_read_presentation_clock(output_base->compositor, &vblank_ts);
+                weston_output_finish_frame(output_base, &vblank_ts, 0);
+            }
+        }
+    }
+    return 0;
+}
+
+struct linuxdroid_vsync_bridge *
+linuxdroid_backend_get_vsync_bridge(struct linuxdroid_backend *b)
+{
+    return b ? b->vsync_bridge : NULL;
+}
+
+void
+linuxdroid_output_set_vsync_bridge(struct weston_output *output, struct linuxdroid_vsync_bridge *bridge)
+{
+    struct linuxdroid_output *droid_output = (struct linuxdroid_output *)output;
+    if (droid_output) {
+        droid_output->vsync_bridge = bridge;
+        if (droid_output->backend) {
+            droid_output->backend->vsync_bridge = bridge;
+        }
+    }
+}
+
+int
+linuxdroid_output_set_refresh_rate(struct weston_output *output, int refresh_mhz)
+{
+    struct linuxdroid_output *droid_output = (struct linuxdroid_output *)output;
+    if (!droid_output || refresh_mhz <= 0) return -1;
+
+    droid_output->mode.refresh = refresh_mhz;
+    if (droid_output->backend) {
+        droid_output->backend->refresh_mhz = refresh_mhz;
+    }
+    LOGI("FRAME_TIMING: output '%s' refresh rate updated to %d mHz (%d Hz)",
+         output->name ? output->name : "(unnamed)",
+         refresh_mhz, (refresh_mhz + 500) / 1000);
+    return 0;
 }
 

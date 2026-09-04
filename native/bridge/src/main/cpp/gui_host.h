@@ -18,6 +18,7 @@ struct weston_log_context;
 struct weston_output;
 struct linuxdroid_backend;
 struct linuxdroid_head;
+struct linuxdroid_vsync_bridge;
 
 namespace linuxdroid {
 class DesktopShellClient;
@@ -84,6 +85,8 @@ private:
     struct linuxdroid_backend* backend_ = nullptr;
     struct linuxdroid_head* head_ = nullptr;
     struct weston_output* output_ = nullptr;
+    struct linuxdroid_vsync_bridge* vsync_bridge_ = nullptr;
+    struct wl_event_source* vsync_source_ = nullptr;
 
     // Weston Desktop & Layers (Phase 7 Desktop Shell & Toplevel Management)
     struct weston_desktop* desktop_ = nullptr;

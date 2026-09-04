@@ -83,6 +83,8 @@ GuiHost::GuiHost()
       backend_(nullptr),
       head_(nullptr),
       output_(nullptr),
+      vsync_bridge_(nullptr),
+      vsync_source_(nullptr),
       desktop_(nullptr),
       window_cascade_count_(0),
       init_success_(false) {}
@@ -239,6 +241,10 @@ void GuiHost::setNativeWindow(ANativeWindow* window, int width, int height) {
         shell_client_->setOutputGeometry(width, height, 1);
         shell_client_->renderAll();
     }
+
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_resume(vsync_bridge_);
+    }
 }
 
 void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, int format) {
@@ -263,6 +269,10 @@ void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, i
         shell_client_->setOutputGeometry(width, height, 1);
         shell_client_->renderAll();
     }
+
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_resume(vsync_bridge_);
+    }
 }
 
 void GuiHost::destroyNativeWindow() {
@@ -273,6 +283,9 @@ void GuiHost::destroyNativeWindow() {
     }
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, nullptr);
+    }
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_pause(vsync_bridge_);
     }
 }
 
@@ -623,6 +636,23 @@ void GuiHost::workerMain() {
         return;
     }
 
+    // 9.1. Initialize VSync Timing Bridge & register eventfd with Wayland event loop
+    vsync_bridge_ = linuxdroid_vsync_bridge_create(compositor_, output_);
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_output_set_vsync_bridge(output_, vsync_bridge_);
+        int vsync_fd = linuxdroid_vsync_bridge_get_event_fd(vsync_bridge_);
+        if (vsync_fd >= 0) {
+            vsync_source_ = wl_event_loop_add_fd(loop, vsync_fd, WL_EVENT_READABLE,
+                                                linuxdroid_backend_handle_vsync_event, backend_);
+        }
+        int v_err = linuxdroid_vsync_bridge_start(vsync_bridge_);
+        if (v_err < 0) {
+            LOGW("FRAME_TIMING_INIT_WARNING: VSync bridge start failed (err=%d)", v_err);
+        } else {
+            LOGI("FRAME_TIMING_STARTED: Android VSync timing bridge connected to Weston event loop");
+        }
+    }
+
     // 10. Initialize Layer hierarchy for desktop shell
     weston_layer_init(&background_layer_, compositor_);
     weston_layer_set_position(&background_layer_, WESTON_LAYER_POSITION_BACKGROUND);
@@ -712,11 +742,25 @@ void GuiHost::workerMain() {
     weston_layer_fini(&background_layer_);
 
     // 14. Teardown native state deterministically in reverse order of ownership
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_stop(vsync_bridge_);
+    }
+
+    if (vsync_source_ != nullptr) {
+        wl_event_source_remove(vsync_source_);
+        vsync_source_ = nullptr;
+    }
+
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, nullptr);
         if (output_->enabled) {
             weston_output_disable(output_);
         }
+    }
+
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_destroy(vsync_bridge_);
+        vsync_bridge_ = nullptr;
     }
 
     // weston_compositor_destroy shuts down outputs and backends, releases heads, and frees compositor

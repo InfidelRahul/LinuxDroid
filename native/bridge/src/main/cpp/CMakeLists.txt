@@ -43,6 +43,7 @@ add_library(
     desktop_window_tracker.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
+    vsync_bridge.cpp
     gui_host.cpp
 )
 
@@ -173,6 +174,7 @@ add_executable(
     desktop_window_tracker.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
+    vsync_bridge.cpp
     gui_host.cpp
 )
 
@@ -259,6 +261,7 @@ add_executable(
     desktop_window_tracker.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
+    vsync_bridge.cpp
     gui_host.cpp
 )
 
@@ -349,6 +352,7 @@ add_executable(
     input_bridge.cpp
     android_presentation.cpp
     linuxdroid_backend.c
+    vsync_bridge.cpp
     gui_host.cpp
 )
 
@@ -383,6 +387,7 @@ add_executable(
     gles_renderer_test.cpp
     android_presentation.cpp
     linuxdroid_backend.c
+    vsync_bridge.cpp
 )
 
 target_link_libraries(
@@ -406,3 +411,35 @@ target_include_directories(
     ${WESTON_PREFIX}/include/libdrm
     ${LIBWESTON_INC_DIRS}
 )
+
+# Standalone native Frame Timing and Android VSync test executable (Phase 9 validation)
+add_executable(
+    frame_timing_test
+    frame_timing_test.cpp
+    vsync_bridge.cpp
+    linuxdroid_backend.c
+    android_presentation.cpp
+)
+
+target_link_libraries(
+    frame_timing_test
+    android
+    log
+    EGL
+    GLESv2
+    GLESv3
+    wayland-server
+    weston
+    pixman-1
+)
+
+target_include_directories(
+    frame_timing_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
+)
+

@@ -10,6 +10,7 @@ extern "C" {
 
 #include <libweston/libweston.h>
 #include <libweston/backend.h>
+#include "vsync_bridge.h"
 
 #define LINUXDROID_DEFAULT_REFRESH_MHZ 60000
 
@@ -55,6 +56,9 @@ struct linuxdroid_backend {
     struct weston_seat seat;
     struct weston_touch_device *touch_device;
     bool seat_initialized;
+
+    // Phase 9: Frame Timing & Android VSync
+    struct linuxdroid_vsync_bridge *vsync_bridge;
 };
 
 /**
@@ -91,6 +95,7 @@ struct linuxdroid_output {
     struct weston_layer test_layer;
     struct weston_surface *test_surface;
     struct weston_view *test_view;
+    struct linuxdroid_vsync_bridge *vsync_bridge;
 };
 
 /*
@@ -387,6 +392,20 @@ linuxdroid_backend_get_renderer_state(struct linuxdroid_backend *b);
 
 enum linuxdroid_renderer_type
 linuxdroid_backend_get_renderer_type(struct linuxdroid_backend *b);
+
+/* ─── Phase 9: Frame Timing & Android VSync ABI ──────────────────────────── */
+
+int
+linuxdroid_backend_handle_vsync_event(int fd, uint32_t mask, void *data);
+
+struct linuxdroid_vsync_bridge *
+linuxdroid_backend_get_vsync_bridge(struct linuxdroid_backend *b);
+
+void
+linuxdroid_output_set_vsync_bridge(struct weston_output *output, struct linuxdroid_vsync_bridge *bridge);
+
+int
+linuxdroid_output_set_refresh_rate(struct weston_output *output, int refresh_mhz);
 
 #ifdef __cplusplus
 }
