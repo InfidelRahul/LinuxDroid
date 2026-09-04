@@ -101,8 +101,24 @@ target_include_directories(
     ${LIBWESTON_INC_DIRS}
 )
 
-# Phase 8: Weston GLES Hardware Renderer Plugin (gl-renderer)
+# Weston GLES Hardware Renderer Plugin (gl-renderer)
 set(WESTON_SRC "${PROJECT_ROOT}/native/weston/src/weston")
+
+# Automatically generate shader headers if not present
+set(VERTEX_SHADER_H "${WESTON_SRC}/libweston/renderer-gl/vertex-shader.h")
+set(FRAGMENT_SHADER_H "${WESTON_SRC}/libweston/renderer-gl/fragment-shader.h")
+if(NOT EXISTS "${VERTEX_SHADER_H}" OR NOT EXISTS "${FRAGMENT_SHADER_H}")
+    execute_process(
+        COMMAND python3 ${WESTON_SRC}/tools/xxd.py -n vertex_shader
+                ${WESTON_SRC}/libweston/renderer-gl/vertex.glsl
+                ${VERTEX_SHADER_H}
+    )
+    execute_process(
+        COMMAND python3 ${WESTON_SRC}/tools/xxd.py -n fragment_shader
+                ${WESTON_SRC}/libweston/renderer-gl/fragment.glsl
+                ${FRAGMENT_SHADER_H}
+    )
+endif()
 
 add_library(
     gl-renderer SHARED

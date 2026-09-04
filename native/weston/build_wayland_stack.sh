@@ -547,6 +547,18 @@ ninja -C "$WESTON_DIR/build-android" install
 mkdir -p "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston"
 cp -f "$WESTON_DIR/libweston/backend.h" "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston/backend.h"
 
+# Generate GLES renderer shader headers
+info "Generating gl-renderer vertex and fragment shader headers..."
+python3 "$WESTON_DIR/tools/xxd.py" -n vertex_shader \
+    "$WESTON_DIR/libweston/renderer-gl/vertex.glsl" \
+    "$WESTON_DIR/libweston/renderer-gl/vertex-shader.h"
+python3 "$WESTON_DIR/tools/xxd.py" -n fragment_shader \
+    "$WESTON_DIR/libweston/renderer-gl/fragment.glsl" \
+    "$WESTON_DIR/libweston/renderer-gl/fragment-shader.h"
+mkdir -p "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston/renderer-gl"
+cp -f "$WESTON_DIR/libweston/renderer-gl/vertex-shader.h" "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston/renderer-gl/"
+cp -f "$WESTON_DIR/libweston/renderer-gl/fragment-shader.h" "$PREFIX/include/libweston-$LIBWESTON_MAJOR/libweston/renderer-gl/"
+
 # --- Record Build Provenance ---
 PROVENANCE_FILE="$PROJECT_ROOT/native/weston/weston_provenance.json"
 cat << EOF > "$PROVENANCE_FILE"
