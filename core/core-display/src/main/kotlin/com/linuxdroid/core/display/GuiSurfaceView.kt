@@ -30,8 +30,20 @@ class GuiSurfaceView @JvmOverloads constructor(
         requestFocus()
     }
 
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        log.info("onWindowFocusChanged: hasWindowFocus=$hasWindowFocus")
+        if (hasWindowFocus) {
+            requestFocus()
+        } else {
+            // Cancel active touches and reset state on window focus loss to prevent stuck input
+            NativeBridge.sendTouchEvent(MotionEvent.ACTION_CANCEL, 0, 0f, 0f, 0f)
+        }
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) {
         log.info("Surface created: ${width}x${height}")
+        requestFocus()
         NativeBridge.onSurfaceCreated(holder.surface, width, height)
     }
 
@@ -42,12 +54,17 @@ class GuiSurfaceView @JvmOverloads constructor(
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         log.info("Surface destroyed")
+        NativeBridge.sendTouchEvent(MotionEvent.ACTION_CANCEL, 0, 0f, 0f, 0f)
         NativeBridge.onSurfaceDestroyed()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val action = event.actionMasked
         val actionIndex = event.actionIndex
+
+        if (action == MotionEvent.ACTION_DOWN) {
+            requestFocus()
+        }
 
         when (action) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -83,7 +100,10 @@ class GuiSurfaceView @JvmOverloads constructor(
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) {
             when (event.actionMasked) {
-                MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_SCROLL -> {
+                MotionEvent.ACTION_HOVER_MOVE,
+                MotionEvent.ACTION_SCROLL,
+                MotionEvent.ACTION_BUTTON_PRESS,
+                MotionEvent.ACTION_BUTTON_RELEASE -> {
                     val x = event.x
                     val y = event.y
                     val scrollX = event.getAxisValue(MotionEvent.AXIS_HSCROLL)
@@ -98,6 +118,10 @@ class GuiSurfaceView @JvmOverloads constructor(
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.repeatCount > 0) {
+            // Prevent duplicate repeat dispatch: libweston handles repeats via wl_keyboard repeat_info
+            return true
+        }
         NativeBridge.sendKeyEvent(keyCode, true, event.metaState, event.unicodeChar)
         return true
     }

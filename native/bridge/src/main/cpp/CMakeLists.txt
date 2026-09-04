@@ -18,6 +18,7 @@ add_compile_options(
     -DANDROID
     -Wno-unguarded-availability
     -Wno-unguarded-availability-new
+    -Wno-missing-field-initializers
 )
 
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
@@ -39,6 +40,9 @@ add_library(
     wayland_foundation_test.cpp
     android_presentation.cpp
     linuxdroid_backend.c
+    desktop_window_tracker.cpp
+    desktop_shell_client.cpp
+    protocol/xdg-shell-protocol.c
     gui_host.cpp
 )
 
@@ -56,6 +60,9 @@ message(STATUS "Using libweston artifact: ${LIBWESTON_ACTIVE_SO}")
 
 add_library(weston SHARED IMPORTED)
 set_target_properties(weston PROPERTIES IMPORTED_LOCATION ${LIBWESTON_ACTIVE_SO})
+
+add_library(wayland-client SHARED IMPORTED)
+set_target_properties(wayland-client PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libwayland-client.so)
 
 add_library(pixman-1 SHARED IMPORTED)
 set_target_properties(pixman-1 PROPERTIES IMPORTED_LOCATION ${ARM64_JNILIBS}/libpixman-1.so)
@@ -75,6 +82,7 @@ target_link_libraries(
     EGL
     GLESv2
     wayland-server
+    wayland-client
     weston
     pixman-1
     xkbcommon
@@ -84,6 +92,7 @@ target_include_directories(
     linuxdroid_bridge
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm
@@ -98,6 +107,9 @@ add_executable(
     input_bridge.cpp
     android_presentation.cpp
     linuxdroid_backend.c
+    desktop_window_tracker.cpp
+    desktop_shell_client.cpp
+    protocol/xdg-shell-protocol.c
     gui_host.cpp
 )
 
@@ -106,6 +118,7 @@ target_link_libraries(
     android
     log
     wayland-server
+    wayland-client
     weston
     pixman-1
     xkbcommon
@@ -115,6 +128,7 @@ target_include_directories(
     gui_host_test
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm
@@ -170,6 +184,9 @@ add_executable(
     input_bridge.cpp
     android_presentation.cpp
     linuxdroid_backend.c
+    desktop_window_tracker.cpp
+    desktop_shell_client.cpp
+    protocol/xdg-shell-protocol.c
     gui_host.cpp
 )
 
@@ -178,6 +195,7 @@ target_link_libraries(
     android
     log
     wayland-server
+    wayland-client
     weston
     pixman-1
     xkbcommon
@@ -187,9 +205,96 @@ target_include_directories(
     input_integration_test
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm
     ${LIBWESTON_INC_DIRS}
 )
 
+# Standalone minimal Wayland input test client (Phase 6 Wayland client verification)
+add_executable(
+    wayland_input_test_client
+    wayland_input_test_client.cpp
+)
+
+target_link_libraries(
+    wayland_input_test_client
+    android
+    log
+    wayland-client
+    xkbcommon
+)
+
+target_include_directories(
+    wayland_input_test_client
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${WESTON_PREFIX}/include
+)
+
+# Standalone minimal Wayland desktop shell executable (Phase 7 standalone execution)
+add_executable(
+    linuxdroid_desktop_shell
+    desktop_shell_client.cpp
+    desktop_window_tracker.cpp
+    protocol/xdg-shell-protocol.c
+)
+
+target_compile_definitions(
+    linuxdroid_desktop_shell
+    PRIVATE
+    BUILD_STANDALONE_SHELL=1
+)
+
+target_link_libraries(
+    linuxdroid_desktop_shell
+    android
+    log
+    wayland-client
+    xkbcommon
+)
+
+target_include_directories(
+    linuxdroid_desktop_shell
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol
+    ${WESTON_PREFIX}/include
+)
+
+# Standalone minimal Wayland desktop shell test executable (Phase 7 validation)
+add_executable(
+    desktop_shell_test
+    desktop_shell_test.cpp
+    desktop_shell_client.cpp
+    desktop_window_tracker.cpp
+    protocol/xdg-shell-protocol.c
+    input_translator.cpp
+    input_bridge.cpp
+    android_presentation.cpp
+    linuxdroid_backend.c
+    gui_host.cpp
+)
+
+target_link_libraries(
+    desktop_shell_test
+    android
+    log
+    wayland-server
+    wayland-client
+    weston
+    pixman-1
+    xkbcommon
+)
+
+target_include_directories(
+    desktop_shell_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/protocol
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
+)

@@ -5,8 +5,11 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <thread>
 #include <android/native_window.h>
+#include <libweston/libweston.h>
+#include <libweston/desktop.h>
 
 struct wl_display;
 struct wl_event_source;
@@ -17,12 +20,10 @@ struct linuxdroid_backend;
 struct linuxdroid_head;
 
 namespace linuxdroid {
+class DesktopShellClient;
+
 namespace gui {
 
-/**
- * State model for the native GUI host.
- * Synchronized across Android UI, JNI, and the native GUI worker thread.
- */
 enum class LifecycleState {
     STOPPED = 0,
     STARTING = 1,
@@ -32,11 +33,6 @@ enum class LifecycleState {
 
 const char* lifecycleStateToString(LifecycleState state);
 
-/**
- * Native GUI Host:
- * Owns the native GUI worker thread, Wayland display server, and minimal libweston compositor runtime.
- * Provides idempotent start/stop semantics and ensures the Android UI thread is never blocked.
- */
 class GuiHost {
 public:
     static GuiHost& getInstance();
@@ -47,51 +43,28 @@ public:
     GuiHost(const GuiHost&) = delete;
     GuiHost& operator=(const GuiHost&) = delete;
 
-    /**
-     * Idempotently starts the native GUI host worker thread and initializes the Wayland/Weston runtime.
-     * Blocks the calling thread until the host has either successfully reached RUNNING or failed.
-     *
-     * Returns true if RUNNING, false on initialization failure.
-     */
     bool start();
-
-    /**
-     * Idempotently stops the native GUI host worker thread and deterministically tears down native resources.
-     * Blocks until the worker thread has exited and native resources are destroyed.
-     *
-     * Returns true if STOPPED.
-     */
     bool stop();
-
-    /**
-     * Returns true if the host is in RUNNING state.
-     */
     bool isRunning() const;
-
-    /**
-     * Returns the current lifecycle state.
-     */
     LifecycleState getState() const;
 
-    /**
-     * Sets or rebinds the Android presentation ANativeWindow.
-     */
     void setNativeWindow(struct ANativeWindow* window, int width, int height);
-
-    /**
-     * Handles Android presentation ANativeWindow changes (resize, format update).
-     */
     void changeNativeWindow(struct ANativeWindow* window, int width, int height, int format);
-
-    /**
-     * Handles Android presentation ANativeWindow destruction.
-     */
     void destroyNativeWindow();
 
-    /**
-     * Drains pending events from InputBridge and dispatches them on the compositor event loop.
-     */
     void processQueuedInput();
+
+    // Compositor Desktop API callback handlers
+    static void handleSurfaceAdded(struct weston_desktop_surface* surface, void* user_data);
+    static void handleSurfaceRemoved(struct weston_desktop_surface* surface, void* user_data);
+    static void handleSurfaceCommitted(struct weston_desktop_surface* surface, struct weston_coord_surface buf_offset, void* user_data);
+    static void handleSurfaceMove(struct weston_desktop_surface* surface, struct weston_seat* seat, uint32_t serial, void* user_data);
+    static void handleSurfaceResize(struct weston_desktop_surface* surface, struct weston_seat* seat, uint32_t serial, enum weston_desktop_surface_edge edges, void* user_data);
+    static void handleFullscreenRequested(struct weston_desktop_surface* surface, bool fullscreen, struct weston_output* output, void* user_data);
+    static void handleMaximizedRequested(struct weston_desktop_surface* surface, bool maximized, void* user_data);
+    static void handleMinimizedRequested(struct weston_desktop_surface* surface, void* user_data);
+    static void handlePingTimeout(struct weston_desktop_client* client, void* user_data);
+    static void handlePong(struct weston_desktop_client* client, void* user_data);
 
 private:
     void workerMain();
@@ -112,6 +85,16 @@ private:
     struct linuxdroid_head* head_ = nullptr;
     struct weston_output* output_ = nullptr;
 
+    // Weston Desktop & Layers (Phase 7 Desktop Shell & Toplevel Management)
+    struct weston_desktop* desktop_ = nullptr;
+    struct weston_layer background_layer_{};
+    struct weston_layer desktop_layer_{};
+    struct weston_layer panel_layer_{};
+    uint32_t window_cascade_count_{0};
+
+    // Client Desktop Shell instance
+    std::unique_ptr<DesktopShellClient> shell_client_;
+
     mutable std::mutex window_mutex_;
     struct ANativeWindow* native_window_ = nullptr;
     int window_width_ = 0;
@@ -123,4 +106,3 @@ private:
 
 } // namespace gui
 } // namespace linuxdroid
-

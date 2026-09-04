@@ -3,10 +3,13 @@
 #include "android_presentation.h"
 #include "input_bridge.h"
 #include "input_translator.h"
+#include "desktop_shell_client.h"
+#include "desktop_window_tracker.h"
 
 #include <wayland-server.h>
 #include <libweston/libweston.h>
 #include <libweston/weston-log.h>
+#include <libweston/desktop.h>
 
 #include <android/log.h>
 #include <sys/eventfd.h>
@@ -34,6 +37,15 @@ const char* lifecycleStateToString(LifecycleState state) {
 }
 
 namespace {
+
+struct DesktopSurfaceContext {
+    uint64_t id{0};
+    struct weston_desktop_surface* desktop_surface{nullptr};
+    struct weston_view* view{nullptr};
+    std::string app_id;
+    std::string title;
+    bool mapped{false};
+};
 
 int handleWakeEvent(int fd, uint32_t mask, void* data) {
     (void)mask;
@@ -69,6 +81,8 @@ GuiHost::GuiHost()
       backend_(nullptr),
       head_(nullptr),
       output_(nullptr),
+      desktop_(nullptr),
+      window_cascade_count_(0),
       init_success_(false) {}
 
 GuiHost::~GuiHost() {
@@ -156,6 +170,11 @@ bool GuiHost::stop() {
     LOGI("WESTON_STOP_REQUEST: GUI host stopping");
     state_ = LifecycleState::STOPPING;
 
+    // Stop Desktop Shell client before terminating compositor
+    if (shell_client_) {
+        shell_client_->stop();
+    }
+
     InputBridge::getInstance().setWakeFd(-1);
     if (backend_ != nullptr) {
         linuxdroid_backend_reset_input(backend_);
@@ -213,6 +232,11 @@ void GuiHost::setNativeWindow(ANativeWindow* window, int width, int height) {
             linuxdroid_output_resize(output_, width, height);
         }
     }
+
+    if (shell_client_ && width > 0 && height > 0) {
+        shell_client_->setOutputGeometry(width, height, 1);
+        shell_client_->renderAll();
+    }
 }
 
 void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, int format) {
@@ -232,6 +256,11 @@ void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, i
             linuxdroid_output_resize(output_, width, height);
         }
     }
+
+    if (shell_client_ && width > 0 && height > 0) {
+        shell_client_->setOutputGeometry(width, height, 1);
+        shell_client_->renderAll();
+    }
 }
 
 void GuiHost::destroyNativeWindow() {
@@ -245,7 +274,138 @@ void GuiHost::destroyNativeWindow() {
     }
 }
 
+void GuiHost::handleSurfaceAdded(struct weston_desktop_surface* surface, void* user_data) {
+    (void)user_data;
+    struct weston_view* view = weston_desktop_surface_create_view(surface);
+    if (!view) {
+        LOGE("WESTON_DESKTOP_SURFACE_ADDED: failed to create view for surface %p", surface);
+        return;
+    }
+
+    static std::atomic<uint64_t> s_id_seq{1};
+    auto* ctx = new DesktopSurfaceContext();
+    ctx->id = s_id_seq.fetch_add(1);
+    ctx->desktop_surface = surface;
+    ctx->view = view;
+
+    const char* app_id = weston_desktop_surface_get_app_id(surface);
+    const char* title = weston_desktop_surface_get_title(surface);
+    ctx->app_id = app_id ? app_id : "";
+    ctx->title = title ? title : "";
+
+    weston_desktop_surface_set_user_data(surface, ctx);
+
+    LOGI("WESTON_DESKTOP_SURFACE_ADDED: id=%" PRIu64 " app_id='%s' title='%s'",
+         ctx->id, ctx->app_id.c_str(), ctx->title.c_str());
+
+    if (ctx->app_id != "org.linuxdroid.desktop-background" &&
+        ctx->app_id != "org.linuxdroid.desktop-panel" &&
+        ctx->app_id != "org.linuxdroid.desktop-launcher") {
+        DesktopWindowTracker::getInstance().registerWindow(ctx->id, ctx->app_id, ctx->title, surface);
+    }
+}
+
+void GuiHost::handleSurfaceRemoved(struct weston_desktop_surface* surface, void* user_data) {
+    (void)user_data;
+    auto* ctx = static_cast<DesktopSurfaceContext*>(weston_desktop_surface_get_user_data(surface));
+    if (ctx) {
+        LOGI("WESTON_DESKTOP_SURFACE_REMOVED: id=%" PRIu64 " app_id='%s'", ctx->id, ctx->app_id.c_str());
+        if (ctx->app_id != "org.linuxdroid.desktop-background" &&
+            ctx->app_id != "org.linuxdroid.desktop-panel" &&
+            ctx->app_id != "org.linuxdroid.desktop-launcher") {
+            DesktopWindowTracker::getInstance().unregisterWindow(ctx->id);
+        }
+        if (ctx->view) {
+            weston_desktop_surface_unlink_view(ctx->view);
+            weston_view_destroy(ctx->view);
+            ctx->view = nullptr;
+        }
+        weston_desktop_surface_set_user_data(surface, nullptr);
+        delete ctx;
+    }
+}
+
+void GuiHost::handleSurfaceCommitted(struct weston_desktop_surface* surface, struct weston_coord_surface buf_offset, void* user_data) {
+    (void)buf_offset;
+    auto* host = static_cast<GuiHost*>(user_data);
+    auto* ctx = static_cast<DesktopSurfaceContext*>(weston_desktop_surface_get_user_data(surface));
+    if (!ctx || !ctx->view) return;
+
+    struct weston_surface* w_surface = weston_desktop_surface_get_surface(surface);
+    if (!w_surface) return;
+
+    if (!weston_surface_is_mapped(w_surface)) {
+        weston_surface_map(w_surface);
+        ctx->mapped = true;
+
+        int out_w = host->output_ ? host->output_->width : LINUXDROID_DEFAULT_WIDTH;
+        int out_h = host->output_ ? host->output_->height : LINUXDROID_DEFAULT_HEIGHT;
+
+        if (ctx->app_id == "org.linuxdroid.desktop-background") {
+            weston_view_move_to_layer(ctx->view, &host->background_layer_.view_list);
+            struct weston_coord_global pos = { .c = { 0.0, 0.0 } };
+            weston_view_set_position(ctx->view, pos);
+            LOGI("WESTON_SURFACE_MAPPED: Background surface positioned at (0,0) size %dx%d", out_w, out_h);
+        } else if (ctx->app_id == "org.linuxdroid.desktop-panel") {
+            weston_view_move_to_layer(ctx->view, &host->panel_layer_.view_list);
+            double panel_y = static_cast<double>(out_h - 48);
+            struct weston_coord_global pos = { .c = { 0.0, panel_y } };
+            weston_view_set_position(ctx->view, pos);
+            LOGI("WESTON_SURFACE_MAPPED: Panel surface positioned at (0,%.0f)", panel_y);
+        } else if (ctx->app_id == "org.linuxdroid.desktop-launcher") {
+            weston_view_move_to_layer(ctx->view, &host->panel_layer_.view_list);
+            double launcher_h = 280.0;
+            double launcher_y = static_cast<double>(out_h - 48) - launcher_h;
+            struct weston_coord_global pos = { .c = { 8.0, launcher_y } };
+            weston_view_set_position(ctx->view, pos);
+            LOGI("WESTON_SURFACE_MAPPED: Launcher surface positioned at (8,%.0f)", launcher_y);
+        } else {
+            weston_view_move_to_layer(ctx->view, &host->desktop_layer_.view_list);
+            double win_x = 40.0 + (host->window_cascade_count_ % 8) * 30.0;
+            double win_y = 40.0 + (host->window_cascade_count_ % 8) * 30.0;
+            host->window_cascade_count_++;
+            struct weston_coord_global pos = { .c = { win_x, win_y } };
+            weston_view_set_position(ctx->view, pos);
+
+            struct weston_seat* seat = host->backend_ ? linuxdroid_backend_get_seat(host->backend_) : nullptr;
+            if (seat) {
+                weston_view_activate_input(ctx->view, seat, WESTON_ACTIVATE_FLAG_CONFIGURE);
+            }
+            weston_desktop_surface_set_activated(surface, true);
+            DesktopWindowTracker::getInstance().setWindowActive(ctx->id, true);
+            LOGI("WESTON_SURFACE_MAPPED: Application window (id=%" PRIu64 ") positioned at (%.0f,%.0f)", ctx->id, win_x, win_y);
+        }
+    }
+}
+
+void GuiHost::handleSurfaceMove(struct weston_desktop_surface*, struct weston_seat*, uint32_t, void*) {}
+void GuiHost::handleSurfaceResize(struct weston_desktop_surface*, struct weston_seat*, uint32_t, enum weston_desktop_surface_edge, void*) {}
+
+void GuiHost::handleFullscreenRequested(struct weston_desktop_surface* surface, bool fullscreen, struct weston_output*, void*) {
+    weston_desktop_surface_set_fullscreen(surface, fullscreen);
+}
+
+void GuiHost::handleMaximizedRequested(struct weston_desktop_surface* surface, bool maximized, void*) {
+    weston_desktop_surface_set_maximized(surface, maximized);
+}
+
+void GuiHost::handleMinimizedRequested(struct weston_desktop_surface*, void*) {}
+void GuiHost::handlePingTimeout(struct weston_desktop_client*, void*) {}
+void GuiHost::handlePong(struct weston_desktop_client*, void*) {}
+
 void GuiHost::workerMain() {
+    // 0. Ensure environment directories for Wayland runtime & XKB data
+    if (!getenv("XDG_RUNTIME_DIR")) {
+        setenv("XDG_RUNTIME_DIR", "/tmp", 0);
+    }
+    if (!getenv("XKB_CONFIG_ROOT")) {
+        if (access("/usr/share/X11/xkb", R_OK) == 0) {
+            setenv("XKB_CONFIG_ROOT", "/usr/share/X11/xkb", 0);
+        } else if (access("/data/data/com.linuxdroid/files/xkb", R_OK) == 0) {
+            setenv("XKB_CONFIG_ROOT", "/data/data/com.linuxdroid/files/xkb", 0);
+        }
+    }
+
     // 1. Create Wayland Server Display
     display_ = wl_display_create();
     if (display_ == nullptr) {
@@ -256,6 +416,19 @@ void GuiHost::workerMain() {
         return;
     }
     LOGI("WESTON_DISPLAY_CREATED: wl_display created successfully");
+
+    // Initialize shared memory buffers for Wayland clients
+    wl_display_init_shm(display_);
+
+    // Add UNIX domain socket for client connections
+    const char* socket_name = "wayland-0";
+    if (wl_display_add_socket(display_, socket_name) >= 0) {
+        setenv("WAYLAND_DISPLAY", socket_name, 1);
+        LOGI("WESTON_SOCKET_CREATED: Wayland socket '%s' added successfully", socket_name);
+    } else {
+        LOGW("WESTON_SOCKET_WARNING: failed to add Wayland socket '%s' (XDG_RUNTIME_DIR=%s)",
+             socket_name, getenv("XDG_RUNTIME_DIR") ? getenv("XDG_RUNTIME_DIR") : "(null)");
+    }
 
     // 2. Register wake_fd_ with Wayland event loop for deterministic termination
     struct wl_event_loop* loop = wl_display_get_event_loop(display_);
@@ -431,7 +604,66 @@ void GuiHost::workerMain() {
         return;
     }
 
-    // 10. Initialization successful: signal RUNNING to waiter
+    // 10. Initialize Layer hierarchy for desktop shell
+    weston_layer_init(&background_layer_, compositor_);
+    weston_layer_set_position(&background_layer_, WESTON_LAYER_POSITION_BACKGROUND);
+
+    weston_layer_init(&desktop_layer_, compositor_);
+    weston_layer_set_position(&desktop_layer_, WESTON_LAYER_POSITION_NORMAL);
+
+    weston_layer_init(&panel_layer_, compositor_);
+    weston_layer_set_position(&panel_layer_, WESTON_LAYER_POSITION_UI);
+
+    // 11. Initialize weston_desktop (registers xdg_wm_base Wayland global)
+    static const struct weston_desktop_api desktop_api = {
+        .struct_size = sizeof(struct weston_desktop_api),
+        .ping_timeout = GuiHost::handlePingTimeout,
+        .pong = GuiHost::handlePong,
+        .surface_added = GuiHost::handleSurfaceAdded,
+        .surface_removed = GuiHost::handleSurfaceRemoved,
+        .committed = GuiHost::handleSurfaceCommitted,
+        .show_window_menu = nullptr,
+        .set_parent = nullptr,
+        .move = GuiHost::handleSurfaceMove,
+        .resize = GuiHost::handleSurfaceResize,
+        .fullscreen_requested = GuiHost::handleFullscreenRequested,
+        .maximized_requested = GuiHost::handleMaximizedRequested,
+        .minimized_requested = GuiHost::handleMinimizedRequested,
+        .set_xwayland_position = nullptr,
+        .get_position = nullptr,
+    };
+    desktop_ = weston_desktop_create(compositor_, &desktop_api, this);
+    if (desktop_ == nullptr) {
+        LOGW("WESTON_DESKTOP_WARNING: failed to create weston_desktop");
+    } else {
+        LOGI("WESTON_DESKTOP_CREATED: weston_desktop initialized (xdg_wm_base enabled)");
+    }
+
+    // Connect DesktopWindowTracker action handler to weston desktop surfaces
+    DesktopWindowTracker::getInstance().setActionHandler([this](uint64_t window_id, const std::string& action) {
+        struct weston_seat* seat = (backend_ ? linuxdroid_backend_get_seat(backend_) : nullptr);
+        DesktopWindowEntry entry;
+        if (DesktopWindowTracker::getInstance().getWindow(window_id, &entry) && entry.native_handle) {
+            auto* dsurface = static_cast<struct weston_desktop_surface*>(entry.native_handle);
+            if (action == "activate") {
+                auto* ctx = static_cast<DesktopSurfaceContext*>(weston_desktop_surface_get_user_data(dsurface));
+                if (ctx && ctx->view && seat) {
+                    weston_view_activate_input(ctx->view, seat, WESTON_ACTIVATE_FLAG_CLICKED);
+                }
+                weston_desktop_surface_set_activated(dsurface, true);
+                DesktopWindowTracker::getInstance().setWindowActive(window_id, true);
+            } else if (action == "close") {
+                weston_desktop_surface_close(dsurface);
+            }
+        }
+    });
+
+    // Launch DesktopShellClient in dedicated client thread
+    shell_client_ = std::make_unique<DesktopShellClient>();
+    shell_client_->setOutputGeometry(out_w, out_h, 1);
+    shell_client_->start(socket_name);
+
+    // 12. Initialization successful: signal RUNNING to waiter
     {
         std::lock_guard<std::mutex> lock(lifecycle_mutex_);
         state_ = LifecycleState::RUNNING;
@@ -440,11 +672,27 @@ void GuiHost::workerMain() {
     }
     LOGI("WESTON_EVENT_LOOP_STARTED: running Wayland/libweston event loop with LinuxDroid backend");
 
-    // 11. Run Wayland event loop (blocks until wl_display_terminate is called)
+    // 13. Run Wayland event loop (blocks until wl_display_terminate is called)
     wl_display_run(display_);
     LOGI("WESTON_EVENT_LOOP_STOPPED: Wayland/libweston event loop stopped");
 
-    // 12. Teardown native state deterministically in reverse order of ownership
+    // Clean up Desktop Shell client
+    if (shell_client_) {
+        shell_client_->stop();
+        shell_client_.reset();
+    }
+    DesktopWindowTracker::getInstance().setActionHandler(nullptr);
+
+    if (desktop_ != nullptr) {
+        weston_desktop_destroy(desktop_);
+        desktop_ = nullptr;
+    }
+
+    weston_layer_fini(&panel_layer_);
+    weston_layer_fini(&desktop_layer_);
+    weston_layer_fini(&background_layer_);
+
+    // 14. Teardown native state deterministically in reverse order of ownership
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, nullptr);
         if (output_->enabled) {
