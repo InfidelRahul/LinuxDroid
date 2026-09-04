@@ -5,6 +5,8 @@
 #include "audio_bridge.h"
 #include "wayland_foundation_test.h"
 #include "gui_host.h"
+#include "desktop_session.h"
+#include "window_model.h"
 
 
 #include <android/log.h>
@@ -30,6 +32,7 @@
 #define TAG "LinuxDroid/Bridge"
 #define LOGD(fmt, ...) __android_log_print(ANDROID_LOG_DEBUG, TAG, fmt, ##__VA_ARGS__)
 #define LOGI(fmt, ...) __android_log_print(ANDROID_LOG_INFO, TAG, fmt, ##__VA_ARGS__)
+#define LOGW(fmt, ...) __android_log_print(ANDROID_LOG_WARN, TAG, fmt, ##__VA_ARGS__)
 #define LOGE(fmt, ...) __android_log_print(ANDROID_LOG_ERROR, TAG, fmt, ##__VA_ARGS__)
 
 namespace {
@@ -510,6 +513,134 @@ JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGuiGetState(
     [[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz) {
     return static_cast<jint>(linuxdroid::gui::GuiHost::getInstance().getState());
+}
+
+// ─── Desktop Environment & Applications ───────────────────────────────────────
+
+namespace {
+
+JavaVM* s_jvm = nullptr;
+std::mutex s_listener_mutex;
+jobject s_app_launch_listener = nullptr;
+
+void dispatchAppLaunch(const std::string& name, const std::string& exec_path) {
+    std::lock_guard<std::mutex> lock(s_listener_mutex);
+    if (!s_jvm || !s_app_launch_listener) {
+        LOGW("DISPATCH_APP_LAUNCH: No Java listener registered for '%s'", name.c_str());
+        return;
+    }
+
+    JNIEnv* env = nullptr;
+    bool should_detach = false;
+    jint get_env_res = s_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (get_env_res == JNI_EDETACHED) {
+        if (s_jvm->AttachCurrentThread(&env, nullptr) == 0) {
+            should_detach = true;
+        } else {
+            LOGE("DISPATCH_APP_LAUNCH: AttachCurrentThread failed");
+            return;
+        }
+    } else if (get_env_res != JNI_OK || !env) {
+        LOGE("DISPATCH_APP_LAUNCH: GetEnv failed");
+        return;
+    }
+
+    jclass listener_class = env->GetObjectClass(s_app_launch_listener);
+    if (listener_class) {
+        jmethodID mid = env->GetMethodID(listener_class, "onLaunchApp", "(Ljava/lang/String;Ljava/lang/String;)V");
+        if (mid) {
+            jstring jname = env->NewStringUTF(name.c_str());
+            jstring jpath = env->NewStringUTF(exec_path.c_str());
+            env->CallVoidMethod(s_app_launch_listener, mid, jname, jpath);
+            if (env->ExceptionCheck()) {
+                env->ExceptionDescribe();
+                env->ExceptionClear();
+            }
+            if (jname) env->DeleteLocalRef(jname);
+            if (jpath) env->DeleteLocalRef(jpath);
+        } else {
+            LOGE("DISPATCH_APP_LAUNCH: onLaunchApp method not found on listener");
+        }
+        env->DeleteLocalRef(listener_class);
+    }
+
+    if (should_detach) {
+        s_jvm->DetachCurrentThread();
+    }
+}
+
+} // namespace
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* /*reserved*/) {
+    s_jvm = vm;
+    linuxdroid::DesktopSession::getInstance().setAppLaunchHandler(dispatchAppLaunch);
+    return JNI_VERSION_1_6;
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeUpdateDesktopApplications(
+    JNIEnv* env, [[maybe_unused]] jclass clazz,
+    jobjectArray names, jobjectArray execs, jobjectArray categories, jobjectArray icons) {
+    if (!names || !execs) return;
+    jsize len = env->GetArrayLength(names);
+    std::vector<linuxdroid::LauncherMenuItem> items;
+    items.reserve(len);
+
+    for (jsize i = 0; i < len; ++i) {
+        auto jname = static_cast<jstring>(env->GetObjectArrayElement(names, i));
+        auto jexec = static_cast<jstring>(env->GetObjectArrayElement(execs, i));
+        auto jcat = categories ? static_cast<jstring>(env->GetObjectArrayElement(categories, i)) : nullptr;
+        auto jicon = icons ? static_cast<jstring>(env->GetObjectArrayElement(icons, i)) : nullptr;
+
+        const char* cname = jname ? env->GetStringUTFChars(jname, nullptr) : "";
+        const char* cexec = jexec ? env->GetStringUTFChars(jexec, nullptr) : "";
+        const char* ccat = jcat ? env->GetStringUTFChars(jcat, nullptr) : "Utilities";
+        const char* cicon = jicon ? env->GetStringUTFChars(jicon, nullptr) : "application";
+
+        linuxdroid::LauncherMenuItem item;
+        item.name = cname ? cname : "";
+        item.exec_path = cexec ? cexec : "";
+        item.description = item.exec_path;
+        item.category = ccat ? ccat : "Utilities";
+        item.icon = cicon ? cicon : "application";
+        items.push_back(std::move(item));
+
+        if (jname) { env->ReleaseStringUTFChars(jname, cname); env->DeleteLocalRef(jname); }
+        if (jexec) { env->ReleaseStringUTFChars(jexec, cexec); env->DeleteLocalRef(jexec); }
+        if (jcat) { env->ReleaseStringUTFChars(jcat, ccat); env->DeleteLocalRef(jcat); }
+        if (jicon) { env->ReleaseStringUTFChars(jicon, cicon); env->DeleteLocalRef(jicon); }
+    }
+
+    linuxdroid::DesktopSession::getInstance().updateApplicationCatalog(items);
+}
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetAppLaunchListener(
+    JNIEnv* env, [[maybe_unused]] jclass clazz, jobject listener) {
+    std::lock_guard<std::mutex> lock(s_listener_mutex);
+    if (s_app_launch_listener) {
+        env->DeleteGlobalRef(s_app_launch_listener);
+        s_app_launch_listener = nullptr;
+    }
+    if (listener) {
+        s_app_launch_listener = env->NewGlobalRef(listener);
+    }
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetActiveWindows(
+    JNIEnv* env, [[maybe_unused]] jclass clazz) {
+    auto windows = linuxdroid::WindowModel::getInstance().getWindows();
+    jclass strCls = env->FindClass("java/lang/String");
+    jobjectArray result = env->NewObjectArray(static_cast<jsize>(windows.size()), strCls, nullptr);
+    for (size_t i = 0; i < windows.size(); ++i) {
+        std::string winDesc = std::to_string(windows[i].id) + ":" + windows[i].app_id + ":" + windows[i].title;
+        jstring jdesc = env->NewStringUTF(winDesc.c_str());
+        env->SetObjectArrayElement(result, static_cast<jsize>(i), jdesc);
+        env->DeleteLocalRef(jdesc);
+    }
+    env->DeleteLocalRef(strCls);
+    return result;
 }
 
 } // extern "C"

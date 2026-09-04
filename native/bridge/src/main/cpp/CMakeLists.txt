@@ -41,6 +41,11 @@ add_library(
     android_presentation.cpp
     linuxdroid_backend.c
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
     vsync_bridge.cpp
@@ -188,6 +193,11 @@ add_executable(
     android_presentation.cpp
     linuxdroid_backend.c
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
     vsync_bridge.cpp
@@ -275,6 +285,11 @@ add_executable(
     android_presentation.cpp
     linuxdroid_backend.c
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     desktop_shell_client.cpp
     protocol/xdg-shell-protocol.c
     vsync_bridge.cpp
@@ -332,6 +347,11 @@ add_executable(
     linuxdroid_desktop_shell
     desktop_shell_client.cpp
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     protocol/xdg-shell-protocol.c
 )
 
@@ -363,6 +383,11 @@ add_executable(
     desktop_shell_test.cpp
     desktop_shell_client.cpp
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     protocol/xdg-shell-protocol.c
     input_translator.cpp
     input_bridge.cpp
@@ -466,6 +491,11 @@ add_executable(
     input_bridge.cpp
     input_translator.cpp
     desktop_window_tracker.cpp
+    desktop_state.cpp
+    desktop_session.cpp
+    window_model.cpp
+    window_manager.cpp
+    ui_painter.cpp
     desktop_shell_client.cpp
     gui_host.cpp
     linuxdroid_backend.c

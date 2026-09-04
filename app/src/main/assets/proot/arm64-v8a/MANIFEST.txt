@@ -1,5 +1,5 @@
 LinuxDroid-PRoot v0.1.0
-commit:  a9cbeb5
+commit:  5555d25
 ABI:      arm64-v8a
 arch:     aarch64
 cc:       /home/codespace/Android/Sdk/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang

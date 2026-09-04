@@ -62,5 +62,38 @@ class GuiHostController(
      * Returns the current lifecycle state of the native GUI host.
      */
     fun getState(): State = State.fromValue(bridge.guiGetState())
+
+    /**
+     * Updates the FreeDesktop applications shown in the native desktop launcher.
+     */
+    fun updateDesktopApplications(
+        names: Array<String>,
+        execs: Array<String>,
+        categories: Array<String> = Array(names.size) { "Utilities" },
+        icons: Array<String> = Array(names.size) { "application" }
+    ) {
+        bridge.updateDesktopApplications(names, execs, categories, icons)
+    }
+
+    fun interface AppLaunchListener {
+        fun onLaunchApp(name: String, execPath: String)
+    }
+
+    /**
+     * Registers a listener to handle application launch requests from the native desktop launcher.
+     * All launches must be executed by the host runtime via PRoot -> /sbin/linuxdroid-init.
+     */
+    fun setAppLaunchListener(listener: AppLaunchListener?) {
+        bridge.setAppLaunchListener(if (listener != null) {
+            NativeBridge.AppLaunchListener { name, execPath -> listener.onLaunchApp(name, execPath) }
+        } else {
+            null
+        })
+    }
+
+    /**
+     * Returns an array of active windows currently tracked by the native compositor.
+     */
+    fun getActiveWindows(): Array<String> = bridge.getActiveWindows()
 }
 

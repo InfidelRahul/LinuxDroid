@@ -11,6 +11,10 @@
 #include <xkbcommon/xkbcommon.h>
 #include "protocol/xdg-shell-client-protocol.h"
 #include "desktop_window_tracker.h"
+#include "desktop_state.h"
+#include "window_model.h"
+#include "window_manager.h"
+#include "ui_painter.h"
 
 namespace linuxdroid {
 
@@ -30,6 +34,8 @@ struct LauncherMenuItem {
     std::string name;
     std::string exec_path;
     std::string description;
+    std::string category{"Utilities"};
+    std::string icon{"application"};
 };
 
 class DesktopShellClient {
@@ -56,6 +62,15 @@ public:
     void selectPrevLauncherItem();
     void activateSelectedLauncherItem();
 
+    // Dynamic Application Catalog & Search Filter
+    void updateApplicationCatalog(const std::vector<LauncherMenuItem>& items);
+    std::vector<LauncherMenuItem> getApplicationCatalog() const;
+    void setLauncherSearchQuery(const std::string& query);
+    std::string getLauncherSearchQuery() const;
+    void selectLauncherCategory(const std::string& category);
+    std::string getSelectedLauncherCategory() const;
+    std::vector<LauncherMenuItem> getFilteredLauncherItems() const;
+
     // Application Launch Dispatch
     using AppLaunchHandler = std::function<void(const std::string& name, const std::string& exec_path)>;
     void setAppLaunchHandler(AppLaunchHandler handler);
@@ -75,11 +90,6 @@ private:
     void cleanupWayland();
 
     ShmBuffer createShmBuffer(int width, int height);
-
-    // Drawing helpers
-    void drawRect(ShmBuffer& buf, int x, int y, int w, int h, uint32_t color);
-    void drawFilledRect(ShmBuffer& buf, int x, int y, int w, int h, uint32_t color);
-    void drawText(ShmBuffer& buf, int x, int y, const char* text, uint32_t color);
 
     // Wayland listener callbacks
     static void registryHandleGlobal(void* data, struct wl_registry* reg, uint32_t name, const char* iface, uint32_t ver);
@@ -150,17 +160,19 @@ private:
 
     std::atomic<bool> running_{false};
     std::thread thread_;
-    std::mutex render_mutex_;
+    mutable std::mutex render_mutex_;
 
     int32_t width_{1080};
     int32_t height_{1920};
     int32_t scale_{1};
     int32_t panel_height_{48};
-    int32_t launcher_width_{280};
-    int32_t launcher_height_{280};
+    int32_t launcher_width_{360};
+    int32_t launcher_height_{420};
 
     bool launcher_open_{false};
     int selected_launcher_item_{0};
+    std::string search_query_;
+    std::string selected_category_{"All"};
 
     std::vector<LauncherMenuItem> launcher_menu_;
 

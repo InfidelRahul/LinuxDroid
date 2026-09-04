@@ -32,6 +32,7 @@ dependencies {
     implementation(project(":core:core-network"))
     implementation(project(":core:core-filesystem"))
     implementation(project(":core:core-storage"))
+    implementation(project(":core:core-package"))
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.kotlin.test)

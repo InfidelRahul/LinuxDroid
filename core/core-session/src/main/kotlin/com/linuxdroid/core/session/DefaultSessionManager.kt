@@ -10,9 +10,13 @@ import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import com.linuxdroid.core.network.NetworkManager
+import com.linuxdroid.core.package_mgr.ApplicationManager
 import com.linuxdroid.core.runtime.RuntimeBackend
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -31,7 +35,10 @@ class DefaultSessionManager(
     private val audioManager: AudioManager? = null,
     private val networkManager: NetworkManager? = null,
     private val guiHostController: GuiHostController? = null,
+    private val applicationManager: ApplicationManager? = null,
 ) : SessionManager {
+
+    private val sessionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val log = LinuxDroidLogger(LogSubsystem.SESSION)
     private val sessionMap = ConcurrentHashMap<SessionId, Session>()
@@ -108,6 +115,45 @@ class DefaultSessionManager(
             displayManager?.applyConfig(environment.configuration.display)
             guiHostController?.start()
 
+            // Wire application launch requests from native desktop launcher to runtimeBackend
+            guiHostController?.setAppLaunchListener { name, execPath ->
+                sessionScope.launch {
+                    log.info("App launch requested from native desktop launcher: app='$name' exec='$execPath'")
+                    try {
+                        runtimeBackend.execute(
+                            environment = environment,
+                            command = listOf("/bin/sh", "-c", execPath),
+                            workingDirectory = "/home/user",
+                            extraEnv = mapOf(
+                                "WAYLAND_DISPLAY" to waylandSocket,
+                                "XDG_RUNTIME_DIR" to "/tmp",
+                                "DISPLAY" to ":0",
+                            ),
+                            sessionId = sessionId,
+                        )
+                    } catch (e: Exception) {
+                        log.error("Failed to launch application '$name' ($execPath)", e)
+                    }
+                }
+            }
+
+            // Sync discovered FreeDesktop applications into native desktop launcher
+            if (applicationManager != null) {
+                try {
+                    val apps = applicationManager.discoverApplications(environment)
+                    if (apps.isNotEmpty()) {
+                        guiHostController?.updateDesktopApplications(
+                            names = apps.map { it.name }.toTypedArray(),
+                            execs = apps.map { it.executable }.toTypedArray(),
+                            categories = apps.map { it.categories.firstOrNull() ?: "Utilities" }.toTypedArray(),
+                            icons = apps.map { it.iconName.ifBlank { "application" } }.toTypedArray(),
+                        )
+                    }
+                } catch (e: Exception) {
+                    log.warn("Failed to discover desktop applications for launcher: ${e.message}")
+                }
+            }
+
             val rootfsDir = storage.rootfsDir(environment.id)
             ensureGuiSessionEnvironment(rootfsDir)
 
@@ -167,6 +213,7 @@ class DefaultSessionManager(
         _sessions.value = sessionMap.toMap()
 
         try {
+            guiHostController?.setAppLaunchListener(null)
             audioManager?.stop()
             inputManager?.stop()
             guiHostController?.stop()

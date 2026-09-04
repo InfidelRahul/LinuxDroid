@@ -184,6 +184,45 @@ object NativeBridge {
         }
     }
 
+    // ─── Desktop Environment & Applications ───────────────────────────────────────
+
+    fun interface AppLaunchListener {
+        fun onLaunchApp(name: String, execPath: String)
+    }
+
+    fun updateDesktopApplications(
+        names: Array<String>,
+        execs: Array<String>,
+        categories: Array<String>,
+        icons: Array<String>
+    ) {
+        if (isLoaded) {
+            try {
+                nativeUpdateDesktopApplications(names, execs, categories, icons)
+            } catch (_: UnsatisfiedLinkError) {}
+        }
+    }
+
+    fun setAppLaunchListener(listener: AppLaunchListener?) {
+        if (isLoaded) {
+            try {
+                nativeSetAppLaunchListener(listener)
+            } catch (_: UnsatisfiedLinkError) {}
+        }
+    }
+
+    fun getActiveWindows(): Array<String> {
+        return if (isLoaded) {
+            try {
+                nativeGetActiveWindows()
+            } catch (_: UnsatisfiedLinkError) {
+                emptyArray()
+            }
+        } else {
+            emptyArray()
+        }
+    }
+
     // ─── External JNI declarations ─────────────────────────────────────────────────
 
     @JvmStatic external fun nativeGetBridgeVersion(): Int
@@ -225,4 +264,13 @@ object NativeBridge {
     @JvmStatic external fun nativeGuiStop(): Boolean
     @JvmStatic external fun nativeGuiIsRunning(): Boolean
     @JvmStatic external fun nativeGuiGetState(): Int
+
+    @JvmStatic external fun nativeUpdateDesktopApplications(
+        names: Array<String>,
+        execs: Array<String>,
+        categories: Array<String>,
+        icons: Array<String>
+    )
+    @JvmStatic external fun nativeSetAppLaunchListener(listener: Any?)
+    @JvmStatic external fun nativeGetActiveWindows(): Array<String>
 }

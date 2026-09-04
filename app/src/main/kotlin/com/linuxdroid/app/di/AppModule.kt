@@ -10,6 +10,7 @@ import com.linuxdroid.core.diagnostics.DiagnosticsManager
 import com.linuxdroid.core.diagnostics.ResourceManager
 import com.linuxdroid.core.display.DefaultDisplayManager
 import com.linuxdroid.core.display.DisplayManager
+import com.linuxdroid.core.display.GuiHostController
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.gpu.DefaultGpuManager
 import com.linuxdroid.core.gpu.GpuManager
@@ -181,6 +182,7 @@ object AppModule {
         inputManager: InputManager,
         audioManager: AudioManager,
         networkManager: NetworkManager,
+        applicationManager: ApplicationManager,
     ): SessionManager = DefaultSessionManager(
         runtimeBackend = runtime,
         storage = storage,
@@ -189,6 +191,8 @@ object AppModule {
         inputManager = inputManager,
         audioManager = audioManager,
         networkManager = networkManager,
+        guiHostController = GuiHostController(),
+        applicationManager = applicationManager,
     )
 
     @Provides

@@ -56,6 +56,7 @@ public:
     void processQueuedInput();
     void processPendingWindowActions();
     void enqueueWindowAction(uint64_t window_id, const std::string& action);
+    void enqueueWindowAction(void* handle, const std::string& action, int32_t p1 = 0, int32_t p2 = 0);
     bool restartDesktopShell();
 
     // Compositor Desktop API callback handlers
@@ -94,8 +95,11 @@ private:
 
     // Thread-safe window actions dispatched on compositor event loop
     struct PendingWindowAction {
-        uint64_t window_id;
+        uint64_t window_id{0};
+        void* handle{nullptr};
         std::string action;
+        int32_t p1{0};
+        int32_t p2{0};
     };
     mutable std::mutex action_mutex_;
     std::vector<PendingWindowAction> pending_actions_;

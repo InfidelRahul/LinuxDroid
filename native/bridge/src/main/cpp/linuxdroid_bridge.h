@@ -127,4 +127,18 @@ JNIEXPORT jint JNICALL
 Java_com_linuxdroid_native_1bridge_NativeBridge_nativeAudioGetLatencyMs(
     JNIEnv* env, jclass clazz);
 
+// Desktop Environment & Applications
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeUpdateDesktopApplications(
+    JNIEnv* env, jclass clazz,
+    jobjectArray names, jobjectArray execs, jobjectArray categories, jobjectArray icons);
+
+JNIEXPORT void JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeSetAppLaunchListener(
+    JNIEnv* env, jclass clazz, jobject listener);
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_linuxdroid_native_1bridge_NativeBridge_nativeGetActiveWindows(
+    JNIEnv* env, jclass clazz);
+
 } // extern "C"

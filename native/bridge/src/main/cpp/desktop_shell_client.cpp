@@ -54,11 +54,13 @@ void ShmBuffer::destroy() {
 
 DesktopShellClient::DesktopShellClient() {
     launcher_menu_ = {
-        { "Terminal", "/bin/bash", "Bash interactive Linux shell" },
-        { "POSIX Shell", "/bin/sh", "Standard system command shell" },
-        { "Environment", "/usr/bin/env", "Inspect environment variables" },
-        { "System Info", "/bin/uname", "Linux kernel & OS release" },
-        { "Process List", "/bin/ps", "List current running processes" }
+        { "Terminal", "/bin/bash", "Bash interactive Linux shell", "System", "terminal" },
+        { "POSIX Shell", "/bin/sh", "Standard system command shell", "System", "terminal" },
+        { "Text Editor", "/usr/bin/nano", "Command-line text editor", "Development", "file" },
+        { "File Manager", "/usr/bin/mc", "Midnight Commander file manager", "Utilities", "folder" },
+        { "System Monitor", "/usr/bin/top", "Process activity and resources", "System", "settings" },
+        { "Environment", "/usr/bin/env", "Inspect environment variables", "System", "settings" },
+        { "System Info", "/bin/uname", "Linux kernel & OS release", "System", "terminal" }
     };
 }
 
@@ -127,33 +129,111 @@ void DesktopShellClient::setLauncherOpen(bool open) {
         if (launcher_open_ == open) return;
         launcher_open_ = open;
     }
+    DesktopState::getInstance().setLauncherVisible(open);
     LOGI("SHELL_LAUNCHER_STATE: open=%d", open ? 1 : 0);
     renderAll();
 }
 
 void DesktopShellClient::selectNextLauncherItem() {
     std::lock_guard<std::mutex> lock(render_mutex_);
-    if (launcher_menu_.empty()) return;
-    selected_launcher_item_ = (selected_launcher_item_ + 1) % static_cast<int>(launcher_menu_.size());
+    auto items = getFilteredLauncherItems();
+    if (items.empty()) return;
+    selected_launcher_item_ = (selected_launcher_item_ + 1) % static_cast<int>(items.size());
     renderLauncher();
 }
 
 void DesktopShellClient::selectPrevLauncherItem() {
     std::lock_guard<std::mutex> lock(render_mutex_);
-    if (launcher_menu_.empty()) return;
-    selected_launcher_item_ = (selected_launcher_item_ - 1 + static_cast<int>(launcher_menu_.size())) % static_cast<int>(launcher_menu_.size());
+    auto items = getFilteredLauncherItems();
+    if (items.empty()) return;
+    selected_launcher_item_ = (selected_launcher_item_ - 1 + static_cast<int>(items.size())) % static_cast<int>(items.size());
     renderLauncher();
 }
 
 void DesktopShellClient::activateSelectedLauncherItem() {
-    size_t idx = 0;
+    std::string name, path;
+    AppLaunchHandler handler;
     {
         std::lock_guard<std::mutex> lock(render_mutex_);
-        if (!launcher_open_ || launcher_menu_.empty()) return;
-        idx = static_cast<size_t>(selected_launcher_item_);
+        auto items = getFilteredLauncherItems();
+        if (selected_launcher_item_ < 0 || selected_launcher_item_ >= static_cast<int>(items.size())) return;
+        name = items[selected_launcher_item_].name;
+        path = items[selected_launcher_item_].exec_path;
+        handler = app_launch_handler_;
+        launcher_open_ = false;
     }
-    launchApplication(idx);
-    setLauncherOpen(false);
+    DesktopState::getInstance().setLauncherVisible(false);
+
+    LOGI("APPLICATION_LAUNCH_REQUEST: app='%s' path='%s'", name.c_str(), path.c_str());
+    if (handler) {
+        handler(name, path);
+    }
+    renderAll();
+}
+
+void DesktopShellClient::updateApplicationCatalog(const std::vector<LauncherMenuItem>& items) {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    launcher_menu_ = items;
+    selected_launcher_item_ = 0;
+    LOGI("APPLICATION_CATALOG_UPDATED: count=%zu", launcher_menu_.size());
+    renderLauncher();
+}
+
+std::vector<LauncherMenuItem> DesktopShellClient::getApplicationCatalog() const {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    return launcher_menu_;
+}
+
+void DesktopShellClient::setLauncherSearchQuery(const std::string& query) {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    search_query_ = query;
+    selected_launcher_item_ = 0;
+    renderLauncher();
+}
+
+std::string DesktopShellClient::getLauncherSearchQuery() const {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    return search_query_;
+}
+
+void DesktopShellClient::selectLauncherCategory(const std::string& category) {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    selected_category_ = category;
+    selected_launcher_item_ = 0;
+    renderLauncher();
+}
+
+std::string DesktopShellClient::getSelectedLauncherCategory() const {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    return selected_category_;
+}
+
+std::vector<LauncherMenuItem> DesktopShellClient::getFilteredLauncherItems() const {
+    std::vector<LauncherMenuItem> filtered;
+    std::string lower_query = search_query_;
+    std::transform(lower_query.begin(), lower_query.end(), lower_query.begin(), ::tolower);
+
+    for (const auto& item : launcher_menu_) {
+        // Category filter
+        if (selected_category_ != "All" && item.category != selected_category_) {
+            continue;
+        }
+
+        // Search query filter
+        if (!lower_query.empty()) {
+            std::string lower_name = item.name;
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), ::tolower);
+            std::string lower_desc = item.description;
+            std::transform(lower_desc.begin(), lower_desc.end(), lower_desc.begin(), ::tolower);
+
+            if (lower_name.find(lower_query) == std::string::npos &&
+                lower_desc.find(lower_query) == std::string::npos) {
+                continue;
+            }
+        }
+        filtered.push_back(item);
+    }
+    return filtered;
 }
 
 void DesktopShellClient::setAppLaunchHandler(AppLaunchHandler handler) {
@@ -170,7 +250,9 @@ void DesktopShellClient::launchApplication(size_t index) {
         name = launcher_menu_[index].name;
         path = launcher_menu_[index].exec_path;
         handler = app_launch_handler_;
+        launcher_open_ = false;
     }
+    DesktopState::getInstance().setLauncherVisible(false);
 
     LOGI("APPLICATION_LAUNCH_REQUEST: app='%s' path='%s'", name.c_str(), path.c_str());
 
@@ -180,13 +262,10 @@ void DesktopShellClient::launchApplication(size_t index) {
         LOGW("APPLICATION_LAUNCH_UNHANDLED: No launch handler registered for '%s'", name.c_str());
     }
 
-    // NOTE: Synthetic window fabrication is prohibited.
-    // Windows are registered authoritatively by weston_desktop_api when the client maps its Wayland surface.
-    renderPanel();
+    renderAll();
 }
 
 bool DesktopShellClient::launchCustomCommand(const std::string& path, const std::vector<std::string>& /*args*/) {
-    // Authoritative process launches must flow through RuntimeLauncher in the runtime layer.
     LOGI("APPLICATION_LAUNCH_DISPATCH: dispatching '%s' to launch handler", path.c_str());
     AppLaunchHandler handler;
     {
@@ -208,35 +287,29 @@ ShmBuffer DesktopShellClient::createShmBuffer(int width, int height) {
     int stride = width * 4;
     size_t size = static_cast<size_t>(stride * height);
 
-    // 1. Try memfd_create
     int fd = -1;
 #if defined(__NR_memfd_create) || defined(SYS_memfd_create)
     fd = memfd_create("linuxdroid-shm", MFD_CLOEXEC | MFD_ALLOW_SEALING);
 #endif
-
-    // 2. Fallback to mkstemp
     if (fd < 0) {
         char temp_path[] = "/tmp/linuxdroid-shm-XXXXXX";
         fd = mkstemp(temp_path);
-        if (fd >= 0) {
-            unlink(temp_path);
-        }
+        if (fd >= 0) unlink(temp_path);
     }
-
     if (fd < 0) {
-        LOGE("Failed to allocate shm buffer fd: %s", strerror(errno));
+        LOGE("Failed to allocate anonymous shm fd");
         return buf;
     }
 
     if (ftruncate(fd, size) < 0) {
-        LOGE("ftruncate failed for shm buffer: %s", strerror(errno));
+        LOGE("ftruncate shm failed: %s", strerror(errno));
         close(fd);
         return buf;
     }
 
     void* data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (data == MAP_FAILED) {
-        LOGE("mmap failed for shm buffer: %s", strerror(errno));
+        LOGE("mmap shm failed: %s", strerror(errno));
         close(fd);
         return buf;
     }
@@ -269,64 +342,6 @@ ShmBuffer DesktopShellClient::createShmBuffer(int width, int height) {
     return buf;
 }
 
-void DesktopShellClient::drawRect(ShmBuffer& buf, int x, int y, int w, int h, uint32_t color) {
-    if (!buf.pixels || w <= 0 || h <= 0) return;
-    int x2 = std::min(x + w, buf.width);
-    int y2 = std::min(y + h, buf.height);
-    int x1 = std::max(0, x);
-    int y1 = std::max(0, y);
-
-    for (int i = x1; i < x2; ++i) {
-        if (y1 >= 0 && y1 < buf.height) buf.pixels[y1 * buf.width + i] = color;
-        if (y2 - 1 >= 0 && y2 - 1 < buf.height) buf.pixels[(y2 - 1) * buf.width + i] = color;
-    }
-    for (int j = y1; j < y2; ++j) {
-        if (x1 >= 0 && x1 < buf.width) buf.pixels[j * buf.width + x1] = color;
-        if (x2 - 1 >= 0 && x2 - 1 < buf.width) buf.pixels[j * buf.width + (x2 - 1)] = color;
-    }
-}
-
-void DesktopShellClient::drawFilledRect(ShmBuffer& buf, int x, int y, int w, int h, uint32_t color) {
-    if (!buf.pixels || w <= 0 || h <= 0) return;
-    int x2 = std::min(x + w, buf.width);
-    int y2 = std::min(y + h, buf.height);
-    int x1 = std::max(0, x);
-    int y1 = std::max(0, y);
-
-    for (int j = y1; j < y2; ++j) {
-        uint32_t* row = &buf.pixels[j * buf.width];
-        for (int i = x1; i < x2; ++i) {
-            row[i] = color;
-        }
-    }
-}
-
-void DesktopShellClient::drawText(ShmBuffer& buf, int x, int y, const char* text, uint32_t color) {
-    if (!buf.pixels || !text) return;
-
-    int cur_x = x;
-    while (*text) {
-        uint8_t c = static_cast<uint8_t>(*text);
-        if (c >= 32 && c <= 126) {
-            const uint8_t* glyph = FONT_8X16[c - 32];
-            for (int row = 0; row < 16; ++row) {
-                int py = y + row;
-                if (py < 0 || py >= buf.height) continue;
-                uint8_t bits = glyph[row];
-                for (int col = 0; col < 8; ++col) {
-                    int px = cur_x + col;
-                    if (px < 0 || px >= buf.width) continue;
-                    if (bits & (0x80 >> col)) {
-                        buf.pixels[py * buf.width + px] = color;
-                    }
-                }
-            }
-        }
-        cur_x += 8;
-        text++;
-    }
-}
-
 void DesktopShellClient::renderBackground() {
     if (!bg_surface_ || !shm_) return;
 
@@ -337,25 +352,27 @@ void DesktopShellClient::renderBackground() {
 
     if (!bg_buffer_.pixels) return;
 
-    // Deep Slate background (#181f2a)
-    drawFilledRect(bg_buffer_, 0, 0, width_, height_, 0xFF181F2A);
+    auto theme = DesktopState::getInstance().getTheme();
+    UIPainter painter(bg_buffer_.pixels, width_, height_);
 
-    // Subtle decorative grid lines
-    for (int y = 40; y < height_; y += 60) {
-        for (int x = 40; x < width_; x += 60) {
-            drawFilledRect(bg_buffer_, x, y, 2, 2, 0xFF2A3444);
+    // 1. High-definition gradient wallpaper
+    painter.drawLinearGradient(0, 0, width_, height_, theme.bg_gradient_top, theme.bg_gradient_bottom, true);
+
+    // 2. Subtle grid texture
+    for (int y = 48; y < height_; y += 64) {
+        for (int x = 48; x < width_; x += 64) {
+            painter.drawPixel(x, y, UIPainter::rgba(56, 189, 248, 40));
         }
     }
 
-    // Centered LinuxDroid desktop watermark
-    const char* brand = "LinuxDroid Desktop GUI";
-    int text_len = static_cast<int>(strlen(brand)) * 8;
-    int center_x = (width_ - text_len) / 2;
-    int center_y = height_ / 3;
-    drawText(bg_buffer_, center_x, center_y, brand, 0xFF4B5563);
-    const char* subtext = "Pure Wayland Client Desktop Shell (Phase 7)";
-    int sub_len = static_cast<int>(strlen(subtext)) * 8;
-    drawText(bg_buffer_, (width_ - sub_len) / 2, center_y + 24, subtext, 0xFF374151);
+    // 3. Central Desktop Branding
+    const char* brand = "LinuxDroid OS";
+    int b_w = painter.getTextWidth(brand, 2);
+    painter.drawText((width_ - b_w) / 2, height_ / 3, brand, UIPainter::rgba(148, 163, 184, 80), 2);
+
+    const char* subtext = "Rootless Native Wayland Desktop Environment";
+    int s_w = painter.getTextWidth(subtext, 1);
+    painter.drawText((width_ - s_w) / 2, height_ / 3 + 40, subtext, UIPainter::rgba(100, 116, 139, 70), 1);
 
     wl_surface_attach(bg_surface_, bg_buffer_.buffer, 0, 0);
     wl_surface_damage(bg_surface_, 0, 0, width_, height_);
@@ -372,41 +389,76 @@ void DesktopShellClient::renderPanel() {
 
     if (!panel_buffer_.pixels) return;
 
-    // Panel background: Dark graphite (#1F2937) with top border (#374151)
-    drawFilledRect(panel_buffer_, 0, 0, width_, panel_height_, 0xFF1F2937);
-    drawFilledRect(panel_buffer_, 0, 0, width_, 2, 0xFF374151);
+    auto theme = DesktopState::getInstance().getTheme();
+    UIPainter painter(panel_buffer_.pixels, width_, panel_height_);
 
-    // 1. Launcher button: [≡ LinuxDroid]
-    uint32_t btn_bg = launcher_open_ ? 0xFF2563EB : 0xFF1E3A8A;
-    drawFilledRect(panel_buffer_, 8, 6, 120, 36, btn_bg);
-    drawRect(panel_buffer_, 8, 6, 120, 36, 0xFF60A5FA);
-    drawText(panel_buffer_, 16, 16, "= LinuxDroid", 0xFFFFFFFF);
+    // 1. Glass Panel Background & Top Highlight
+    painter.clear(theme.panel_bg);
+    painter.drawFilledRect(0, 0, width_, 2, theme.panel_border);
 
-    // 2. Window list buttons
-    auto windows = DesktopWindowTracker::getInstance().getWindows();
-    int win_x = 136;
-    for (size_t i = 0; i < windows.size() && win_x + 140 < width_ - 180; ++i) {
+    // 2. Application Launcher Button [App Grid Icon + "Apps"]
+    uint32_t launcher_btn_color = launcher_open_ ? theme.accent_color : UIPainter::rgba(30, 41, 59, 200);
+    painter.drawRoundedRect(8, 6, 92, 36, 6, launcher_btn_color);
+    painter.drawRect(8, 6, 92, 36, launcher_open_ ? UIPainter::rgba(56, 189, 248, 255) : theme.panel_border);
+    painter.drawLauncherIcon(14, 12, 24, UIPainter::rgba(248, 250, 252, 255));
+    painter.drawText(44, 16, "Apps", UIPainter::rgba(248, 250, 252, 255), 1);
+
+    // 3. Active Window Taskbar Pills
+    auto windows = WindowModel::getInstance().getWindows();
+    int win_x = 112;
+    int pill_w = 160;
+    int pill_h = 36;
+    int pill_pad = 6;
+
+    for (size_t i = 0; i < windows.size() && win_x + pill_w < width_ - 180; ++i) {
         const auto& w = windows[i];
-        uint32_t w_bg = w.is_active ? 0xFF047857 : 0xFF374151;
-        uint32_t w_border = w.is_active ? 0xFF10B981 : 0xFF4B5563;
+        uint32_t pill_bg = w.is_active ? theme.pill_active_bg : theme.pill_inactive_bg;
+        painter.drawRoundedRect(win_x, pill_pad, pill_w, pill_h, 6, pill_bg);
 
-        drawFilledRect(panel_buffer_, win_x, 6, 136, 36, w_bg);
-        drawRect(panel_buffer_, win_x, 6, 136, 36, w_border);
+        if (w.is_active) {
+            // Active window bottom underline
+            painter.drawFilledRect(win_x + 8, pill_pad + pill_h - 3, pill_w - 16, 2, UIPainter::rgba(56, 189, 248, 255));
+        }
 
-        std::string label = w.title.substr(0, 14);
-        drawText(panel_buffer_, win_x + 8, 16, label.c_str(), 0xFFF9FAFB);
-        win_x += 144;
+        // Icon based on app_id
+        if (w.app_id == "foot" || w.app_id == "Terminal" || w.app_id == "xterm") {
+            painter.drawTerminalIcon(win_x + 6, pill_pad + 6, 24, UIPainter::rgba(248, 250, 252, 255));
+        } else if (w.app_id == "editor" || w.app_id == "gedit") {
+            painter.drawFolderIcon(win_x + 6, pill_pad + 6, 24, UIPainter::rgba(248, 250, 252, 255));
+        } else {
+            painter.drawMaximizeIcon(win_x + 6, pill_pad + 6, 24, UIPainter::rgba(248, 250, 252, 255));
+        }
+
+        // Window Title
+        painter.drawTextTruncated(win_x + 34, pill_pad + 10, w.title.c_str(), 11, theme.text_primary, 1);
+
+        // Close Button 'x'
+        int close_x = win_x + pill_w - 20;
+        int close_y = pill_pad + 10;
+        painter.drawCloseIcon(close_x, close_y, 16, UIPainter::rgba(203, 213, 225, 200));
+
+        win_x += pill_w + 6;
     }
 
-    // 3. Status & Clock area (Right-aligned)
+    // 4. System Tray (Wi-Fi, Battery, Clock)
+    auto sys = DesktopState::getInstance().getSnapshot().system;
+
+    // Wi-Fi Icon
+    int wifi_x = width_ - 170;
+    painter.drawWifiIcon(wifi_x, 14, 20, sys.network_connected, UIPainter::rgba(56, 189, 248, 255));
+
+    // Battery Icon
+    int bat_x = width_ - 140;
+    painter.drawBatteryIcon(bat_x, 15, 30, 16, sys.battery_percent, sys.is_charging, UIPainter::rgba(203, 213, 225, 255));
+
+    // Digital Clock
     time_t now = time(nullptr);
     struct tm tstruct{};
     localtime_r(&now, &tstruct);
     char time_str[32];
     snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", tstruct.tm_hour, tstruct.tm_min, tstruct.tm_sec);
-
-    int clock_x = width_ - 90;
-    drawText(panel_buffer_, clock_x, 16, time_str, 0xFF9CA3AF);
+    int clock_x = width_ - 95;
+    painter.drawText(clock_x, 16, time_str, UIPainter::rgba(248, 250, 252, 255), 1);
 
     wl_surface_attach(panel_surface_, panel_buffer_.buffer, 0, 0);
     wl_surface_damage(panel_surface_, 0, 0, width_, panel_height_);
@@ -448,27 +500,67 @@ void DesktopShellClient::renderLauncher() {
 
     if (!launcher_buffer_.pixels) return;
 
-    // Launcher body: Slate (#1F2937) with border (#4B5563)
-    drawFilledRect(launcher_buffer_, 0, 0, launcher_width_, launcher_height_, 0xFF1F2937);
-    drawRect(launcher_buffer_, 0, 0, launcher_width_, launcher_height_, 0xFF4B5563);
+    auto theme = DesktopState::getInstance().getTheme();
+    UIPainter painter(launcher_buffer_.pixels, launcher_width_, launcher_height_);
 
-    // Header: Applications
-    drawFilledRect(launcher_buffer_, 0, 0, launcher_width_, 36, 0xFF111827);
-    drawText(launcher_buffer_, 12, 10, "Applications", 0xFF60A5FA);
+    // 1. Drawer Background & Outer Border
+    painter.clear(theme.launcher_bg);
+    painter.drawRect(0, 0, launcher_width_, launcher_height_, theme.panel_border);
 
-    // Items list
-    int item_y = 44;
-    for (size_t i = 0; i < launcher_menu_.size(); ++i) {
+    // 2. Search Input Box
+    painter.drawRoundedRect(12, 12, launcher_width_ - 24, 38, 6, UIPainter::rgba(30, 41, 59, 240));
+    painter.drawRect(12, 12, launcher_width_ - 24, 38, UIPainter::rgba(56, 189, 248, 120));
+
+    if (search_query_.empty()) {
+        painter.drawText(22, 22, "Search applications...", UIPainter::rgba(148, 163, 184, 160), 1);
+    } else {
+        painter.drawText(22, 22, search_query_.c_str(), UIPainter::rgba(248, 250, 252, 255), 1);
+    }
+
+    // 3. Category Selector Pills
+    const std::vector<std::string> categories = { "All", "Development", "System", "Utilities" };
+    int cat_x = 12;
+    int cat_y = 58;
+    for (const auto& cat : categories) {
+        bool is_active_cat = (selected_category_ == cat);
+        uint32_t cat_bg = is_active_cat ? theme.accent_color : UIPainter::rgba(30, 41, 59, 180);
+        int cat_w = painter.getTextWidth(cat.c_str(), 1) + 16;
+        painter.drawRoundedRect(cat_x, cat_y, cat_w, 24, 4, cat_bg);
+        painter.drawText(cat_x + 8, cat_y + 4, cat.c_str(), is_active_cat ? 0xFFFFFFFF : UIPainter::rgba(203, 213, 225, 200), 1);
+        cat_x += cat_w + 6;
+    }
+
+    // 4. Applications List
+    auto filtered_items = getFilteredLauncherItems();
+    int item_y = 92;
+    int row_h = 44;
+
+    for (size_t i = 0; i < filtered_items.size() && item_y + row_h <= launcher_height_ - 8; ++i) {
         bool selected = (static_cast<int>(i) == selected_launcher_item_);
-        uint32_t item_bg = selected ? 0xFF374151 : 0xFF1F2937;
-        drawFilledRect(launcher_buffer_, 6, item_y, launcher_width_ - 12, 36, item_bg);
+        uint32_t row_bg = selected ? UIPainter::rgba(56, 189, 248, 40) : UIPainter::rgba(15, 23, 42, 100);
+        painter.drawRoundedRect(8, item_y, launcher_width_ - 16, row_h, 6, row_bg);
+
         if (selected) {
-            drawRect(launcher_buffer_, 6, item_y, launcher_width_ - 12, 36, 0xFF2563EB);
-            drawText(launcher_buffer_, 12, item_y + 10, ">", 0xFF60A5FA);
+            painter.drawRect(8, item_y, launcher_width_ - 16, row_h, UIPainter::rgba(56, 189, 248, 180));
         }
 
-        drawText(launcher_buffer_, 26, item_y + 10, launcher_menu_[i].name.c_str(), selected ? 0xFFFFFFFF : 0xFFD1D5DB);
-        item_y += 42;
+        // Icon
+        const auto& item = filtered_items[i];
+        if (item.icon == "terminal") {
+            painter.drawTerminalIcon(16, item_y + 8, 28, UIPainter::rgba(56, 189, 248, 255));
+        } else if (item.icon == "folder") {
+            painter.drawFolderIcon(16, item_y + 8, 28, UIPainter::rgba(251, 191, 36, 255));
+        } else if (item.icon == "settings") {
+            painter.drawSettingsIcon(16, item_y + 8, 28, UIPainter::rgba(148, 163, 184, 255));
+        } else {
+            painter.drawFolderIcon(16, item_y + 8, 28, UIPainter::rgba(56, 189, 248, 255));
+        }
+
+        // Title and Description
+        painter.drawText(52, item_y + 6, item.name.c_str(), theme.text_primary, 1);
+        painter.drawTextTruncated(52, item_y + 24, item.description.c_str(), 32, theme.text_secondary, 1);
+
+        item_y += row_h + 4;
     }
 
     wl_surface_attach(launcher_surface_, launcher_buffer_.buffer, 0, 0);
@@ -484,35 +576,65 @@ void DesktopShellClient::renderAll() {
 
 void DesktopShellClient::handlePointerClick(struct wl_surface* surface, double x, double y) {
     if (surface == panel_surface_) {
-        // Check Launcher button
-        if (x >= 8 && x <= 128 && y >= 6 && y <= 42) {
+        // 1. Check Launcher button [x: 8..100]
+        if (x >= 8 && x <= 100 && y >= 6 && y <= 42) {
             toggleLauncher();
             return;
         }
 
-        // Check Window buttons
-        auto windows = DesktopWindowTracker::getInstance().getWindows();
-        int win_x = 136;
+        // 2. Check Window Taskbar Pills
+        auto windows = WindowModel::getInstance().getWindows();
+        int win_x = 112;
+        int pill_w = 160;
+
         for (size_t i = 0; i < windows.size(); ++i) {
-            if (x >= win_x && x <= win_x + 136 && y >= 6 && y <= 42) {
-                DesktopWindowTracker::getInstance().requestActivate(windows[i].id);
+            if (x >= win_x && x <= win_x + pill_w && y >= 6 && y <= 42) {
+                // Check if close icon clicked [rightmost 20px of pill]
+                if (x >= win_x + pill_w - 24) {
+                    WindowManager::getInstance().closeWindow(windows[i].id);
+                } else {
+                    WindowManager::getInstance().toggleMinimize(windows[i].id);
+                }
                 renderPanel();
                 return;
             }
-            win_x += 144;
+            win_x += pill_w + 6;
         }
     } else if (surface == launcher_surface_) {
-        int item_y = 44;
-        for (size_t i = 0; i < launcher_menu_.size(); ++i) {
-            if (x >= 6 && x <= launcher_width_ - 6 && y >= item_y && y <= item_y + 36) {
-                selected_launcher_item_ = static_cast<int>(i);
-                activateSelectedLauncherItem();
-                return;
+        // Check Category Row [y: 58..82]
+        if (y >= 58 && y <= 82) {
+            const std::vector<std::string> categories = { "All", "Development", "System", "Utilities" };
+            UIPainter dummy(nullptr, 0, 0);
+            int cat_x = 12;
+            for (const auto& cat : categories) {
+                int cat_w = dummy.getTextWidth(cat.c_str(), 1) + 16;
+                if (x >= cat_x && x <= cat_x + cat_w) {
+                    selectLauncherCategory(cat);
+                    return;
+                }
+                cat_x += cat_w + 6;
             }
-            item_y += 42;
+        }
+
+        // Check Application items [y >= 92]
+        auto items = getFilteredLauncherItems();
+        int item_y = 92;
+        int row_h = 44;
+
+        for (size_t i = 0; i < items.size(); ++i) {
+            if (x >= 8 && x <= launcher_width_ - 8 && y >= item_y && y <= item_y + row_h) {
+                // Find matching item in master launcher_menu_
+                for (size_t m = 0; m < launcher_menu_.size(); ++m) {
+                    if (launcher_menu_[m].exec_path == items[i].exec_path &&
+                        launcher_menu_[m].name == items[i].name) {
+                        launchApplication(m);
+                        return;
+                    }
+                }
+            }
+            item_y += row_h + 4;
         }
     } else if (surface == bg_surface_) {
-        // Clicking background closes launcher if open
         if (launcher_open_) {
             setLauncherOpen(false);
         }
@@ -561,19 +683,16 @@ void DesktopShellClient::registryHandleGlobal(void* data, struct wl_registry* re
 void DesktopShellClient::registryHandleGlobalRemove(void*, struct wl_registry*, uint32_t) {}
 
 void DesktopShellClient::outputHandleGeometry(void*, struct wl_output*, int32_t, int32_t, int32_t, int32_t, int32_t, const char*, const char*, int32_t) {}
-
 void DesktopShellClient::outputHandleMode(void* data, struct wl_output*, uint32_t flags, int32_t width, int32_t height, int32_t) {
+    auto* self = static_cast<DesktopShellClient*>(data);
     if (flags & WL_OUTPUT_MODE_CURRENT) {
-        auto* self = static_cast<DesktopShellClient*>(data);
         self->setOutputGeometry(width, height, self->scale_);
-        self->renderAll();
     }
 }
-
 void DesktopShellClient::outputHandleDone(void*, struct wl_output*) {}
 void DesktopShellClient::outputHandleScale(void* data, struct wl_output*, int32_t factor) {
     auto* self = static_cast<DesktopShellClient*>(data);
-    self->scale_ = factor > 0 ? factor : 1;
+    self->setOutputGeometry(self->width_, self->height_, factor);
 }
 
 void DesktopShellClient::xdgWmBaseHandlePing(void*, struct xdg_wm_base* shell, uint32_t serial) {
@@ -582,10 +701,9 @@ void DesktopShellClient::xdgWmBaseHandlePing(void*, struct xdg_wm_base* shell, u
 
 void DesktopShellClient::seatHandleCapabilities(void* data, struct wl_seat* seat, uint32_t caps) {
     auto* self = static_cast<DesktopShellClient*>(data);
-
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !self->pointer_) {
         self->pointer_ = wl_seat_get_pointer(seat);
-        static const struct wl_pointer_listener pointer_listener = {
+        static const struct wl_pointer_listener p_listener = {
             .enter = pointerHandleEnter,
             .leave = pointerHandleLeave,
             .motion = pointerHandleMotion,
@@ -596,15 +714,30 @@ void DesktopShellClient::seatHandleCapabilities(void* data, struct wl_seat* seat
             .axis_stop = pointerHandleAxisStop,
             .axis_discrete = pointerHandleAxisDiscrete,
         };
-        wl_pointer_add_listener(self->pointer_, &pointer_listener, self);
+        wl_pointer_add_listener(self->pointer_, &p_listener, self);
     } else if (!(caps & WL_SEAT_CAPABILITY_POINTER) && self->pointer_) {
-        wl_pointer_destroy(self->pointer_);
+        wl_pointer_release(self->pointer_);
         self->pointer_ = nullptr;
+    }
+
+    if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !self->touch_) {
+        self->touch_ = wl_seat_get_touch(seat);
+        static const struct wl_touch_listener t_listener = {
+            .down = touchHandleDown,
+            .up = touchHandleUp,
+            .motion = touchHandleMotion,
+            .frame = touchHandleFrame,
+            .cancel = touchHandleCancel,
+        };
+        wl_touch_add_listener(self->touch_, &t_listener, self);
+    } else if (!(caps & WL_SEAT_CAPABILITY_TOUCH) && self->touch_) {
+        wl_touch_release(self->touch_);
+        self->touch_ = nullptr;
     }
 
     if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !self->keyboard_) {
         self->keyboard_ = wl_seat_get_keyboard(seat);
-        static const struct wl_keyboard_listener keyboard_listener = {
+        static const struct wl_keyboard_listener k_listener = {
             .keymap = keyboardHandleKeymap,
             .enter = keyboardHandleEnter,
             .leave = keyboardHandleLeave,
@@ -612,25 +745,10 @@ void DesktopShellClient::seatHandleCapabilities(void* data, struct wl_seat* seat
             .modifiers = keyboardHandleModifiers,
             .repeat_info = keyboardHandleRepeatInfo,
         };
-        wl_keyboard_add_listener(self->keyboard_, &keyboard_listener, self);
+        wl_keyboard_add_listener(self->keyboard_, &k_listener, self);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && self->keyboard_) {
-        wl_keyboard_destroy(self->keyboard_);
+        wl_keyboard_release(self->keyboard_);
         self->keyboard_ = nullptr;
-    }
-
-    if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !self->touch_) {
-        self->touch_ = wl_seat_get_touch(seat);
-        static const struct wl_touch_listener touch_listener = {
-            .down = touchHandleDown,
-            .up = touchHandleUp,
-            .motion = touchHandleMotion,
-            .frame = touchHandleFrame,
-            .cancel = touchHandleCancel,
-        };
-        wl_touch_add_listener(self->touch_, &touch_listener, self);
-    } else if (!(caps & WL_SEAT_CAPABILITY_TOUCH) && self->touch_) {
-        wl_touch_destroy(self->touch_);
-        self->touch_ = nullptr;
     }
 }
 
@@ -656,7 +774,7 @@ void DesktopShellClient::pointerHandleMotion(void* data, struct wl_pointer*, uin
 
 void DesktopShellClient::pointerHandleButton(void* data, struct wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
     auto* self = static_cast<DesktopShellClient*>(data);
-    if (state == WL_POINTER_BUTTON_STATE_PRESSED && button == 0x110 /* BTN_LEFT */) {
+    if (state == WL_POINTER_BUTTON_STATE_PRESSED && button == 0x110) { // BTN_LEFT
         if (self->active_pointer_surface_) {
             self->handlePointerClick(self->active_pointer_surface_, self->pointer_x_, self->pointer_y_);
         }
@@ -671,11 +789,8 @@ void DesktopShellClient::pointerHandleAxisDiscrete(void*, struct wl_pointer*, ui
 
 void DesktopShellClient::touchHandleDown(void* data, struct wl_touch*, uint32_t, uint32_t, struct wl_surface* surface, int32_t, wl_fixed_t x, wl_fixed_t y) {
     auto* self = static_cast<DesktopShellClient*>(data);
-    double tx = wl_fixed_to_double(x);
-    double ty = wl_fixed_to_double(y);
-    self->handlePointerClick(surface, tx, ty);
+    self->handlePointerClick(surface, wl_fixed_to_double(x), wl_fixed_to_double(y));
 }
-
 void DesktopShellClient::touchHandleUp(void*, struct wl_touch*, uint32_t, uint32_t, int32_t) {}
 void DesktopShellClient::touchHandleMotion(void*, struct wl_touch*, uint32_t, int32_t, wl_fixed_t, wl_fixed_t) {}
 void DesktopShellClient::touchHandleFrame(void*, struct wl_touch*) {}
@@ -687,25 +802,19 @@ void DesktopShellClient::keyboardHandleKeymap(void* data, struct wl_keyboard*, u
         close(fd);
         return;
     }
-
     char* map_str = static_cast<char*>(mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0));
     if (map_str == MAP_FAILED) {
         close(fd);
         return;
     }
-
+    if (!self->xkb_ctx_) self->xkb_ctx_ = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (self->xkb_keymap_) xkb_keymap_unref(self->xkb_keymap_);
-    if (self->xkb_state_) xkb_state_unref(self->xkb_state_);
-
-    self->xkb_keymap_ = xkb_keymap_new_from_string(self->xkb_ctx_, map_str,
-                                                   XKB_KEYMAP_FORMAT_TEXT_V1,
-                                                   XKB_KEYMAP_COMPILE_NO_FLAGS);
+    self->xkb_keymap_ = xkb_keymap_new_from_string(self->xkb_ctx_, map_str, XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
     munmap(map_str, size);
     close(fd);
 
-    if (self->xkb_keymap_) {
-        self->xkb_state_ = xkb_state_new(self->xkb_keymap_);
-    }
+    if (self->xkb_state_) xkb_state_unref(self->xkb_state_);
+    self->xkb_state_ = xkb_state_new(self->xkb_keymap_);
 }
 
 void DesktopShellClient::keyboardHandleEnter(void*, struct wl_keyboard*, uint32_t, struct wl_surface*, struct wl_array*) {}
@@ -713,54 +822,32 @@ void DesktopShellClient::keyboardHandleLeave(void*, struct wl_keyboard*, uint32_
 
 void DesktopShellClient::keyboardHandleKey(void* data, struct wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
     auto* self = static_cast<DesktopShellClient*>(data);
-    if (state != WL_KEYBOARD_KEY_STATE_PRESSED) return;
-
-    xkb_keysym_t sym = XKB_KEY_NoSymbol;
-    if (self->xkb_state_) {
-        sym = xkb_state_key_get_one_sym(self->xkb_state_, key + 8);
-    }
-
-    switch (sym) {
-        case XKB_KEY_Super_L:
-        case XKB_KEY_Super_R:
-            self->toggleLauncher();
-            break;
-        case XKB_KEY_Escape:
-            if (self->launcher_open_) self->setLauncherOpen(false);
-            break;
-        case XKB_KEY_Tab:
-            if (self->launcher_open_) self->selectNextLauncherItem();
-            break;
-        case XKB_KEY_Up:
-            if (self->launcher_open_) self->selectPrevLauncherItem();
-            break;
-        case XKB_KEY_Down:
-            if (self->launcher_open_) self->selectNextLauncherItem();
-            break;
-        case XKB_KEY_Return:
-        case XKB_KEY_KP_Enter:
-            if (self->launcher_open_) {
-                self->activateSelectedLauncherItem();
-            } else {
-                self->toggleLauncher();
+    if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+        // Esc: close launcher
+        if (key == 1) { // KEY_ESC
+            if (self->isLauncherOpen()) {
+                self->setLauncherOpen(false);
             }
-            break;
-        default:
-            break;
+        } else if (key == 103) { // KEY_UP
+            if (self->isLauncherOpen()) self->selectPrevLauncherItem();
+        } else if (key == 108) { // KEY_DOWN
+            if (self->isLauncherOpen()) self->selectNextLauncherItem();
+        } else if (key == 28) { // KEY_ENTER
+            if (self->isLauncherOpen()) self->activateSelectedLauncherItem();
+        } else if (key == 125 || key == 126) { // Super key
+            self->toggleLauncher();
+        }
     }
 }
 
-void DesktopShellClient::keyboardHandleModifiers(void* data, struct wl_keyboard*, uint32_t, uint32_t mods_depressed,
-                                                 uint32_t mods_latched, uint32_t mods_locked, uint32_t group) {
+void DesktopShellClient::keyboardHandleModifiers(void* data, struct wl_keyboard*, uint32_t, uint32_t depressed, uint32_t latched, uint32_t locked, uint32_t group) {
     auto* self = static_cast<DesktopShellClient*>(data);
     if (self->xkb_state_) {
-        xkb_state_update_mask(self->xkb_state_, mods_depressed, mods_latched, mods_locked, 0, 0, group);
+        xkb_state_update_mask(self->xkb_state_, depressed, latched, locked, 0, 0, group);
     }
 }
 
 void DesktopShellClient::keyboardHandleRepeatInfo(void*, struct wl_keyboard*, int32_t, int32_t) {}
-
-// --- Surface Configure Callbacks ---
 
 void DesktopShellClient::bgSurfaceConfigure(void* data, struct xdg_surface* surface, uint32_t serial) {
     xdg_surface_ack_configure(surface, serial);
@@ -799,8 +886,8 @@ void DesktopShellClient::threadMain(std::string socket_name) {
 
     LOGI("SHELL_CONNECTED: Connected to Wayland compositor successfully");
 
-    // Register DesktopWindowTracker listener so panel updates dynamically on window changes
-    DesktopWindowTracker::getInstance().setChangeListener([this] {
+    // Register WindowModel change listener so panel updates dynamically
+    WindowModel::getInstance().addChangeListener([this] {
         renderPanel();
     });
 
@@ -824,18 +911,25 @@ void DesktopShellClient::threadMain(std::string socket_name) {
             break;
         }
 
-        int ret = poll(pfd, 2, -1);
+        // 1000ms timeout so the digital clock can update smoothly
+        int ret = poll(pfd, 2, 1000);
         if (ret < 0) {
             wl_display_cancel_read(display_);
             if (errno == EINTR) continue;
-            LOGE("poll error in desktop shell loop: %s", strerror(errno));
+            LOGE("poll failed: %s", strerror(errno));
             break;
         }
 
-        if (pfd[1].revents & POLLIN) {
+        if (ret == 0) {
+            // Timeout: cancel read and re-render panel for clock update
             wl_display_cancel_read(display_);
-            char b[16];
-            (void)read(wake_pipe_[0], b, sizeof(b));
+            renderPanel();
+            continue;
+        }
+
+        if (pfd[1].revents & POLLIN) {
+            // Wake pipe triggered stop
+            wl_display_cancel_read(display_);
             break;
         }
 
@@ -847,16 +941,15 @@ void DesktopShellClient::threadMain(std::string socket_name) {
         }
     }
 
+    WindowModel::getInstance().clearChangeListeners();
     cleanupWayland();
-    LOGI("SHELL_THREAD_EXITED: Desktop shell thread exited cleanly");
+    LOGI("SHELL_THREAD_EXITED: Desktop shell thread cleanly exited");
 }
 
 bool DesktopShellClient::initWayland(const char* socket_name) {
-    xkb_ctx_ = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-
     display_ = wl_display_connect(socket_name);
     if (!display_) {
-        LOGE("wl_display_connect failed for socket '%s'", socket_name);
+        LOGE("Failed to connect to Wayland display '%s'", socket_name);
         return false;
     }
 
@@ -869,15 +962,14 @@ bool DesktopShellClient::initWayland(const char* socket_name) {
 
     wl_display_roundtrip(display_);
 
-    if (!compositor_ || !shm_ || !seat_ || !xdg_wm_base_) {
-        LOGE("Missing required Wayland globals (comp=%p shm=%p seat=%p wm=%p)",
-             compositor_, shm_, seat_, xdg_wm_base_);
+    if (!compositor_ || !shm_ || !xdg_wm_base_) {
+        LOGE("Missing required Wayland globals (comp=%p, shm=%p, xdg_wm_base=%p)",
+             compositor_, shm_, xdg_wm_base_);
+        cleanupWayland();
         return false;
     }
 
-    wl_display_roundtrip(display_);
-
-    // 1. Create Desktop Background Surface
+    // 1. Background Surface
     bg_surface_ = wl_compositor_create_surface(compositor_);
     bg_xdg_surface_ = xdg_wm_base_get_xdg_surface(xdg_wm_base_, bg_surface_);
     static const struct xdg_surface_listener bg_surf_listener = {
@@ -886,7 +978,7 @@ bool DesktopShellClient::initWayland(const char* socket_name) {
     xdg_surface_add_listener(bg_xdg_surface_, &bg_surf_listener, this);
     bg_xdg_toplevel_ = xdg_surface_get_toplevel(bg_xdg_surface_);
     xdg_toplevel_set_app_id(bg_xdg_toplevel_, "org.linuxdroid.desktop-background");
-    xdg_toplevel_set_title(bg_xdg_toplevel_, "LinuxDroid Background");
+    xdg_toplevel_set_title(bg_xdg_toplevel_, "LinuxDroid Desktop");
     static const struct xdg_toplevel_listener bg_top_listener = {
         .configure = bgToplevelConfigure,
         .close = bgToplevelClose,
@@ -894,31 +986,28 @@ bool DesktopShellClient::initWayland(const char* socket_name) {
     xdg_toplevel_add_listener(bg_xdg_toplevel_, &bg_top_listener, this);
     wl_surface_commit(bg_surface_);
 
-    // 2. Create Panel Surface
+    // 2. Panel Surface
     panel_surface_ = wl_compositor_create_surface(compositor_);
     panel_xdg_surface_ = xdg_wm_base_get_xdg_surface(xdg_wm_base_, panel_surface_);
-    static const struct xdg_surface_listener pan_surf_listener = {
+    static const struct xdg_surface_listener p_surf_listener = {
         .configure = panelSurfaceConfigure,
     };
-    xdg_surface_add_listener(panel_xdg_surface_, &pan_surf_listener, this);
+    xdg_surface_add_listener(panel_xdg_surface_, &p_surf_listener, this);
     panel_xdg_toplevel_ = xdg_surface_get_toplevel(panel_xdg_surface_);
     xdg_toplevel_set_app_id(panel_xdg_toplevel_, "org.linuxdroid.desktop-panel");
     xdg_toplevel_set_title(panel_xdg_toplevel_, "LinuxDroid Panel");
-    static const struct xdg_toplevel_listener pan_top_listener = {
+    static const struct xdg_toplevel_listener p_top_listener = {
         .configure = panelToplevelConfigure,
         .close = panelToplevelClose,
     };
-    xdg_toplevel_add_listener(panel_xdg_toplevel_, &pan_top_listener, this);
+    xdg_toplevel_add_listener(panel_xdg_toplevel_, &p_top_listener, this);
     wl_surface_commit(panel_surface_);
 
     wl_display_roundtrip(display_);
-    LOGI("SHELL_SURFACES_CREATED: Background and Panel Wayland surfaces initialized");
     return true;
 }
 
 void DesktopShellClient::cleanupWayland() {
-    DesktopWindowTracker::getInstance().setChangeListener(nullptr);
-
     bg_buffer_.destroy();
     panel_buffer_.destroy();
     launcher_buffer_.destroy();
@@ -935,9 +1024,13 @@ void DesktopShellClient::cleanupWayland() {
     if (bg_xdg_surface_) { xdg_surface_destroy(bg_xdg_surface_); bg_xdg_surface_ = nullptr; }
     if (bg_surface_) { wl_surface_destroy(bg_surface_); bg_surface_ = nullptr; }
 
-    if (pointer_) { wl_pointer_destroy(pointer_); pointer_ = nullptr; }
-    if (keyboard_) { wl_keyboard_destroy(keyboard_); keyboard_ = nullptr; }
-    if (touch_) { wl_touch_destroy(touch_); touch_ = nullptr; }
+    if (pointer_) { wl_pointer_release(pointer_); pointer_ = nullptr; }
+    if (keyboard_) { wl_keyboard_release(keyboard_); keyboard_ = nullptr; }
+    if (touch_) { wl_touch_release(touch_); touch_ = nullptr; }
+
+    if (xkb_state_) { xkb_state_unref(xkb_state_); xkb_state_ = nullptr; }
+    if (xkb_keymap_) { xkb_keymap_unref(xkb_keymap_); xkb_keymap_ = nullptr; }
+    if (xkb_ctx_) { xkb_context_unref(xkb_ctx_); xkb_ctx_ = nullptr; }
 
     if (xdg_wm_base_) { xdg_wm_base_destroy(xdg_wm_base_); xdg_wm_base_ = nullptr; }
     if (seat_) { wl_seat_destroy(seat_); seat_ = nullptr; }
@@ -945,38 +1038,22 @@ void DesktopShellClient::cleanupWayland() {
     if (shm_) { wl_shm_destroy(shm_); shm_ = nullptr; }
     if (compositor_) { wl_compositor_destroy(compositor_); compositor_ = nullptr; }
     if (registry_) { wl_registry_destroy(registry_); registry_ = nullptr; }
-
-    if (display_) {
-        wl_display_disconnect(display_);
-        display_ = nullptr;
-    }
-
-    if (xkb_state_) { xkb_state_unref(xkb_state_); xkb_state_ = nullptr; }
-    if (xkb_keymap_) { xkb_keymap_unref(xkb_keymap_); xkb_keymap_ = nullptr; }
-    if (xkb_ctx_) { xkb_context_unref(xkb_ctx_); xkb_ctx_ = nullptr; }
+    if (display_) { wl_display_disconnect(display_); display_ = nullptr; }
 }
 
 } // namespace linuxdroid
 
-#ifdef BUILD_STANDALONE_SHELL
-int main(int argc, char** argv) {
-    const char* socket_name = "wayland-0";
-    for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--socket") == 0 && i + 1 < argc) {
-            socket_name = argv[++i];
-        }
-    }
-
-    printf("Starting linuxdroid_desktop_shell on socket '%s'...\n", socket_name);
+#if defined(BUILD_STANDALONE_SHELL)
+int main(int argc, char* argv[]) {
+    const char* sock = (argc > 1) ? argv[1] : "wayland-0";
     linuxdroid::DesktopShellClient client;
-    if (!client.start(socket_name)) {
-        fprintf(stderr, "Failed to start desktop shell client\n");
+    if (!client.start(sock)) {
         return 1;
     }
-
     while (client.isRunning()) {
-        sleep(1);
+        pause();
     }
     return 0;
 }
 #endif
+
