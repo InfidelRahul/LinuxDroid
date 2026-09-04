@@ -10,9 +10,7 @@ LinuxDroid consumes a versioned release from that repository:
 LinuxDroid_proot release
         │
         ├── arm64-v8a/proot
-        ├── arm64-v8a/loader
-        ├── x86_64/proot
-        └── x86_64/loader
+        └── arm64-v8a/loader
                 │
                 ▼
         RuntimeAssetsManager
