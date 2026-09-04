@@ -4,8 +4,11 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.linuxdroid.core.logging.LogConfig
+import com.linuxdroid.core.logging.LogFileManager
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
+import java.io.File
 
 /**
  * Application class for LinuxDroid.
@@ -20,6 +23,7 @@ class LinuxDroidApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        LogFileManager.setBaseLogsDir(File(filesDir, "logs"))
         initializeLogging()
         createNotificationChannels()
     }
@@ -28,7 +32,7 @@ class LinuxDroidApplication : Application() {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         } else {
-            // In release, plant a production tree that only logs warnings+
+            // In release, plant a production tree that logs INFO+ when generate_log is true
             Timber.plant(ReleaseTree())
         }
         Timber.i("LinuxDroid starting up (version ${BuildConfig.VERSION_NAME})")
@@ -52,12 +56,13 @@ class LinuxDroidApplication : Application() {
 }
 
 /**
- * Production logging tree: logs WARN+ to logcat only.
+ * Production logging tree: logs WARN+ or INFO+ to logcat depending on LogConfig.generate_log.
  * Does not include sensitive user data.
  */
 private class ReleaseTree : Timber.Tree() {
     override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
-        if (priority < android.util.Log.WARN) return
+        val minPriority = if (LogConfig.generate_log) android.util.Log.INFO else android.util.Log.WARN
+        if (priority < minPriority) return
         android.util.Log.println(priority, tag ?: "LinuxDroid", message)
     }
 }

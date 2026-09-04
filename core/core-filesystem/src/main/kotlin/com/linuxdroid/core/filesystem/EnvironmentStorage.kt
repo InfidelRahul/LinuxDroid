@@ -1,6 +1,8 @@
 package com.linuxdroid.core.filesystem
 
 import com.linuxdroid.core.logging.LinuxDroidLogger
+import com.linuxdroid.core.logging.LogCategory
+import com.linuxdroid.core.logging.LogFileManager
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.EnvironmentId
 import com.linuxdroid.core.model.FilesystemError
@@ -28,12 +30,16 @@ class EnvironmentStorage(
     /** Base directory for all environments (e.g. app's filesDir/environments). */
     private val baseDir: File,
 ) {
+    init {
+        LogFileManager.setBaseLogsDir(baseDir.parentFile ?: baseDir)
+    }
+
     private val log = LinuxDroidLogger(LogSubsystem.FILESYSTEM)
 
-    /** Returns the root directory for the given environment. */
+    /** Returns the root directory for a specific environment. */
     fun environmentDir(id: EnvironmentId): File = File(baseDir, id.value)
 
-    /** Returns the rootfs directory. This is the Linux filesystem root. */
+    /** Returns the rootfs directory (persistent). */
     fun rootfsDir(id: EnvironmentId): File = File(environmentDir(id), "rootfs")
 
     /** Returns the metadata directory. */
@@ -46,16 +52,48 @@ class EnvironmentStorage(
     fun tmpDir(id: EnvironmentId): File = File(environmentDir(id), "tmp")
 
     /** Returns the logs directory. */
-    fun logsDir(id: EnvironmentId): File = File(environmentDir(id), "logs")
+    fun logsDir(id: EnvironmentId): File = File(environmentDir(id), "logs").apply {
+        LogFileManager.registerEnvironmentLogsDir(id, this)
+    }
 
     /** Returns the shm directory for POSIX shared memory emulation (/dev/shm). */
     fun shmDir(id: EnvironmentId): File = File(environmentDir(id), "shm")
 
     /** Returns the console log file for runtime diagnostics. */
-    fun consoleLogFile(id: EnvironmentId): File = File(logsDir(id), "console.log")
+    fun consoleLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.CONSOLE.filename)
 
     /** Returns the PRoot internal log file for runtime diagnostics. */
-    fun prootLogFile(id: EnvironmentId): File = File(logsDir(id), "proot.log")
+    fun prootLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.PROOT.filename)
+
+    /** Returns the starting session log file. */
+    fun sessionLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.SESSION.filename)
+
+    /** Returns the preboot validation log file. */
+    fun prebootLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.PREBOOT.filename)
+
+    /** Returns the guest init (/sbin/linuxdroid-init) execution log file. */
+    fun guestInitLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.GUEST_INIT.filename)
+
+    /** Returns the system process lifecycle log file. */
+    fun processLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.SYSTEM_PROCESS.filename)
+
+    /** Returns the interactive terminal shell session log file. */
+    fun terminalLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.TERMINAL.filename)
+
+    /** Returns the diagnostics summary log file. */
+    fun diagnosticsLogFile(id: EnvironmentId): File = File(logsDir(id), LogCategory.DIAGNOSTICS.filename)
+
+    /** Returns all available categorized log files for the environment. */
+    fun allLogFiles(id: EnvironmentId): List<File> = listOf(
+        sessionLogFile(id),
+        prebootLogFile(id),
+        guestInitLogFile(id),
+        processLogFile(id),
+        terminalLogFile(id),
+        prootLogFile(id),
+        consoleLogFile(id),
+        diagnosticsLogFile(id),
+    )
 
     /**
      * Creates the directory structure for a new environment.
@@ -68,6 +106,7 @@ class EnvironmentStorage(
                 throw FilesystemError(dir.path, "Failed to create directory")
             }
         }
+        LogFileManager.registerEnvironmentLogsDir(id, logsDir(id))
     }
 
     /**

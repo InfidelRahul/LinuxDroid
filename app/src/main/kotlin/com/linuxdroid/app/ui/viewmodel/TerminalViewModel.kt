@@ -7,6 +7,9 @@ import androidx.lifecycle.viewModelScope
 import com.linuxdroid.core.database.EnvironmentMapper
 import com.linuxdroid.core.database.dao.EnvironmentDao
 import com.linuxdroid.core.logging.LinuxDroidLogger
+import com.linuxdroid.core.logging.LogCategory
+import com.linuxdroid.core.logging.LogConfig
+import com.linuxdroid.core.logging.LogFileManager
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.EnvironmentState
@@ -75,6 +78,9 @@ class TerminalViewModel @Inject constructor(
             for (bytes in inputChannel) {
                 val session = ptySession
                 if (session?.isAlive() == true) {
+                    if (LogConfig.generate_log) {
+                        LogFileManager.appendTerminalBytes(com.linuxdroid.core.model.EnvironmentId(environmentId), bytes, 0, bytes.size)
+                    }
                     session.write(bytes)
                 }
             }
@@ -169,6 +175,9 @@ class TerminalViewModel @Inject constructor(
                             val bytesRead = session.read(buffer)
                             if (bytesRead > 0) {
                                 terminalBuffer.append(buffer, bytesRead)
+                                if (LogConfig.generate_log) {
+                                    LogFileManager.appendTerminalBytes(env.id, buffer, 0, bytesRead)
+                                }
                             } else if (bytesRead < 0) {
                                 break
                             }
@@ -179,6 +188,9 @@ class TerminalViewModel @Inject constructor(
                         _shellExitCode.value = exitCode
                         val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
                         terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)
+                        if (LogConfig.generate_log) {
+                            LogFileManager.appendTerminalText(env.id, exitMsg)
+                        }
                         log.info("Shell process exited with code $exitCode")
 
                         (processManager as? DefaultProcessManager)?.updateProcess(
@@ -195,6 +207,9 @@ class TerminalViewModel @Inject constructor(
                     _isShellActive.value = false
                     val errorMsg = "\r\n[Error launching shell: ${e.message}]\r\n"
                     terminalBuffer.append(errorMsg.toByteArray(), errorMsg.length)
+                    if (LogConfig.generate_log) {
+                        LogFileManager.appendTerminalText(env.id, errorMsg)
+                    }
                 }
             }
         }

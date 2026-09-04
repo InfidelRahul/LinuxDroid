@@ -3,6 +3,8 @@ package com.linuxdroid.core.runtime
 import android.content.Context
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.logging.LinuxDroidLogger
+import com.linuxdroid.core.logging.LogCategory
+import com.linuxdroid.core.logging.LogFileManager
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import kotlinx.coroutines.Dispatchers
@@ -192,18 +194,36 @@ class ProotRuntimeBackend(
         val handleId = UUID.randomUUID().toString()
         val rootfs = File(resolvedSpec.rootfsPath)
         val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
-        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.consoleLogFile(resolvedSpec.environmentId)
+        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.prootLogFile(resolvedSpec.environmentId)
         logFile.parentFile?.mkdirs()
         val proot = ensureProotBinary()
         val loader = ensureLoaderBinary()
 
-        log.info("[PROOT] Executing in proot: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)")
+        val processLog = LinuxDroidLogger(LogSubsystem.PROCESS, resolvedSpec.environmentId, sessionId, category = LogCategory.SYSTEM_PROCESS)
+        processLog.info(
+            "[PROCESS_SPAWN] Spawning process: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)",
+            details = mapOf(
+                "handleId" to handleId,
+                "cwd" to resolvedSpec.workingDirectory,
+                "command" to resolvedSpec.command.joinToString(" "),
+                "envCount" to resolvedSpec.environmentVariables.size.toString(),
+            )
+        )
 
         val process: Process
         try {
             process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir, logFile)
         } catch (e: IOException) {
-            log.error("Failed to execute PRoot process: ${e.message}", e)
+            processLog.error(
+                "Failed to launch PRoot executable '${proot.path}': ${e.message}",
+                throwable = e,
+                errorCode = -1,
+                details = mapOf(
+                    "prootPath" to proot.path,
+                    "handleId" to handleId,
+                    "command" to resolvedSpec.command.joinToString(" "),
+                )
+            )
             throw RuntimeError(
                 environmentId = resolvedSpec.environmentId,
                 message = "Failed to launch PRoot executable '${proot.path}': ${e.message}",
@@ -245,7 +265,7 @@ class ProotRuntimeBackend(
     ): ProcessHandle {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
-        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
+        val logFile = storage.prootLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = command,
@@ -262,6 +282,7 @@ class ProotRuntimeBackend(
         spec: RuntimeSpec,
         timeoutMs: Long = 30_000,
     ): ProcessResult = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
         val handle = executeWithSpec(spec)
         val prootProcess = activeProcesses[handle.handleId]
             ?: throw ProcessError(handle.handleId, "Process not found after execute")
@@ -295,6 +316,47 @@ class ProotRuntimeBackend(
 
         val stdout = stdoutDeferred.await()
         val stderr = stderrDeferred.await()
+        val durationMs = System.currentTimeMillis() - startTime
+
+        // Stream output into process.log and console.log
+        if (stdout.isNotBlank()) {
+            LogFileManager.appendProcessOutput(spec.environmentId, "[STDOUT handle=${handle.handleId}]\n$stdout\n")
+        }
+        if (stderr.isNotBlank()) {
+            LogFileManager.appendProcessOutput(spec.environmentId, "[STDERR handle=${handle.handleId}]\n$stderr\n")
+            if (stderr.contains("[GUEST-INIT]")) {
+                val initLines = stderr.lines().filter { it.contains("[GUEST-INIT]") }.joinToString("\n")
+                val dir = LogFileManager.getLogsDir(spec.environmentId)
+                if (dir != null) {
+                    val guestInitFile = File(dir, LogCategory.GUEST_INIT.filename)
+                    guestInitFile.appendText(initLines + "\n")
+                }
+            }
+        }
+
+        val processLog = LinuxDroidLogger(LogSubsystem.PROCESS, spec.environmentId, category = LogCategory.SYSTEM_PROCESS)
+        if (exitCode == 0) {
+            processLog.info(
+                "[PROCESS_EXIT] Process exited cleanly (exit=0, duration=${durationMs}ms): ${spec.command.joinToString(" ")}",
+                details = mapOf(
+                    "handleId" to handle.handleId,
+                    "exitCode" to "0",
+                    "durationMs" to durationMs.toString(),
+                )
+            )
+        } else {
+            processLog.error(
+                "[PROCESS_FAIL] Process failed with exit code $exitCode (${durationMs}ms): ${spec.command.joinToString(" ")}",
+                errorCode = exitCode,
+                details = mapOf(
+                    "handleId" to handle.handleId,
+                    "exitCode" to exitCode.toString(),
+                    "durationMs" to durationMs.toString(),
+                    "signaled" to signaled.toString(),
+                    "stderrSnippet" to stderr.take(500).replace("\n", " "),
+                )
+            )
+        }
 
         activeProcesses.remove(handle.handleId)
 
@@ -322,7 +384,7 @@ class ProotRuntimeBackend(
     ): ProcessResult {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
-        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
+        val logFile = storage.prootLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = command,
@@ -345,7 +407,7 @@ class ProotRuntimeBackend(
         val loader = ensureLoaderBinary()
         val rootfs = File(resolvedSpec.rootfsPath)
         val tmpDir = File(resolvedSpec.tmpDirPath ?: storage.tmpDir(resolvedSpec.environmentId).absolutePath).apply { mkdirs() }
-        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.consoleLogFile(resolvedSpec.environmentId)
+        val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.prootLogFile(resolvedSpec.environmentId)
         logFile.parentFile?.mkdirs()
 
         val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols, logFile)
@@ -368,7 +430,18 @@ class ProotRuntimeBackend(
         activeProcesses[session.sessionId] = prootProcess
         _processEvents.tryEmit(ProcessStateEvent.Started(session.sessionId, handle.pid))
 
-        log.info("[PROOT] Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
+        val terminalLog = LinuxDroidLogger(LogSubsystem.PROCESS, resolvedSpec.environmentId, category = LogCategory.TERMINAL)
+        terminalLog.info(
+            "[PTY_SESSION_START] Started interactive terminal shell (pid=${session.pid}, masterFd=${session.masterFd}, size=${rows}x${cols})",
+            details = mapOf(
+                "sessionId" to session.sessionId,
+                "pid" to session.pid.toString(),
+                "masterFd" to session.masterFd.toString(),
+                "rows" to rows.toString(),
+                "cols" to cols.toString(),
+                "command" to resolvedSpec.command.joinToString(" "),
+            )
+        )
         session
     }
 
@@ -390,7 +463,7 @@ class ProotRuntimeBackend(
         }
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
         val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
-        val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
+        val logFile = storage.prootLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = resolvedCommand,

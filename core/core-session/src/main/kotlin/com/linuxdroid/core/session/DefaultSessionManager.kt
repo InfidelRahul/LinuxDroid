@@ -7,6 +7,7 @@ import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.gpu.GpuManager
 import com.linuxdroid.core.input.InputManager
 import com.linuxdroid.core.logging.LinuxDroidLogger
+import com.linuxdroid.core.logging.LogCategory
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import com.linuxdroid.core.network.NetworkManager
@@ -42,7 +43,7 @@ class DefaultSessionManager(
 
     private val sessionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private val log = LinuxDroidLogger(LogSubsystem.SESSION)
+    private val log = LinuxDroidLogger(LogSubsystem.SESSION, category = LogCategory.SESSION)
     private val sessionMap = ConcurrentHashMap<SessionId, Session>()
     private val activeEnvironments = ConcurrentHashMap<SessionId, Environment>()
 
@@ -51,14 +52,20 @@ class DefaultSessionManager(
 
     override suspend fun startSession(environment: Environment): Session = withContext(Dispatchers.IO) {
         val sessionId = SessionId.generate()
-        log.info("Initiating 14-step session startup sequence: Session=$sessionId for ${environment.id}")
+        log.withEnvironment(environment.id).info(
+            "Initiating session startup sequence: Session=$sessionId for ${environment.id}",
+            details = mapOf("sessionId" to sessionId.value, "environmentId" to environment.id.value, "distro" to environment.distribution.name)
+        )
 
         // 1. Validate Environment & Rootfs
+        log.withEnvironment(environment.id).info("[SESSION_STEP_1] Validating environment and rootfs directory")
         if (!storage.verifyRootfs(environment.id)) {
-            throw FilesystemError(
+            val err = FilesystemError(
                 path = storage.rootfsDir(environment.id).path,
                 message = "Cannot start session: Rootfs is missing or incomplete",
             )
+            log.withEnvironment(environment.id).error("Rootfs verification failed", throwable = err, errorCode = -1)
+            throw err
         }
 
         var session = Session(
@@ -74,6 +81,7 @@ class DefaultSessionManager(
 
         try {
             // 2. Initialize and start Runtime
+            log.withEnvironment(environment.id).info("[SESSION_STEP_2] Preparing and initializing PRoot runtime backend")
             session = session.copy(state = SessionState.STARTING_RUNTIME)
             sessionMap[sessionId] = session
             _sessions.value = sessionMap.toMap()
@@ -83,29 +91,39 @@ class DefaultSessionManager(
             runtimeBackend.start(environment)
 
             // 3. Verify shell & uname execute inside Linux environment
+            log.withEnvironment(environment.id).info("[SESSION_STEP_3] Verifying guest shell and kernel emulation (/bin/sh uname -a)")
             val shellResult = runtimeBackend.executeAndWait(
                 environment = environment,
                 command = listOf("/bin/sh", "-c", "uname -a && echo 'SHELL_ACTIVE'"),
                 timeoutMs = 10_000
             )
             if (shellResult.exitCode != 0 || !shellResult.stdout.contains("SHELL_ACTIVE")) {
-                throw RuntimeError(
+                val err = RuntimeError(
                     environmentId = environment.id,
                     message = "Linux /bin/sh (uname -a) verification failed (exit=${shellResult.exitCode}): ${shellResult.stderr.ifBlank { shellResult.stdout }}",
                 )
+                log.withEnvironment(environment.id).error("Guest shell verification failed", throwable = err, errorCode = shellResult.exitCode)
+                throw err
             }
-            log.info("Linux /bin/sh (uname -a) verified successfully: ${shellResult.stdout.trim()}")
+            log.withEnvironment(environment.id).info(
+                "Linux /bin/sh (uname -a) verified successfully: ${shellResult.stdout.trim()}",
+                details = mapOf("uname" to shellResult.stdout.trim())
+            )
 
             // 4. Initialize GPU
+            log.withEnvironment(environment.id).info("[SESSION_STEP_4] Initializing GPU detection")
             gpuManager?.detect()
 
             // 5. Initialize Audio
+            val sampleRate = if (environment.configuration.audio.latencyHintMs > 0) 48000 else 44100
+            log.withEnvironment(environment.id).info("[SESSION_STEP_5] Initializing audio subsystem (sampleRate=${sampleRate}Hz)")
             audioManager?.start(
-                sampleRate = if (environment.configuration.audio.latencyHintMs > 0) 48000 else 44100,
+                sampleRate = sampleRate,
                 channels = 2
             )
 
             // 6. Initialize Input
+            log.withEnvironment(environment.id).info("[SESSION_STEP_6] Initializing virtual input subsystem")
             inputManager?.start()
 
             // 7. Initialize Network
@@ -190,10 +208,26 @@ class DefaultSessionManager(
             sessionMap[sessionId] = runningSession
             _sessions.value = sessionMap.toMap()
             persistSessionState(runningSession)
-            log.info("Session $sessionId is now fully active (RUNNING)")
+            log.withEnvironment(environment.id).info(
+                "Session $sessionId is now fully active (RUNNING)",
+                details = mapOf(
+                    "sessionId" to sessionId.value,
+                    "compositorPid" to sessionProcess.pid.toString(),
+                    "waylandSocket" to waylandSocket,
+                )
+            )
             runningSession
         } catch (e: Exception) {
-            log.error("Session startup failure for $sessionId", e)
+            log.withEnvironment(environment.id).error(
+                "Session startup failure at stage ${session.state} for $sessionId: ${e.message}",
+                throwable = e,
+                errorCode = -1,
+                details = mapOf(
+                    "sessionId" to sessionId.value,
+                    "environmentId" to environment.id.value,
+                    "failedStage" to session.state.name,
+                )
+            )
             val failedSession = session.copy(
                 state = SessionState.FAILED,
                 failureMessage = e.message ?: "Failed to start session",
@@ -210,7 +244,7 @@ class DefaultSessionManager(
                 guiHostController?.stop()
                 runtimeBackend.stop(environment)
             } catch (cleanupEx: Exception) {
-                log.warn("Secondary error during cleanup: ${cleanupEx.message}")
+                log.withEnvironment(environment.id).warn("Secondary error during cleanup: ${cleanupEx.message}")
             }
             throw e
         }
@@ -218,7 +252,10 @@ class DefaultSessionManager(
 
     override suspend fun stopSession(sessionId: SessionId) = withContext(Dispatchers.IO) {
         val session = sessionMap[sessionId] ?: return@withContext
-        log.info("Stopping session $sessionId")
+        log.withEnvironment(session.environmentId).info(
+            "Stopping session $sessionId",
+            details = mapOf("sessionId" to sessionId.value, "currentState" to session.state.name)
+        )
 
         val stoppingSession = session.copy(state = SessionState.STOPPING)
         sessionMap[sessionId] = stoppingSession
@@ -246,9 +283,18 @@ class DefaultSessionManager(
             _sessions.value = sessionMap.toMap()
             activeEnvironments.remove(sessionId)
             persistSessionState(stoppedSession)
-            log.info("Session $sessionId cleanly STOPPED")
+            val durationMs = (stoppedSession.stoppedAt ?: 0) - stoppedSession.startedAt
+            log.withEnvironment(session.environmentId).info(
+                "Session $sessionId cleanly STOPPED (active duration: ${durationMs}ms)",
+                details = mapOf("sessionId" to sessionId.value, "durationMs" to durationMs.toString())
+            )
         } catch (e: Exception) {
-            log.error("Error during session shutdown for $sessionId: ${e.message}", e)
+            log.withEnvironment(session.environmentId).error(
+                "Error during session shutdown for $sessionId: ${e.message}",
+                throwable = e,
+                errorCode = -1,
+                details = mapOf("sessionId" to sessionId.value)
+            )
             val failedSession = stoppingSession.copy(
                 state = SessionState.FAILED,
                 failureMessage = "Shutdown failure: ${e.message}",

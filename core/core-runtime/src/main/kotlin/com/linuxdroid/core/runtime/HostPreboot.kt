@@ -1,6 +1,8 @@
 package com.linuxdroid.core.runtime
 
 import com.linuxdroid.core.logging.LinuxDroidLogger
+import com.linuxdroid.core.logging.LogCategory
+import com.linuxdroid.core.logging.LogConfig
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.ExecutionTarget
 import com.linuxdroid.core.model.PrebootError
@@ -33,7 +35,7 @@ data class PrebootLaunchPlan(
 class HostPreboot(
     private val commandBuilder: RuntimeCommandBuilder = ProotCommandBuilder(),
 ) {
-    private val log = LinuxDroidLogger(LogSubsystem.RUNTIME)
+    private val log = LinuxDroidLogger(LogSubsystem.RUNTIME, category = LogCategory.PREBOOT)
 
     /**
      * Executes the complete Host Preboot stage for the specified [RuntimeSpec].
@@ -48,7 +50,14 @@ class HostPreboot(
         tmpDir: File,
         logFile: File? = spec.logFilePath?.let { File(it) },
     ): PrebootLaunchPlan {
-        log.info("[HOST-PREBOOT] Starting preboot validation for environment ${spec.environmentId}")
+        log.withEnvironment(spec.environmentId).info(
+            "[HOST-PREBOOT] Starting preboot validation for environment ${spec.environmentId}",
+            details = mapOf(
+                "environmentId" to spec.environmentId.value,
+                "executionTarget" to spec.executionTarget.name,
+                "workingDirectory" to spec.workingDirectory,
+            )
+        )
 
         // 1. Rootfs directory validation
         validateRootfs(spec, rootfs)
@@ -204,12 +213,20 @@ class HostPreboot(
             put("PROOT_LOADER", loader.absolutePath)
         }
         val targetLog = logFile?.absolutePath ?: spec.logFilePath
-        if (targetLog != null) {
+        if (targetLog != null && LogConfig.generate_log) {
             File(targetLog).parentFile?.mkdirs()
             put("PROOT_LOG_FILE", targetLog)
         }
-        if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
-            put("PROOT_VERBOSE", "0")
+        if (LogConfig.generate_log) {
+            put("LINUXDROID_INIT_VERBOSE", "1")
+            if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
+                put("PROOT_VERBOSE", LogConfig.prootVerboseLevel.toString())
+            }
+        } else {
+            put("LINUXDROID_INIT_VERBOSE", "0")
+            if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
+                put("PROOT_VERBOSE", "0")
+            }
         }
         // Seccomp mode 2 is enabled by default for optimal syscall filtering performance.
         // PROOT_NO_SECCOMP is only set if explicitly specified in spec.environmentVariables.

@@ -212,8 +212,68 @@ class RuntimeLogExporter(
         }
         reportBuilder.appendLine()
 
-        // 5. CONSOLE LOG (STDOUT / STDERR)
-        reportBuilder.appendLine("--- [5. CONSOLE LOG (console.log)] ---")
+        // 5. STARTING SESSION LOG
+        reportBuilder.appendLine("--- [5. STARTING SESSION LOG (session.log)] ---")
+        val sessionLog = storage.sessionLogFile(envId)
+        if (sessionLog.exists()) {
+            reportBuilder.appendLine("File: ${sessionLog.absolutePath} (${sessionLog.length()} bytes)")
+            reportBuilder.appendLine("Content:")
+            reportBuilder.appendLine(readTail(sessionLog, 1500))
+        } else {
+            reportBuilder.appendLine("Session log file not found at ${sessionLog.absolutePath}")
+        }
+        reportBuilder.appendLine()
+
+        // 6. PREBOOT LOG
+        reportBuilder.appendLine("--- [6. PREBOOT LOG (preboot.log)] ---")
+        val prebootLog = storage.prebootLogFile(envId)
+        if (prebootLog.exists()) {
+            reportBuilder.appendLine("File: ${prebootLog.absolutePath} (${prebootLog.length()} bytes)")
+            reportBuilder.appendLine("Content:")
+            reportBuilder.appendLine(readTail(prebootLog, 1500))
+        } else {
+            reportBuilder.appendLine("Preboot log file not found at ${prebootLog.absolutePath}")
+        }
+        reportBuilder.appendLine()
+
+        // 7. GUEST INIT LOG
+        reportBuilder.appendLine("--- [7. GUEST INIT LOG (guest_init.log)] ---")
+        val guestInitLog = storage.guestInitLogFile(envId)
+        if (guestInitLog.exists()) {
+            reportBuilder.appendLine("File: ${guestInitLog.absolutePath} (${guestInitLog.length()} bytes)")
+            reportBuilder.appendLine("Content:")
+            reportBuilder.appendLine(readTail(guestInitLog, 1500))
+        } else {
+            reportBuilder.appendLine("Guest init log file not found at ${guestInitLog.absolutePath}")
+        }
+        reportBuilder.appendLine()
+
+        // 8. SYSTEM PROCESS LOG
+        reportBuilder.appendLine("--- [8. SYSTEM PROCESS LOG (process.log)] ---")
+        val processLog = storage.processLogFile(envId)
+        if (processLog.exists()) {
+            reportBuilder.appendLine("File: ${processLog.absolutePath} (${processLog.length()} bytes)")
+            reportBuilder.appendLine("Content:")
+            reportBuilder.appendLine(readTail(processLog, 2000))
+        } else {
+            reportBuilder.appendLine("Process log file not found at ${processLog.absolutePath}")
+        }
+        reportBuilder.appendLine()
+
+        // 9. TERMINAL LOG
+        reportBuilder.appendLine("--- [9. TERMINAL SESSION LOG (terminal.log)] ---")
+        val terminalLog = storage.terminalLogFile(envId)
+        if (terminalLog.exists()) {
+            reportBuilder.appendLine("File: ${terminalLog.absolutePath} (${terminalLog.length()} bytes)")
+            reportBuilder.appendLine("Content:")
+            reportBuilder.appendLine(readTail(terminalLog, 2500))
+        } else {
+            reportBuilder.appendLine("Terminal log file not found at ${terminalLog.absolutePath}")
+        }
+        reportBuilder.appendLine()
+
+        // 10. CONSOLE LOG (STDOUT / STDERR)
+        reportBuilder.appendLine("--- [10. CONSOLE LOG (console.log)] ---")
         val consoleLog = storage.consoleLogFile(envId)
         if (consoleLog.exists()) {
             reportBuilder.appendLine("File: ${consoleLog.absolutePath} (${consoleLog.length()} bytes)")
@@ -224,8 +284,8 @@ class RuntimeLogExporter(
         }
         reportBuilder.appendLine()
 
-        // 6. PROOT INTERNAL ENGINE TRACE (proot.log)
-        reportBuilder.appendLine("--- [6. PROOT DETAILED ENGINE TRACE (proot.log)] ---")
+        // 11. PROOT INTERNAL ENGINE TRACE (proot.log)
+        reportBuilder.appendLine("--- [11. PROOT DETAILED ENGINE TRACE (proot.log)] ---")
         val prootLog = storage.prootLogFile(envId)
         if (prootLog.exists()) {
             reportBuilder.appendLine("File: ${prootLog.absolutePath} (${prootLog.length()} bytes)")
@@ -236,8 +296,8 @@ class RuntimeLogExporter(
         }
         reportBuilder.appendLine()
 
-        // 7. SYSTEM LOGCAT (LINUXDROID TAGS)
-        reportBuilder.appendLine("--- [7. LOGCAT (LinuxDroid Buffer)] ---")
+        // 12. SYSTEM LOGCAT (LINUXDROID TAGS)
+        reportBuilder.appendLine("--- [12. LOGCAT (LinuxDroid Buffer)] ---")
         try {
             val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "LinuxDroid*:V", "*:S"))
             val logcatOutput = process.inputStream.bufferedReader().use { it.readText() }
@@ -259,7 +319,7 @@ class RuntimeLogExporter(
     }
 
     /**
-     * Creates a ZIP archive containing all raw internal logs (console.log, proot.log, diagnostic report).
+     * Creates a ZIP archive containing all raw internal categorized logs and diagnostic report.
      */
     suspend fun generateFullLogsArchive(environment: Environment): File = withContext(Dispatchers.IO) {
         val envId = environment.id
@@ -268,10 +328,11 @@ class RuntimeLogExporter(
         zipFile.parentFile?.mkdirs()
 
         val filesToZip = mutableListOf<Pair<String, File>>()
-        val console = storage.consoleLogFile(envId)
-        if (console.exists()) filesToZip.add("console.log" to console)
-        val proot = storage.prootLogFile(envId)
-        if (proot.exists()) filesToZip.add("proot.log" to proot)
+        storage.allLogFiles(envId).forEach { logFile ->
+            if (logFile.exists() && logFile.length() > 0) {
+                filesToZip.add(logFile.name to logFile)
+            }
+        }
 
         // Add plain text diagnostic summary
         val diagReport = File(storage.logsDir(envId), "diagnostics_summary.txt").apply {
