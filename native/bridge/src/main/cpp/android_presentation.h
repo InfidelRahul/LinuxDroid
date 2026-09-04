@@ -39,6 +39,9 @@ typedef struct {
     int release_fence_fd;
     void* mapped_address;
     int32_t stride_bytes;
+    void* egl_image;       // EGLImageKHR
+    uint32_t gl_texture;   // GLuint
+    uint32_t gl_fbo;       // GLuint
 } LinuxDroidBufferSlot;
 
 /**
@@ -146,6 +149,38 @@ int android_presentation_unlock_buffer(android_presentation_t* pres,
  */
 struct AHardwareBuffer* android_presentation_get_buffer(android_presentation_t* pres,
                                                         int slot_index);
+
+/**
+ * Returns the GLES FBO handle for a given slot index (0 if not initialized).
+ */
+uint32_t android_presentation_get_fbo(android_presentation_t* pres,
+                                      int slot_index);
+
+/**
+ * Returns the EGLImageKHR handle for a given slot index (NULL if not initialized).
+ */
+void* android_presentation_get_egl_image(android_presentation_t* pres,
+                                         int slot_index);
+
+/**
+ * Initializes GLES EGLImage and FBO targets for all buffers in the pool.
+ * Requires an active EGLDisplay and current GLES context.
+ *
+ * @param pres Presentation handle.
+ * @param egl_display EGLDisplay handle.
+ * @return 0 on success, negative errno on failure.
+ */
+int android_presentation_init_gles_targets(android_presentation_t* pres,
+                                           void* egl_display);
+
+/**
+ * Destroys GLES EGLImage, texture, and FBO targets for all buffers in the pool.
+ *
+ * @param pres Presentation handle.
+ * @param egl_display EGLDisplay handle.
+ */
+void android_presentation_destroy_gles_targets(android_presentation_t* pres,
+                                               void* egl_display);
 
 /**
  * Submits an ACQUIRED buffer to the Android display subsystem via SurfaceControl transaction.

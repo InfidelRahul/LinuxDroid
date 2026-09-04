@@ -74,6 +74,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += "**/libgl-renderer.so"
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

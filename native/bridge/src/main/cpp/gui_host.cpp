@@ -14,6 +14,8 @@
 #include <android/log.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
+#include <EGL/egl.h>
+#include <GLES2/gl2.h>
 #include <cerrno>
 #include <cstdarg>
 #include <cstring>
@@ -405,6 +407,13 @@ void GuiHost::workerMain() {
             setenv("XKB_CONFIG_ROOT", "/data/data/com.linuxdroid/files/xkb", 0);
         }
     }
+    if (!getenv("WESTON_MODULE_MAP")) {
+        std::string mod_map = "gl-renderer.so=libgl-renderer.so;";
+        if (access("/workspaces/LinuxDroid/native/weston/prefix/lib/libweston-17/gl-renderer.so", R_OK) == 0) {
+            mod_map += "gl-renderer.so=/workspaces/LinuxDroid/native/weston/prefix/lib/libweston-17/gl-renderer.so;";
+        }
+        setenv("WESTON_MODULE_MAP", mod_map.c_str(), 0);
+    }
 
     // 1. Create Wayland Server Display
     display_ = wl_display_create();
@@ -486,13 +495,14 @@ void GuiHost::workerMain() {
     }
     LOGI("WESTON_COMPOSITOR_CREATED: libweston compositor created successfully");
 
-    // 5. Initialize LinuxDroid custom backend
+    // 5. Initialize LinuxDroid custom backend with GLES hardware renderer
     struct linuxdroid_backend_config backend_config = {
-        .refresh_mhz = LINUXDROID_DEFAULT_REFRESH_MHZ
+        .refresh_mhz = LINUXDROID_DEFAULT_REFRESH_MHZ,
+        .renderer_type = LINUXDROID_RENDERER_GLES,
     };
     backend_ = linuxdroid_backend_create(compositor_, &backend_config);
     if (backend_ == nullptr) {
-        LOGE("WESTON_START_FAILED: failed to create LinuxDroid backend");
+        LOGE("WESTON_START_FAILED: failed to create LinuxDroid backend (GLES initialization failed; strict Phase 8 policy prohibits silent fallback)");
         weston_compositor_destroy(compositor_);
         compositor_ = nullptr;
         weston_log_ctx_destroy(log_ctx_);
@@ -506,6 +516,15 @@ void GuiHost::workerMain() {
         init_cv_.notify_all();
         return;
     }
+
+    // Query & log GLES device information
+    const char* gl_vendor = (const char*)glGetString(GL_VENDOR);
+    const char* gl_renderer = (const char*)glGetString(GL_RENDERER);
+    const char* gl_version = (const char*)glGetString(GL_VERSION);
+    LOGI("GLES_DEVICE_INFO: vendor='%s', renderer='%s', version='%s'",
+         gl_vendor ? gl_vendor : "unknown",
+         gl_renderer ? gl_renderer : "unknown",
+         gl_version ? gl_version : "unknown");
 
     // 6. Create logical display head
     head_ = linuxdroid_head_create(backend_, "linuxdroid-head-0", 70, 150);

@@ -14,10 +14,30 @@ extern "C" {
 #define LINUXDROID_DEFAULT_REFRESH_MHZ 60000
 
 /**
+ * Renderer type selection for LinuxDroid backend.
+ */
+enum linuxdroid_renderer_type {
+    LINUXDROID_RENDERER_GLES = 0,   // Production default (GPU-backed)
+    LINUXDROID_RENDERER_PIXMAN = 1  // Diagnostic / fallback reference
+};
+
+/**
+ * Explicit renderer lifecycle state.
+ */
+enum linuxdroid_renderer_state {
+    LINUXDROID_RENDERER_STATE_UNINITIALIZED = 0,
+    LINUXDROID_RENDERER_STATE_GLES_INITIALIZED = 1,
+    LINUXDROID_RENDERER_STATE_GLES_FAILED = 2,
+    LINUXDROID_RENDERER_STATE_PIXMAN_INITIALIZED = 3,
+    LINUXDROID_RENDERER_STATE_PIXMAN_FAILED = 4,
+};
+
+/**
  * Configuration structure for initializing the LinuxDroid libweston backend.
  */
 struct linuxdroid_backend_config {
     int refresh_mhz;
+    enum linuxdroid_renderer_type renderer_type;
 };
 
 /**
@@ -28,6 +48,8 @@ struct linuxdroid_backend {
     struct weston_backend base;
     struct weston_compositor *compositor;
     int refresh_mhz;
+    enum linuxdroid_renderer_type renderer_type;
+    enum linuxdroid_renderer_state renderer_state;
 
     // Phase 6: Seat & input devices
     struct weston_seat seat;
@@ -46,6 +68,9 @@ struct linuxdroid_head {
 struct android_presentation;
 struct ANativeWindow;
 
+typedef void *weston_renderbuffer_t;
+typedef bool (*weston_renderbuffer_discarded_func)(weston_renderbuffer_t renderbuffer, void *user_data);
+
 /**
  * LinuxDroid Weston output abstraction representing a Linux compositor output.
  * Connects the Weston output to the Android presentation subsystem (SurfaceControl & AHardwareBuffer).
@@ -60,6 +85,8 @@ struct linuxdroid_output {
     int32_t width;
     int32_t height;
     bool pixman_initialized;
+    bool gles_initialized;
+    weston_renderbuffer_t gles_renderbuffers[3];
     uint32_t frame_count;
     struct weston_layer test_layer;
     struct weston_surface *test_surface;
@@ -126,9 +153,6 @@ struct linux_dmabuf_memory;
 struct weston_drm_format_array;
 struct pixel_format_info;
 
-typedef void *weston_renderbuffer_t;
-typedef bool (*weston_renderbuffer_discarded_func)(weston_renderbuffer_t renderbuffer, void *user_data);
-
 struct pixman_renderer_output_options {
     bool use_shadow;
     struct weston_size fb_size;
@@ -139,6 +163,34 @@ struct pixman_renderer_interface {
     int (*output_create)(struct weston_output *output,
                          const struct pixman_renderer_output_options *options);
     void (*output_destroy)(struct weston_output *output);
+};
+
+struct gl_renderer_display_options {
+    struct weston_renderer_options base;
+    uint32_t egl_platform;
+    void *egl_native_display;
+    int32_t egl_surface_type;
+    const struct pixel_format_info **formats;
+    unsigned formats_count;
+};
+
+struct gl_renderer_fbo_options {
+    struct weston_size fb_size;
+    struct weston_geometry area;
+};
+
+struct gl_renderer_interface {
+    int (*display_create)(struct weston_compositor *ec,
+                          const struct gl_renderer_display_options *options);
+    int (*output_window_create)(struct weston_output *output,
+                                const void *options);
+    const struct pixel_format_info **
+        (*get_supported_rendering_formats)(struct weston_compositor *ec,
+                                           unsigned int *formats_count);
+    int (*output_fbo_create)(struct weston_output *output,
+                             const struct gl_renderer_fbo_options *options);
+    void (*output_destroy)(struct weston_output *output);
+    int (*create_fence_fd)(struct weston_output *output);
 };
 
 struct weston_renderer {
@@ -193,7 +245,7 @@ struct weston_renderer {
     bool (*can_render_straight_alpha)(struct weston_compositor *wc);
 
     enum weston_renderer_type type;
-    const void *gl;
+    const struct gl_renderer_interface *gl;
     const void *vulkan;
     const struct pixman_renderer_interface *pixman;
 };
@@ -329,6 +381,12 @@ linuxdroid_backend_get_touch_device(struct linuxdroid_backend *b);
 
 void
 linuxdroid_backend_reset_input(struct linuxdroid_backend *b);
+
+enum linuxdroid_renderer_state
+linuxdroid_backend_get_renderer_state(struct linuxdroid_backend *b);
+
+enum linuxdroid_renderer_type
+linuxdroid_backend_get_renderer_type(struct linuxdroid_backend *b);
 
 #ifdef __cplusplus
 }

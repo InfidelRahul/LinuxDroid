@@ -81,6 +81,7 @@ target_link_libraries(
     jnigraphics
     EGL
     GLESv2
+    GLESv3
     wayland-server
     wayland-client
     weston
@@ -97,6 +98,68 @@ target_include_directories(
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm
     ${LIBWESTON_INC_DIRS}
+)
+
+# Phase 8: Weston GLES Hardware Renderer Plugin (gl-renderer)
+set(WESTON_SRC "${PROJECT_ROOT}/native/weston/src/weston")
+
+add_library(
+    gl-renderer SHARED
+    ${WESTON_SRC}/libweston/renderer-gl/egl-glue.c
+    ${WESTON_SRC}/libweston/renderer-gl/gl-renderer.c
+    ${WESTON_SRC}/libweston/renderer-gl/gl-shaders.c
+    ${WESTON_SRC}/libweston/renderer-gl/gl-shader-config-color-transformation.c
+    ${WESTON_SRC}/libweston/renderer-gl/gl-utils.c
+    ${WESTON_SRC}/libweston/vertex-clipping.c
+    ${WESTON_SRC}/build-android/protocol/linux-dmabuf-unstable-v1-protocol.c
+)
+
+target_compile_definitions(
+    gl-renderer PRIVATE
+    ENABLE_EGL=1
+    HAVE_LINUX_SYNC_FILE_H=1
+    _GNU_SOURCE=1
+)
+
+target_include_directories(
+    gl-renderer PRIVATE
+    ${WESTON_SRC}/libweston/renderer-gl
+    ${WESTON_SRC}/libweston
+    ${WESTON_SRC}
+    ${WESTON_SRC}/include
+    ${WESTON_SRC}/build-android
+    ${WESTON_SRC}/build-android/protocol
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
+)
+
+target_link_libraries(
+    gl-renderer
+    android
+    log
+    EGL
+    GLESv2
+    GLESv3
+    wayland-server
+    weston
+    pixman-1
+)
+
+set_target_properties(
+    gl-renderer PROPERTIES
+    PREFIX "lib"
+    OUTPUT_NAME "gl-renderer"
+)
+
+# Ensure output directory exists and copy to jniLibs and prefix
+file(MAKE_DIRECTORY "${WESTON_PREFIX}/lib/libweston-17")
+add_custom_command(
+    TARGET gl-renderer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:gl-renderer> ${ARM64_JNILIBS}/libgl-renderer.so
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:gl-renderer> ${WESTON_PREFIX}/lib/libweston-17/gl-renderer.so
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:gl-renderer> ${WESTON_PREFIX}/lib/libweston-17/libgl-renderer.so
 )
 
 # Standalone native GUI host test executable (minimal Phase 3 validation)
@@ -117,6 +180,9 @@ target_link_libraries(
     gui_host_test
     android
     log
+    EGL
+    GLESv2
+    GLESv3
     wayland-server
     wayland-client
     weston
@@ -146,6 +212,9 @@ target_link_libraries(
     android_presentation_test
     android
     log
+    EGL
+    GLESv2
+    GLESv3
 )
 
 target_include_directories(
@@ -165,6 +234,9 @@ target_link_libraries(
     pixman_renderer_test
     android
     log
+    EGL
+    GLESv2
+    GLESv3
     pixman-1
 )
 
@@ -194,6 +266,9 @@ target_link_libraries(
     input_integration_test
     android
     log
+    EGL
+    GLESv2
+    GLESv3
     wayland-server
     wayland-client
     weston
@@ -281,6 +356,9 @@ target_link_libraries(
     desktop_shell_test
     android
     log
+    EGL
+    GLESv2
+    GLESv3
     wayland-server
     wayland-client
     weston
@@ -293,6 +371,36 @@ target_include_directories(
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/protocol
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
+)
+
+# Standalone native GLES renderer test executable (Phase 8 validation)
+add_executable(
+    gles_renderer_test
+    gles_renderer_test.cpp
+    android_presentation.cpp
+    linuxdroid_backend.c
+)
+
+target_link_libraries(
+    gles_renderer_test
+    android
+    log
+    EGL
+    GLESv2
+    GLESv3
+    wayland-server
+    weston
+    pixman-1
+)
+
+target_include_directories(
+    gles_renderer_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${WESTON_PREFIX}/include
     ${WESTON_PREFIX}/include/pixman-1
     ${WESTON_PREFIX}/include/libdrm

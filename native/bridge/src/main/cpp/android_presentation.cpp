@@ -4,6 +4,10 @@
 #include <android/surface_control.h>
 #include <android/hardware_buffer.h>
 #include <android/log.h>
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
 
 #include <dlfcn.h>
 #include <unistd.h>
@@ -35,6 +39,35 @@ typedef void (*ASurfaceTransaction_setBufferWithRelease_fn)(
 static ASurfaceTransaction_setBufferWithRelease_fn resolveSetBufferWithRelease() {
     static auto fn = reinterpret_cast<ASurfaceTransaction_setBufferWithRelease_fn>(
         dlsym(RTLD_DEFAULT, "ASurfaceTransaction_setBufferWithRelease"));
+    return fn;
+}
+
+typedef EGLClientBuffer (*PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC)(const struct AHardwareBuffer *buffer);
+typedef EGLImageKHR (*PFNEGLCREATEIMAGEKHRPROC)(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list);
+typedef EGLBoolean (*PFNEGLDESTROYIMAGEKHRPROC)(EGLDisplay dpy, EGLImageKHR image);
+typedef void (*PFNGLEGLIMAGETARGETTEXTURE2DOESPROC)(GLenum target, void *image);
+
+static PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC resolve_eglGetNativeClientBufferANDROID() {
+    static auto fn = reinterpret_cast<PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC>(
+        eglGetProcAddress("eglGetNativeClientBufferANDROID"));
+    return fn;
+}
+
+static PFNEGLCREATEIMAGEKHRPROC resolve_eglCreateImageKHR() {
+    static auto fn = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+        eglGetProcAddress("eglCreateImageKHR"));
+    return fn;
+}
+
+static PFNEGLDESTROYIMAGEKHRPROC resolve_eglDestroyImageKHR() {
+    static auto fn = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
+        eglGetProcAddress("eglDestroyImageKHR"));
+    return fn;
+}
+
+static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC resolve_glEGLImageTargetTexture2DOES() {
+    static auto fn = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+        eglGetProcAddress("glEGLImageTargetTexture2DOES"));
     return fn;
 }
 
@@ -481,14 +514,142 @@ public:
         if (out_submitted) *out_submitted = submitted_count_;
     }
 
+    uint32_t getFbo(int slot_index) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (slot_index < 0 || slot_index >= LINUXDROID_BUFFER_POOL_CAPACITY) return 0;
+        return slots_[slot_index].gl_fbo;
+    }
+
+    void* getEglImage(int slot_index) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (slot_index < 0 || slot_index >= LINUXDROID_BUFFER_POOL_CAPACITY) return nullptr;
+        return slots_[slot_index].egl_image;
+    }
+
+    int initGlesTargets(void* egl_display) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return initGlesTargetsLocked(static_cast<EGLDisplay>(egl_display));
+    }
+
+    void destroyGlesTargets(void* egl_display) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        destroyGlesTargetsLocked(static_cast<EGLDisplay>(egl_display));
+    }
+
 private:
+    int initGlesTargetsLocked(EGLDisplay egl_display) {
+        if (egl_display == EGL_NO_DISPLAY) {
+            LOGE("GLES_INIT_FAILURE: operation=initGlesTargets egl_error=EGL_NO_DISPLAY");
+            return -EINVAL;
+        }
+
+        auto pfn_get_client_buf = resolve_eglGetNativeClientBufferANDROID();
+        auto pfn_create_image = resolve_eglCreateImageKHR();
+        auto pfn_image_target_tex = resolve_glEGLImageTargetTexture2DOES();
+
+        if (!pfn_get_client_buf || !pfn_create_image || !pfn_image_target_tex) {
+            LOGE("GLES_INIT_FAILURE: operation=resolveExtensionPointers failed (get_buf=%p create_img=%p target_tex=%p)",
+                 pfn_get_client_buf, pfn_create_image, pfn_image_target_tex);
+            return -ENOSYS;
+        }
+
+        for (int i = 0; i < LINUXDROID_BUFFER_POOL_CAPACITY; ++i) {
+            if (!slots_[i].buffer) continue;
+
+            // 1. Convert AHardwareBuffer to EGLClientBuffer
+            EGLClientBuffer client_buf = pfn_get_client_buf(slots_[i].buffer);
+            if (!client_buf) {
+                LOGE("GLES_INIT_FAILURE: operation=eglGetNativeClientBufferANDROID slot=%d", i);
+                destroyGlesTargetsLocked(egl_display);
+                return -EFAULT;
+            }
+
+            // 2. Create EGLImageKHR
+            const EGLint img_attrs[] = {
+                EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
+                EGL_NONE
+            };
+            EGLImageKHR image = pfn_create_image(egl_display, EGL_NO_CONTEXT,
+                                                 EGL_NATIVE_BUFFER_ANDROID,
+                                                 client_buf, img_attrs);
+            if (image == EGL_NO_IMAGE_KHR) {
+                EGLint err = eglGetError();
+                LOGE("GLES_INIT_FAILURE: operation=eglCreateImageKHR slot=%d egl_error=0x%x", i, err);
+                destroyGlesTargetsLocked(egl_display);
+                return -EFAULT;
+            }
+            slots_[i].egl_image = image;
+
+            // 3. Create GL_TEXTURE_2D texture and attach EGLImage
+            GLuint tex = 0;
+            glGenTextures(1, &tex);
+            glBindTexture(GL_TEXTURE_2D, tex);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            pfn_image_target_tex(GL_TEXTURE_2D, static_cast<void*>(image));
+            GLenum gl_err = glGetError();
+            if (gl_err != GL_NO_ERROR) {
+                LOGE("GLES_INIT_FAILURE: operation=glEGLImageTargetTexture2DOES slot=%d gl_error=0x%x", i, gl_err);
+                destroyGlesTargetsLocked(egl_display);
+                return -EFAULT;
+            }
+            slots_[i].gl_texture = tex;
+
+            // 4. Create FBO and attach texture
+            GLuint fbo = 0;
+            glGenFramebuffers(1, &fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+
+            GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+            if (status != GL_FRAMEBUFFER_COMPLETE) {
+                LOGE("GLES_FRAMEBUFFER_FAILURE: status=0x%x width=%d height=%d format=RGBA8888 slot=%d",
+                     status, width_, height_, i);
+                destroyGlesTargetsLocked(egl_display);
+                return -EINVAL;
+            }
+            slots_[i].gl_fbo = fbo;
+
+            LOGI("GLES_TARGET_CREATED: slot=%d ahb=%p egl_image=%p tex=%u fbo=%u (%dx%d)",
+                 i, slots_[i].buffer, image, tex, fbo, width_, height_);
+        }
+        return 0;
+    }
+
+    void destroyGlesTargetsLocked(EGLDisplay egl_display) {
+        auto pfn_destroy_image = resolve_eglDestroyImageKHR();
+
+        for (int i = 0; i < LINUXDROID_BUFFER_POOL_CAPACITY; ++i) {
+            if (slots_[i].gl_fbo != 0) {
+                glDeleteFramebuffers(1, &slots_[i].gl_fbo);
+                slots_[i].gl_fbo = 0;
+            }
+            if (slots_[i].gl_texture != 0) {
+                glDeleteTextures(1, &slots_[i].gl_texture);
+                slots_[i].gl_texture = 0;
+            }
+            if (slots_[i].egl_image != nullptr) {
+                if (egl_display != EGL_NO_DISPLAY && pfn_destroy_image) {
+                    pfn_destroy_image(egl_display, static_cast<EGLImageKHR>(slots_[i].egl_image));
+                }
+                slots_[i].egl_image = nullptr;
+            }
+        }
+    }
+
     bool allocateBufferPoolLocked() {
         AHardwareBuffer_Desc desc{};
         desc.width = static_cast<uint32_t>(width_);
         desc.height = static_cast<uint32_t>(height_);
         desc.layers = 1;
         desc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-        desc.usage = AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
+        desc.usage = AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+                     AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
                      AHARDWAREBUFFER_USAGE_COMPOSER_OVERLAY |
                      AHARDWAREBUFFER_USAGE_CPU_READ_NEVER |
                      AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN;
@@ -506,12 +667,17 @@ private:
             slots_[i].buffer = buf;
             slots_[i].state = LINUXDROID_BUFFER_STATE_FREE;
             slots_[i].release_fence_fd = -1;
+            slots_[i].egl_image = nullptr;
+            slots_[i].gl_texture = 0;
+            slots_[i].gl_fbo = 0;
             LOGI("ANDROID_BUFFER_ALLOCATE: slot %d allocated (%p, %dx%d)", i, buf, width_, height_);
         }
         return true;
     }
 
     void freeBufferPoolLocked() {
+        destroyGlesTargetsLocked(eglGetDisplay(EGL_DEFAULT_DISPLAY));
+
         for (int i = 0; i < LINUXDROID_BUFFER_POOL_CAPACITY; ++i) {
             if (slots_[i].buffer != nullptr) {
                 if (slots_[i].state == LINUXDROID_BUFFER_STATE_LOCKED) {
@@ -664,6 +830,27 @@ struct AHardwareBuffer* android_presentation_get_buffer(android_presentation_t* 
                                                         int slot_index) {
     if (!pres || !pres->impl) return nullptr;
     return pres->impl->getBuffer(slot_index);
+}
+
+uint32_t android_presentation_get_fbo(android_presentation_t* pres, int slot_index) {
+    if (!pres || !pres->impl) return 0;
+    return pres->impl->getFbo(slot_index);
+}
+
+void* android_presentation_get_egl_image(android_presentation_t* pres, int slot_index) {
+    if (!pres || !pres->impl) return nullptr;
+    return pres->impl->getEglImage(slot_index);
+}
+
+int android_presentation_init_gles_targets(android_presentation_t* pres, void* egl_display) {
+    if (!pres || !pres->impl) return -EINVAL;
+    return pres->impl->initGlesTargets(egl_display);
+}
+
+void android_presentation_destroy_gles_targets(android_presentation_t* pres, void* egl_display) {
+    if (pres && pres->impl) {
+        pres->impl->destroyGlesTargets(egl_display);
+    }
 }
 
 int android_presentation_submit_buffer(android_presentation_t* pres,
