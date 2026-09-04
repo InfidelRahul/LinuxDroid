@@ -1,0 +1,16 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/.gradle/**": true,
+    "**/.kotlin/**": true,
+    "**/build/**": true,
+    "**/.cxx/**": true,
+    "**/native/weston/build/**": true,
+    "**/native/weston/src/**": true,
+    "**/native/weston/prefix/**": true
+  },
+  "git.autofetch": false,
+  "git.autorefresh": true,
+  "git.showProgress": false
+}
