@@ -443,3 +443,42 @@ target_include_directories(
     ${LIBWESTON_INC_DIRS}
 )
 
+add_executable(
+    gui_hardening_test
+    gui_hardening_test.cpp
+    vsync_bridge.cpp
+    input_bridge.cpp
+    input_translator.cpp
+    desktop_window_tracker.cpp
+    desktop_shell_client.cpp
+    gui_host.cpp
+    linuxdroid_backend.c
+    android_presentation.cpp
+    protocol/xdg-shell-protocol.c
+)
+
+target_link_libraries(
+    gui_hardening_test
+    PRIVATE
+    android
+    log
+    EGL
+    GLESv2
+    GLESv3
+    wayland-server
+    wayland-client
+    weston
+    pixman-1
+    xkbcommon
+)
+
+target_include_directories(
+    gui_hardening_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${WESTON_PREFIX}/include
+    ${WESTON_PREFIX}/include/pixman-1
+    ${WESTON_PREFIX}/include/libdrm
+    ${LIBWESTON_INC_DIRS}
+)
+

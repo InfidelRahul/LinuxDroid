@@ -107,6 +107,7 @@ struct linuxdroid_vsync_bridge {
     std::atomic<bool> running{false};
     std::atomic<bool> paused{false};
     std::atomic<bool> wake_requested{false};
+    std::atomic<bool> callback_pending{false};
 
     std::thread looper_thread;
     ALooper* looper{nullptr};
@@ -222,6 +223,11 @@ struct linuxdroid_vsync_bridge {
         while (running.load(std::memory_order_relaxed)) {
             // Poll looper with 50ms timeout; AChoreographer callbacks run inside this poll
             ALooper_pollOnce(50, nullptr, nullptr, nullptr);
+
+            // If resumed from pause or callback chain unblocked, post next callback
+            if (!paused.load(std::memory_order_relaxed) && !callback_pending.load(std::memory_order_relaxed)) {
+                postNextChoreographerCallback();
+            }
         }
 
         if (api.unregisterRefreshRateCallback && choreographer) {
@@ -245,6 +251,10 @@ struct linuxdroid_vsync_bridge {
             return;
         }
 
+        if (callback_pending.exchange(true, std::memory_order_acq_rel)) {
+            return; // Already pending
+        }
+
         auto& api = getApi();
         if (api.postVsyncCallback) {
             api.postVsyncCallback(
@@ -252,6 +262,8 @@ struct linuxdroid_vsync_bridge {
                 [](const AChoreographerFrameCallbackData* data, void* ctx) {
                     auto* self = static_cast<linuxdroid_vsync_bridge*>(ctx);
                     if (!self) return;
+
+                    self->callback_pending.store(false, std::memory_order_release);
 
                     auto& a = getApi();
                     int64_t frameTime = a.getFrameTimeNanos ? a.getFrameTimeNanos(data) : 0;
@@ -274,6 +286,8 @@ struct linuxdroid_vsync_bridge {
                 [](int64_t frameTimeNanos, void* ctx) {
                     auto* self = static_cast<linuxdroid_vsync_bridge*>(ctx);
                     if (!self) return;
+
+                    self->callback_pending.store(false, std::memory_order_release);
 
                     int64_t period = self->timing.vsync_period_ns;
                     self->handleVsyncPulse(frameTimeNanos, frameTimeNanos + period, frameTimeNanos + period, 0);
@@ -457,6 +471,16 @@ linuxdroid_vsync_bridge_inject_vsync(linuxdroid_vsync_bridge_t* bridge, int64_t 
                             frame_time_ns + bridge->timing.vsync_period_ns,
                             frame_time_ns + bridge->timing.vsync_period_ns,
                             0);
+}
+
+bool
+linuxdroid_vsync_bridge_is_active(const linuxdroid_vsync_bridge_t* bridge)
+{
+    if (!bridge) return false;
+    std::lock_guard<std::mutex> lock(bridge->mutex);
+    return bridge->running.load(std::memory_order_relaxed) &&
+           !bridge->paused.load(std::memory_order_relaxed) &&
+           (bridge->timing.state == LINUXDROID_TIMING_ACTIVE);
 }
 
 } // extern "C"

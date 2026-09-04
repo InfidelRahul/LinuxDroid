@@ -136,6 +136,12 @@ void
 linuxdroid_vsync_bridge_inject_vsync(linuxdroid_vsync_bridge_t* bridge, int64_t frame_time_ns, int64_t vsync_period_ns);
 
 /**
+ * Returns true if the VSync bridge is currently running and active.
+ */
+bool
+linuxdroid_vsync_bridge_is_active(const linuxdroid_vsync_bridge_t* bridge);
+
+/**
  * Converts nanoseconds in CLOCK_MONOTONIC to struct timespec.
  */
 static inline void

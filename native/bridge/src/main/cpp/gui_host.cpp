@@ -13,6 +13,8 @@
 
 #include <android/log.h>
 #include <sys/eventfd.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <EGL/egl.h>
 #include <GLES2/gl2.h>
@@ -54,8 +56,20 @@ int handleWakeEvent(int fd, uint32_t mask, void* data) {
     (void)data;
     uint64_t val = 0;
     while (read(fd, &val, sizeof(val)) > 0) {}
+    GuiHost::getInstance().processPendingWindowActions();
     GuiHost::getInstance().processQueuedInput();
     return 0;
+}
+
+int handleSigchld(int signal_number, void* data) {
+    (void)signal_number;
+    (void)data;
+    pid_t pid;
+    int status;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        LOGI("PROCESS_REAPED: guest child process %d reaped (status=0x%x)", pid, status);
+    }
+    return 1;
 }
 
 int westonLogHandler(const char* fmt, va_list ap) {
@@ -113,6 +127,21 @@ bool GuiHost::start() {
     LOGI("WESTON_START_BEGIN: starting native GUI host");
     state_ = LifecycleState::STARTING;
     init_success_ = false;
+    window_cascade_count_ = 0;
+
+    {
+        std::lock_guard<std::mutex> alock(action_mutex_);
+        pending_actions_.clear();
+    }
+
+    // Ensure XDG_RUNTIME_DIR exists and cleanup any stale socket/lock from previous ungraceful termination
+    const char* env_xdg = getenv("XDG_RUNTIME_DIR");
+    std::string xdg_path = (env_xdg && strlen(env_xdg) > 0) ? env_xdg : "/tmp";
+    setenv("XDG_RUNTIME_DIR", xdg_path.c_str(), 1);
+    mkdir(xdg_path.c_str(), 0700);
+
+    unlink((xdg_path + "/wayland-0").c_str());
+    unlink((xdg_path + "/wayland-0.lock").c_str());
 
     // Create wake eventfd to allow deterministic asynchronous interruption of the Wayland event loop
     wake_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
@@ -139,6 +168,8 @@ bool GuiHost::start() {
     } else {
         LOGE("WESTON_START_FAILED: GUI host initialization failed");
         InputBridge::getInstance().setWakeFd(-1);
+        InputBridge::getInstance().clear();
+        DesktopWindowTracker::getInstance().clear();
         if (worker_thread_.joinable()) {
             worker_thread_.join();
         }
@@ -180,6 +211,13 @@ bool GuiHost::stop() {
     }
 
     InputBridge::getInstance().setWakeFd(-1);
+    InputBridge::getInstance().clear();
+    DesktopWindowTracker::getInstance().clear();
+    {
+        std::lock_guard<std::mutex> alock(action_mutex_);
+        pending_actions_.clear();
+    }
+
     if (backend_ != nullptr) {
         linuxdroid_backend_reset_input(backend_);
     }
@@ -475,6 +513,9 @@ void GuiHost::workerMain() {
         return;
     }
 
+    // Register SIGCHLD handler to cleanly reap any terminated guest child processes
+    sigchld_source_ = wl_event_loop_add_signal(loop, SIGCHLD, handleSigchld, nullptr);
+
     // 3. Route Weston logging to Android logcat
     weston_log_set_handler(westonLogHandler, westonLogContinueHandler);
 
@@ -688,23 +729,9 @@ void GuiHost::workerMain() {
         LOGI("WESTON_DESKTOP_CREATED: weston_desktop initialized (xdg_wm_base enabled)");
     }
 
-    // Connect DesktopWindowTracker action handler to weston desktop surfaces
+    // Connect DesktopWindowTracker action handler to enqueue actions to compositor thread
     DesktopWindowTracker::getInstance().setActionHandler([this](uint64_t window_id, const std::string& action) {
-        struct weston_seat* seat = (backend_ ? linuxdroid_backend_get_seat(backend_) : nullptr);
-        DesktopWindowEntry entry;
-        if (DesktopWindowTracker::getInstance().getWindow(window_id, &entry) && entry.native_handle) {
-            auto* dsurface = static_cast<struct weston_desktop_surface*>(entry.native_handle);
-            if (action == "activate") {
-                auto* ctx = static_cast<DesktopSurfaceContext*>(weston_desktop_surface_get_user_data(dsurface));
-                if (ctx && ctx->view && seat) {
-                    weston_view_activate_input(ctx->view, seat, WESTON_ACTIVATE_FLAG_CLICKED);
-                }
-                weston_desktop_surface_set_activated(dsurface, true);
-                DesktopWindowTracker::getInstance().setWindowActive(window_id, true);
-            } else if (action == "close") {
-                weston_desktop_surface_close(dsurface);
-            }
-        }
+        enqueueWindowAction(window_id, action);
     });
 
     // Launch DesktopShellClient in dedicated client thread
@@ -731,6 +758,8 @@ void GuiHost::workerMain() {
         shell_client_.reset();
     }
     DesktopWindowTracker::getInstance().setActionHandler(nullptr);
+    DesktopWindowTracker::getInstance().clear();
+    InputBridge::getInstance().clear();
 
     if (desktop_ != nullptr) {
         weston_desktop_destroy(desktop_);
@@ -749,6 +778,11 @@ void GuiHost::workerMain() {
     if (vsync_source_ != nullptr) {
         wl_event_source_remove(vsync_source_);
         vsync_source_ = nullptr;
+    }
+
+    if (sigchld_source_ != nullptr) {
+        wl_event_source_remove(sigchld_source_);
+        sigchld_source_ = nullptr;
     }
 
     if (output_ != nullptr) {
@@ -919,6 +953,75 @@ void GuiHost::processQueuedInput() {
             }
         }
     }
+}
+
+void GuiHost::enqueueWindowAction(uint64_t window_id, const std::string& action) {
+    {
+        std::lock_guard<std::mutex> lock(action_mutex_);
+        pending_actions_.push_back({window_id, action});
+    }
+    if (wake_fd_ >= 0) {
+        uint64_t val = 1;
+        write(wake_fd_, &val, sizeof(val));
+    }
+}
+
+void GuiHost::processPendingWindowActions() {
+    std::vector<PendingWindowAction> actions;
+    {
+        std::lock_guard<std::mutex> lock(action_mutex_);
+        actions.swap(pending_actions_);
+    }
+    if (actions.empty()) return;
+
+    struct weston_seat* seat = (backend_ ? linuxdroid_backend_get_seat(backend_) : nullptr);
+
+    for (const auto& act : actions) {
+        DesktopWindowEntry entry;
+        if (DesktopWindowTracker::getInstance().getWindow(act.window_id, &entry) && entry.native_handle) {
+            auto* dsurface = static_cast<struct weston_desktop_surface*>(entry.native_handle);
+            if (act.action == "activate") {
+                auto* ctx = static_cast<DesktopSurfaceContext*>(weston_desktop_surface_get_user_data(dsurface));
+                if (ctx && ctx->view && seat) {
+                    weston_view_activate_input(ctx->view, seat, WESTON_ACTIVATE_FLAG_CLICKED);
+                }
+                weston_desktop_surface_set_activated(dsurface, true);
+                DesktopWindowTracker::getInstance().setWindowActive(act.window_id, true);
+                LOGI("WINDOW_ACTION_DISPATCH: activated window id=%" PRIu64, act.window_id);
+            } else if (act.action == "close") {
+                weston_desktop_surface_close(dsurface);
+                LOGI("WINDOW_ACTION_DISPATCH: closed window id=%" PRIu64, act.window_id);
+            }
+        }
+    }
+}
+
+bool GuiHost::restartDesktopShell() {
+    std::lock_guard<std::mutex> lock(window_mutex_);
+    if (state_.load(std::memory_order_relaxed) != LifecycleState::RUNNING || !display_) {
+        LOGW("SHELL_RESTART_REJECTED: compositor is not running");
+        return false;
+    }
+
+    LOGI("SHELL_RESTART_BEGIN: restarting desktop shell client");
+    if (shell_client_) {
+        shell_client_->stop();
+        shell_client_.reset();
+    }
+
+    int32_t out_w = output_ ? output_->width : LINUXDROID_DEFAULT_WIDTH;
+    int32_t out_h = output_ ? output_->height : LINUXDROID_DEFAULT_HEIGHT;
+
+    shell_client_ = std::make_unique<DesktopShellClient>();
+    shell_client_->setOutputGeometry(out_w, out_h, 1);
+    const char* socket_name = "wayland-0";
+    bool ok = shell_client_->start(socket_name);
+    if (ok) {
+        LOGI("SHELL_RESTART_SUCCESS: desktop shell client restarted successfully");
+    } else {
+        LOGE("SHELL_RESTART_FAILED: failed to start restarted desktop shell client");
+    }
+    return ok;
 }
 
 } // namespace gui

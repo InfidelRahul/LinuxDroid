@@ -40,6 +40,26 @@ static uint64_t getCurrentTimestampNs() {
 void InputBridge::pushEventLocked(const NativeInputEvent& evt) {
     totalEvents_.fetch_add(1, std::memory_order_relaxed);
 
+    // Coalesce high-frequency motion events if preceding event is of the same type and target
+    if (!eventQueue_.empty()) {
+        if (evt.type == InputEventType::MOUSE_MOVE && eventQueue_.back().type == InputEventType::MOUSE_MOVE) {
+            eventQueue_.back().x = evt.x;
+            eventQueue_.back().y = evt.y;
+            eventQueue_.back().timestampNs = evt.timestampNs;
+            wakeCompositorLoop();
+            return;
+        } else if (evt.type == InputEventType::TOUCH_MOVE &&
+                   eventQueue_.back().type == InputEventType::TOUCH_MOVE &&
+                   eventQueue_.back().id == evt.id) {
+            eventQueue_.back().x = evt.x;
+            eventQueue_.back().y = evt.y;
+            eventQueue_.back().pressure = evt.pressure;
+            eventQueue_.back().timestampNs = evt.timestampNs;
+            wakeCompositorLoop();
+            return;
+        }
+    }
+
     if (eventQueue_.size() >= MAX_QUEUE_SIZE) {
         // Drop high-frequency motion events first to preserve button/key state transitions
         if (evt.type == InputEventType::TOUCH_MOVE || evt.type == InputEventType::MOUSE_MOVE) {

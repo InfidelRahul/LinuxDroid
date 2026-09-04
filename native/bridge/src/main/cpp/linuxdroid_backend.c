@@ -83,9 +83,15 @@ linuxdroid_output_repaint_pixman(struct weston_output *base)
     struct AHardwareBuffer *ahb = NULL;
     int err = android_presentation_acquire_buffer(output->presentation, &slot_index, &ahb, 50);
     if (err < 0) {
-        LOGW("PIXMAN_BUFFER_ACQUIRE: no buffer available (err=%d), deferring repaint", err);
-        weston_output_schedule_repaint(base);
-        return -EBUSY;
+        if (err == -ETIMEDOUT && android_presentation_is_enabled(output->presentation)) {
+            LOGW("PIXMAN_BUFFER_ACQUIRE: buffer pool temporarily busy (timeout), deferring repaint");
+            weston_output_schedule_repaint(base);
+            return -EBUSY;
+        }
+        LOGW("PIXMAN_BUFFER_ACQUIRE: acquire failed (err=%d), dropping frame without storm", err);
+        weston_compositor_read_presentation_clock(base->compositor, &ts);
+        weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+        return 0;
     }
 
     // 2. Lock AHardwareBuffer for direct CPU write access
@@ -190,9 +196,15 @@ linuxdroid_output_repaint_gles(struct weston_output *base)
     struct AHardwareBuffer *ahb = NULL;
     int err = android_presentation_acquire_buffer(output->presentation, &slot_index, &ahb, 50);
     if (err < 0) {
-        LOGW("GLES_BUFFER_ACQUIRE: no buffer available (err=%d), deferring repaint", err);
-        weston_output_schedule_repaint(base);
-        return -EBUSY;
+        if (err == -ETIMEDOUT && android_presentation_is_enabled(output->presentation)) {
+            LOGW("GLES_BUFFER_ACQUIRE: buffer pool temporarily busy (timeout), deferring repaint");
+            weston_output_schedule_repaint(base);
+            return -EBUSY;
+        }
+        LOGW("GLES_BUFFER_ACQUIRE: acquire failed (err=%d), dropping frame without storm", err);
+        weston_compositor_read_presentation_clock(base->compositor, &ts);
+        weston_output_finish_frame(base, &ts, WP_PRESENTATION_FEEDBACK_INVALID);
+        return 0;
     }
 
     if (slot_index < 0 || slot_index >= 3 || !output->gles_renderbuffers[slot_index]) {

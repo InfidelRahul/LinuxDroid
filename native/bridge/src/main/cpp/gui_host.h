@@ -54,6 +54,9 @@ public:
     void destroyNativeWindow();
 
     void processQueuedInput();
+    void processPendingWindowActions();
+    void enqueueWindowAction(uint64_t window_id, const std::string& action);
+    bool restartDesktopShell();
 
     // Compositor Desktop API callback handlers
     static void handleSurfaceAdded(struct weston_desktop_surface* surface, void* user_data);
@@ -80,6 +83,7 @@ private:
     // Native Wayland / libweston runtime resources
     struct wl_display* display_ = nullptr;
     struct wl_event_source* wake_source_ = nullptr;
+    struct wl_event_source* sigchld_source_ = nullptr;
     struct weston_log_context* log_ctx_ = nullptr;
     struct weston_compositor* compositor_ = nullptr;
     struct linuxdroid_backend* backend_ = nullptr;
@@ -87,6 +91,14 @@ private:
     struct weston_output* output_ = nullptr;
     struct linuxdroid_vsync_bridge* vsync_bridge_ = nullptr;
     struct wl_event_source* vsync_source_ = nullptr;
+
+    // Thread-safe window actions dispatched on compositor event loop
+    struct PendingWindowAction {
+        uint64_t window_id;
+        std::string action;
+    };
+    mutable std::mutex action_mutex_;
+    std::vector<PendingWindowAction> pending_actions_;
 
     // Weston Desktop & Layers (Phase 7 Desktop Shell & Toplevel Management)
     struct weston_desktop* desktop_ = nullptr;
