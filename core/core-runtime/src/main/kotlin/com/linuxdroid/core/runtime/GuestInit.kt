@@ -27,12 +27,13 @@ init_err() {
 }
 
 # 1. Initialize guest runtime directories (idempotent, non-destructive)
-for dir in /tmp /run /run/lock /var/run; do
+for dir in /tmp /run /run/lock /var/run /dev/shm /dev/pts; do
     if [ ! -d "§dir" ]; then
         mkdir -p "§dir" 2>/dev/null || true
     fi
 done
 chmod 1777 /tmp 2>/dev/null || true
+chmod 1777 /dev/shm 2>/dev/null || true
 
 # 2. Construct guest environment independently from Android host
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:§{PATH:-}"

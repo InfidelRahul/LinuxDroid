@@ -220,6 +220,7 @@ class ProotRuntimeBackend(
         sessionId: SessionId?,
     ): ProcessHandle {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
         val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
@@ -227,6 +228,7 @@ class ProotRuntimeBackend(
             workingDirectory = workingDirectory,
             extraEnv = extraEnv,
             tmpDirPath = tmpDir.absolutePath,
+            shmDirPath = shmDir.absolutePath,
             logFilePath = logFile.absolutePath,
         )
         return executeWithSpec(spec, sessionId)
@@ -279,6 +281,7 @@ class ProotRuntimeBackend(
         timeoutMs: Long,
     ): ProcessResult {
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
         val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
@@ -286,6 +289,7 @@ class ProotRuntimeBackend(
             workingDirectory = workingDirectory,
             extraEnv = extraEnv,
             tmpDirPath = tmpDir.absolutePath,
+            shmDirPath = shmDir.absolutePath,
             logFilePath = logFile.absolutePath,
         )
         return executeAndWaitWithSpec(spec, timeoutMs)
@@ -333,12 +337,14 @@ class ProotRuntimeBackend(
             listOf(resolved) + command.drop(1)
         }
         val tmpDir = storage.tmpDir(environment.id).apply { mkdirs() }
+        val shmDir = storage.shmDir(environment.id).apply { mkdirs() }
         val logFile = storage.consoleLogFile(environment.id).apply { parentFile?.mkdirs() }
         val spec = RuntimeSpec.fromEnvironment(
             environment = environment,
             command = resolvedCommand,
             workingDirectory = environment.configuration.homeDir.ifBlank { "/root" },
             tmpDirPath = tmpDir.absolutePath,
+            shmDirPath = shmDir.absolutePath,
             logFilePath = logFile.absolutePath,
         )
         return startInteractiveShellWithSpec(spec, rows, cols)

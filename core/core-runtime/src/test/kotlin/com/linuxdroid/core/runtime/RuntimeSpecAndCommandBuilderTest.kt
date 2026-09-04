@@ -210,4 +210,27 @@ class RuntimeSpecAndCommandBuilderTest {
         assertThat(boundPaths).doesNotContain("/system")
         assertThat(boundPaths).doesNotContain("/mnt")
     }
+
+    @Test
+    fun `RuntimeSpec fromEnvironment binds shm directory when provided`() {
+        val env = Environment(
+            metadata = EnvironmentMetadata(
+                id = EnvironmentId("ubuntu-shm"),
+                name = "Ubuntu SHM",
+                distribution = Distribution.UBUNTU,
+                architecture = Architecture.ARM64,
+            ),
+            rootfsPath = "/test/rootfs",
+            metadataPath = "/test/metadata",
+        )
+
+        val spec = RuntimeSpec.fromEnvironment(
+            environment = env,
+            command = listOf("/bin/sh"),
+            tmpDirPath = "/test/tmp",
+            shmDirPath = "/test/shm",
+        )
+
+        assertThat(spec.bindings).contains(RuntimeBinding("/test/shm", "/dev/shm"))
+    }
 }

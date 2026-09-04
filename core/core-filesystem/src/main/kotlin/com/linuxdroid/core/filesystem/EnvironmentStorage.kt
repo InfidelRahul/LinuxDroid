@@ -48,6 +48,9 @@ class EnvironmentStorage(
     /** Returns the logs directory. */
     fun logsDir(id: EnvironmentId): File = File(environmentDir(id), "logs")
 
+    /** Returns the shm directory for POSIX shared memory emulation (/dev/shm). */
+    fun shmDir(id: EnvironmentId): File = File(environmentDir(id), "shm")
+
     /** Returns the console log file for runtime diagnostics. */
     fun consoleLogFile(id: EnvironmentId): File = File(logsDir(id), "console.log")
 
@@ -60,7 +63,7 @@ class EnvironmentStorage(
      */
     suspend fun initializeEnvironmentDirs(id: EnvironmentId) = withContext(Dispatchers.IO) {
         log.info("Initializing environment directories for $id")
-        listOf(metadataDir(id), runtimeStateDir(id), tmpDir(id), logsDir(id)).forEach { dir ->
+        listOf(metadataDir(id), runtimeStateDir(id), tmpDir(id), logsDir(id), shmDir(id)).forEach { dir ->
             if (!dir.exists() && !dir.mkdirs()) {
                 throw FilesystemError(dir.path, "Failed to create directory")
             }

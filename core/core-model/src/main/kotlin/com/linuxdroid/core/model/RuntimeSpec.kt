@@ -57,6 +57,7 @@ data class RuntimeSpec(
     val customProotPath: String? = null,
     val customLoaderPath: String? = null,
     val tmpDirPath: String? = null,
+    val shmDirPath: String? = null,
     val logFilePath: String? = null,
     val sharedStorageEnabled: Boolean = true,
 ) {
@@ -78,6 +79,7 @@ data class RuntimeSpec(
             extraEnv: Map<String, String> = emptyMap(),
             extraBindings: List<RuntimeBinding> = emptyList(),
             tmpDirPath: String? = null,
+            shmDirPath: String? = null,
             logFilePath: String? = null,
             executionTarget: ExecutionTarget = ExecutionTarget.GUEST,
             guestInitPath: String? = DEFAULT_GUEST_INIT_PATH,
@@ -115,6 +117,9 @@ data class RuntimeSpec(
                 if (tmpDirPath != null) {
                     add(RuntimeBinding(tmpDirPath, "/tmp"))
                 }
+                if (shmDirPath != null) {
+                    add(RuntimeBinding(shmDirPath, "/dev/shm"))
+                }
                 addAll(extraBindings)
             }
 
@@ -131,6 +136,7 @@ data class RuntimeSpec(
                 guestInitPath = guestInitPath,
                 customProotPath = environment.configuration.runtime.customProotPath,
                 tmpDirPath = tmpDirPath,
+                shmDirPath = shmDirPath,
                 logFilePath = logFilePath,
                 sharedStorageEnabled = environment.configuration.runtime.sharedStorageEnabled,
             )

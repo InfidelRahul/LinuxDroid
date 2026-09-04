@@ -52,7 +52,7 @@ class ProotCommandBuilder : RuntimeCommandBuilder {
                 !guestInit.isNullOrBlank()
 
             if (useInit && spec.command.firstOrNull() != guestInit) {
-                add(guestInit!!)
+                add(guestInit)
             }
 
             // Target workload / shell arguments (strictly preserved structured array)
