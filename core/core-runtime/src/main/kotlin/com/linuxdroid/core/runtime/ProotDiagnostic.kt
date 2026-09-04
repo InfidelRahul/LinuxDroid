@@ -34,7 +34,7 @@ data class ProotDiagnosticResult(
     val elfType: String = "UNKNOWN",
     val executable: Boolean,
     val loaderValid: Boolean = true,
-    val termuxFree: Boolean = true,
+    val standalone: Boolean = true,
     val detail: String,
     val error: String? = null,
 ) {
@@ -45,7 +45,7 @@ data class ProotDiagnosticResult(
         appendLine("ELF: ${if (elfValid) "VALID ($elfType)" else "INVALID"}")
         appendLine("Executable: ${if (executable) "YES" else "NO"}")
         appendLine("Dependencies: PASS (Standalone Bionic binary, 0 external .so required)")
-        appendLine("Termux-Free: ${if (termuxFree) "PASS (Clean standalone build)" else "FAIL"}")
+        appendLine("Standalone: ${if (standalone) "PASS (Clean standalone build)" else "FAIL"}")
         appendLine("Status: ${status.name}")
         appendLine("Detail: $detail")
         error?.let { appendLine("Error: $it") }

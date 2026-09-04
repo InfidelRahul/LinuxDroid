@@ -204,7 +204,7 @@ class HostPreboot(
 
         // Propagate only explicitly specified variables, excluding Android host library variables
         spec.environmentVariables.forEach { (k, v) ->
-            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH" && !k.startsWith("ANDROID_") && !k.startsWith("TERMUX_") && k != "PROOT_NO_SECCOMP") {
+            if (k != "LD_PRELOAD" && k != "LD_LIBRARY_PATH" && !k.startsWith("ANDROID_") && k != "PROOT_NO_SECCOMP") {
                 put(k, v)
             }
         }

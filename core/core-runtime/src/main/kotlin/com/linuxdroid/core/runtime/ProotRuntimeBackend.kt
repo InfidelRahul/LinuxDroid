@@ -393,7 +393,7 @@ class ProotRuntimeBackend(
                 elfType = "MISSING",
                 executable = false,
                 loaderValid = false,
-                termuxFree = true,
+                standalone = true,
                 detail = "PRoot resolution error: ${e.message}",
                 error = e.message,
             )
@@ -413,7 +413,7 @@ class ProotRuntimeBackend(
                 elfType = "MISSING",
                 executable = false,
                 loaderValid = loader?.exists() == true,
-                termuxFree = true,
+                standalone = true,
                 detail = "PRoot binary missing on filesystem",
             )
         }
@@ -429,7 +429,7 @@ class ProotRuntimeBackend(
                 elfType = elfInfo.typeName,
                 executable = binary.canExecute(),
                 loaderValid = loader?.exists() == true,
-                termuxFree = true,
+                standalone = true,
                 detail = elfInfo.detail,
             )
         }
@@ -466,7 +466,7 @@ class ProotRuntimeBackend(
                     elfType = elfInfo.typeName,
                     executable = true,
                     loaderValid = loader?.exists() == true,
-                    termuxFree = !combined.contains("com.termux"),
+                    standalone = true,
                     detail = "PRoot v5.4.0 verified in ${binary.parentFile?.name} (self-test exit=$exit)",
                 )
             } else {
@@ -479,7 +479,7 @@ class ProotRuntimeBackend(
                     elfType = elfInfo.typeName,
                     executable = true,
                     loaderValid = loader?.exists() == true,
-                    termuxFree = true,
+                    standalone = true,
                     detail = "PRoot verified with exit=$exit: ${combined.take(100)}",
                 )
             }
@@ -496,7 +496,7 @@ class ProotRuntimeBackend(
                 elfType = elfInfo.typeName,
                 executable = binary.canExecute(),
                 loaderValid = loader?.exists() == true,
-                termuxFree = true,
+                standalone = true,
                 detail = if (isPermissionDenied) "Execution denied by platform (error=13 EACCES) at ${binary.path}" else "Execution failed: ${e.message}",
                 error = e.message,
             )
@@ -511,7 +511,7 @@ class ProotRuntimeBackend(
                 elfType = elfInfo.typeName,
                 executable = binary.canExecute(),
                 loaderValid = loader?.exists() == true,
-                termuxFree = true,
+                standalone = true,
                 detail = "Execution failed: ${e.message}",
                 error = e.message,
             )

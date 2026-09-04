@@ -39,9 +39,9 @@ fi
 mkdir -p "$ROOTFS_DIR" "$METADATA_DIR" "$TMP_DIR"
 
 # Debian arm64 minimal rootfs URL
-# Using the official Debian ports infrastructure
-DEBIAN_ROOTFS_URL="https://github.com/termux/proot-distro/releases/download/v4.5.0/debian-aarch64-pd-v4.5.0.tar.xz"
-DEBIAN_ROOTFS_SHA256="PLACEHOLDER_SHA256_TO_BE_VERIFIED"
+# Using official LinuxContainers infrastructure
+DEBIAN_ROOTFS_URL="https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260831_05:24/rootfs.tar.xz"
+DEBIAN_ROOTFS_SHA256="1767187c73bf4f84376d2a48741efdf6bd2ca6c22295c1f1ab5934003de0cab4"
 TARBALL="${TMP_DIR}/debian-arm64.tar.xz"
 
 echo "[LinuxDroid Bootstrap] Downloading Debian arm64 rootfs..."

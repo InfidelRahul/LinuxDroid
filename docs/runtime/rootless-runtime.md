@@ -73,7 +73,7 @@ proot \
 - Native Wayland, XFCE4, GNOME packages
 - No licensing restrictions
 - Excellent documentation and community support
-- Proven proot compatibility (used by Termux, UserLAnd)
+- Proven proot compatibility in rootless mobile Linux environments
 
 **Bootstrap method:**
 The Debian rootfs is bootstrapped using a pre-built minimal tarball from
