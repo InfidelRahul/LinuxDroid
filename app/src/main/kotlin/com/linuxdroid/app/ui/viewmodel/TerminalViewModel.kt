@@ -10,6 +10,10 @@ import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.Environment
 import com.linuxdroid.core.model.EnvironmentState
+import com.linuxdroid.core.model.ProcessHandle
+import com.linuxdroid.core.model.ProcessState
+import com.linuxdroid.core.process.DefaultProcessManager
+import com.linuxdroid.core.process.ProcessManager
 import com.linuxdroid.core.runtime.PtySession
 import com.linuxdroid.core.runtime.RuntimeBackend
 import com.linuxdroid.core.runtime.TerminalBuffer
@@ -32,6 +36,7 @@ class TerminalViewModel @Inject constructor(
     private val dao: EnvironmentDao,
     private val runtimeBackend: RuntimeBackend,
     private val logExporter: com.linuxdroid.core.diagnostics.RuntimeLogExporter,
+    private val processManager: ProcessManager,
 ) : ViewModel() {
 
     private val log = LinuxDroidLogger(LogSubsystem.APPLICATION)
@@ -43,6 +48,7 @@ class TerminalViewModel @Inject constructor(
 
     private val terminalBuffer = TerminalBuffer(maxScrollbackLines = 2000)
     val lines: StateFlow<List<TerminalLineData>> = terminalBuffer.lines
+    val cursorRow: StateFlow<Int> = terminalBuffer.activeCursorRow
     val cursorCol: StateFlow<Int> = terminalBuffer.activeCursorCol
 
     private val _isShellActive = MutableStateFlow(false)
@@ -139,8 +145,20 @@ class TerminalViewModel @Inject constructor(
                         command = shellCommand
                     )
                     ptySession = session
+                    terminalBuffer.resize(currentRows, currentCols)
                     _isShellActive.value = true
                     _isStarting.value = false
+
+                    val procHandle = ProcessHandle(
+                        handleId = session.sessionId,
+                        environmentId = env.id,
+                        pid = session.pid,
+                        command = shellCommand,
+                        processRole = "terminal",
+                        state = ProcessState.RUNNING,
+                        startedAt = System.currentTimeMillis()
+                    )
+                    (processManager as? DefaultProcessManager)?.registerProcess(procHandle)
 
                     log.info("Interactive shell session connected for ${env.id} (pid=${session.pid})")
 
@@ -157,11 +175,19 @@ class TerminalViewModel @Inject constructor(
                         }
 
                         _isShellActive.value = false
-                        val exitCode = session.getExitCode() ?: 1
+                        val exitCode = session.getExitCode() ?: 0
                         _shellExitCode.value = exitCode
                         val exitMsg = "\r\n[Process completed (exit=$exitCode)]\r\n"
                         terminalBuffer.append(exitMsg.toByteArray(), exitMsg.length)
                         log.info("Shell process exited with code $exitCode")
+
+                        (processManager as? DefaultProcessManager)?.updateProcess(
+                            procHandle.copy(
+                                state = ProcessState.EXITED,
+                                exitCode = exitCode,
+                                exitedAt = System.currentTimeMillis()
+                            )
+                        )
                     }
                 } catch (e: Exception) {
                     log.error("Failed to spawn interactive shell", e)
@@ -259,6 +285,7 @@ class TerminalViewModel @Inject constructor(
         if (rows <= 0 || cols <= 0) return
         currentRows = rows
         currentCols = cols
+        terminalBuffer.resize(rows, cols)
         viewModelScope.launch(Dispatchers.IO) {
             ptySession?.resize(rows, cols)
         }

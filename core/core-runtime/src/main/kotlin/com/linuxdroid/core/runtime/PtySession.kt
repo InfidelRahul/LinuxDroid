@@ -69,20 +69,33 @@ data class PtySession(
 
     /**
      * Gets exit status if process terminated.
+     * Performs a bounded wait (up to [maxWaitMs]) to handle kernel process teardown transitions.
      */
-    fun getExitCode(): Int? {
+    fun getExitCode(maxWaitMs: Long = 1000L): Int? {
         if (cachedExitCode != null) return cachedExitCode
         if (pid <= 0) return null
-        val status = NativeBridge.waitpid(pid, false)
-        if (status >= 0) {
-            cachedExitCode = status
-            return status
+
+        val startTime = System.currentTimeMillis()
+        while (true) {
+            val status = NativeBridge.waitpid(pid, false)
+            if (status >= 0) {
+                cachedExitCode = status
+                return status
+            }
+            if (System.currentTimeMillis() - startTime >= maxWaitMs) {
+                break
+            }
+            try {
+                Thread.sleep(10)
+            } catch (_: InterruptedException) {
+                break
+            }
         }
         return null
     }
 
     /**
-     * Closes the PTY session and terminates child process.
+     * Closes the PTY session and terminates child process cleanly.
      */
     override fun close() {
         if (isClosed) return
@@ -90,8 +103,27 @@ data class PtySession(
         if (masterFd >= 0) {
             NativeBridge.closeFd(masterFd)
         }
-        if (pid > 0) {
+        if (pid > 0 && cachedExitCode == null) {
             NativeBridge.sendSignal(pid, 15) // SIGTERM
+            val startWait = System.currentTimeMillis()
+            while (System.currentTimeMillis() - startWait < 200) {
+                val status = NativeBridge.waitpid(pid, false)
+                if (status >= 0) {
+                    cachedExitCode = status
+                    return
+                }
+                try {
+                    Thread.sleep(20)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+            // Force kill if not reaped after SIGTERM
+            NativeBridge.sendSignal(pid, 9) // SIGKILL
+            val finalStatus = NativeBridge.waitpid(pid, false)
+            if (finalStatus >= 0) {
+                cachedExitCode = finalStatus
+            }
         }
     }
 }

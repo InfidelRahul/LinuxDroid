@@ -82,6 +82,7 @@ fun TerminalScreen(
 
     val environment by viewModel.environment.collectAsState()
     val lines by viewModel.lines.collectAsState()
+    val cursorRow by viewModel.cursorRow.collectAsState()
     val cursorCol by viewModel.cursorCol.collectAsState()
     val isShellActive by viewModel.isShellActive.collectAsState()
     val isStarting by viewModel.isStarting.collectAsState()
@@ -702,10 +703,11 @@ fun TerminalScreen(
                         ) {
                             itemsIndexed(lines) { index, lineData ->
                                 val isLastLine = index == lines.size - 1
+                                val isCursorLine = if (lines.size <= 30) (index == cursorRow) else isLastLine
                                 val hasSearchMatch = searchQuery.isNotBlank() && lineData.rawText.contains(searchQuery, ignoreCase = true)
 
                                 val annotatedString = buildAnnotatedString {
-                                    if (isLastLine && isShellActive && cursorCol < lineData.rawText.length) {
+                                    if (isCursorLine && isShellActive && cursorCol < lineData.rawText.length) {
                                         var charIdx = 0
                                         for (span in lineData.spans) {
                                             val spanColor = getAdaptiveTerminalColor(
@@ -715,6 +717,7 @@ fun TerminalScreen(
                                             )
                                             for (ch in span.text) {
                                                 val isAtCursor = charIdx == cursorCol
+                                                val defaultBg = if (span.backgroundColor != 0L) Color(span.backgroundColor) else Color.Transparent
                                                 val style = SpanStyle(
                                                     color = if (isAtCursor) (if (neuColors.isDark) Color.Black else Color.White) else spanColor,
                                                     fontFamily = SfMono,
@@ -726,7 +729,7 @@ fun TerminalScreen(
                                                     } else if (hasSearchMatch) {
                                                         neuColors.warning.copy(alpha = 0.25f)
                                                     } else {
-                                                        Color.Transparent
+                                                        defaultBg
                                                     }
                                                 )
                                                 withStyle(style) {
@@ -742,13 +745,14 @@ fun TerminalScreen(
                                                 isDarkTheme = neuColors.isDark,
                                                 textPrimary = neuColors.textPrimary
                                             )
+                                            val defaultBg = if (span.backgroundColor != 0L) Color(span.backgroundColor) else Color.Transparent
                                             val style = SpanStyle(
                                                 color = spanColor,
                                                 fontFamily = SfMono,
                                                 fontSize = 12.sp,
                                                 fontWeight = if (span.isBold) FontWeight.Bold else FontWeight.Normal,
                                                 textDecoration = if (span.isUnderline) TextDecoration.Underline else TextDecoration.None,
-                                                background = if (hasSearchMatch) neuColors.warning.copy(alpha = 0.25f) else Color.Transparent
+                                                background = if (hasSearchMatch) neuColors.warning.copy(alpha = 0.25f) else defaultBg
                                             )
                                             withStyle(style) {
                                                 append(span.text)
@@ -1044,60 +1048,60 @@ fun TerminalScreen(
                         .focusRequester(focusRequester)
                         .onKeyEvent { keyEvent ->
                             if (keyEvent.type == KeyEventType.KeyDown) {
-                                when (keyEvent.key) {
-                                    Key.Enter -> {
-                                        viewModel.sendEnter()
-                                        true
+                                if (keyEvent.isCtrlPressed) {
+                                    when (keyEvent.key) {
+                                        Key.C -> { viewModel.sendCtrlC(); true }
+                                        Key.D -> { viewModel.sendCtrlD(); true }
+                                        Key.Z -> { viewModel.sendCtrlZ(); true }
+                                        Key.L -> { viewModel.sendCtrlL(); true }
+                                        Key.A -> { viewModel.sendInput("\u0001"); true }
+                                        Key.B -> { viewModel.sendInput("\u0002"); true }
+                                        Key.E -> { viewModel.sendInput("\u0005"); true }
+                                        Key.F -> { viewModel.sendInput("\u0006"); true }
+                                        Key.G -> { viewModel.sendInput("\u0007"); true }
+                                        Key.H -> { viewModel.sendBackspace(); true }
+                                        Key.I -> { viewModel.sendTab(); true }
+                                        Key.J -> { viewModel.sendEnter(); true }
+                                        Key.K -> { viewModel.sendInput("\u000B"); true }
+                                        Key.N -> { viewModel.sendInput("\u000E"); true }
+                                        Key.O -> { viewModel.sendInput("\u000F"); true }
+                                        Key.P -> { viewModel.sendInput("\u0010"); true }
+                                        Key.R -> { viewModel.sendInput("\u0012"); true }
+                                        Key.T -> { viewModel.sendInput("\u0014"); true }
+                                        Key.U -> { viewModel.sendInput("\u0015"); true }
+                                        Key.V -> { viewModel.sendInput("\u0016"); true }
+                                        Key.W -> { viewModel.sendInput("\u0017"); true }
+                                        Key.X -> { viewModel.sendInput("\u0018"); true }
+                                        Key.Y -> { viewModel.sendInput("\u0019"); true }
+                                        Key.Backslash -> { viewModel.sendInput("\u001C"); true }
+                                        Key.LeftBracket -> { viewModel.sendEscape(); true }
+                                        else -> false
                                     }
-                                    Key.Backspace -> {
-                                        viewModel.sendBackspace()
-                                        true
+                                } else if (keyEvent.isAltPressed) {
+                                    when (keyEvent.key) {
+                                        Key.B -> { viewModel.sendInput("\u001Bb"); true }
+                                        Key.F -> { viewModel.sendInput("\u001Bf"); true }
+                                        Key.D -> { viewModel.sendInput("\u001Bd"); true }
+                                        Key.Backspace -> { viewModel.sendInput("\u001B\u007F"); true }
+                                        else -> false
                                     }
-                                    Key.Tab -> {
-                                        viewModel.sendTab()
-                                        true
+                                } else {
+                                    when (keyEvent.key) {
+                                        Key.Enter -> { viewModel.sendEnter(); true }
+                                        Key.Backspace -> { viewModel.sendBackspace(); true }
+                                        Key.Tab -> { viewModel.sendTab(); true }
+                                        Key.Escape -> { viewModel.sendEscape(); true }
+                                        Key.DirectionUp -> { viewModel.sendArrowUp(); true }
+                                        Key.DirectionDown -> { viewModel.sendArrowDown(); true }
+                                        Key.DirectionLeft -> { viewModel.sendArrowLeft(); true }
+                                        Key.DirectionRight -> { viewModel.sendArrowRight(); true }
+                                        Key.Delete -> { viewModel.sendDelete(); true }
+                                        Key.MoveHome -> { viewModel.sendHome(); true }
+                                        Key.MoveEnd -> { viewModel.sendEnd(); true }
+                                        Key.PageUp -> { viewModel.sendPageUp(); true }
+                                        Key.PageDown -> { viewModel.sendPageDown(); true }
+                                        else -> false
                                     }
-                                    Key.Escape -> {
-                                        viewModel.sendEscape()
-                                        true
-                                    }
-                                    Key.DirectionUp -> {
-                                        viewModel.sendArrowUp()
-                                        true
-                                    }
-                                    Key.DirectionDown -> {
-                                        viewModel.sendArrowDown()
-                                        true
-                                    }
-                                    Key.DirectionLeft -> {
-                                        viewModel.sendArrowLeft()
-                                        true
-                                    }
-                                    Key.DirectionRight -> {
-                                        viewModel.sendArrowRight()
-                                        true
-                                    }
-                                    Key.Delete -> {
-                                        viewModel.sendDelete()
-                                        true
-                                    }
-                                    Key.MoveHome -> {
-                                        viewModel.sendHome()
-                                        true
-                                    }
-                                    Key.MoveEnd -> {
-                                        viewModel.sendEnd()
-                                        true
-                                    }
-                                    Key.PageUp -> {
-                                        viewModel.sendPageUp()
-                                        true
-                                    }
-                                    Key.PageDown -> {
-                                        viewModel.sendPageDown()
-                                        true
-                                    }
-                                    else -> false
                                 }
                             } else {
                                 false

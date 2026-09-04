@@ -17,7 +17,9 @@ object GuestInit {
 set -e
 
 init_log() {
-    echo "[GUEST-INIT] §*" >&2
+    if [ "§{LINUXDROID_INIT_VERBOSE:-0}" = "1" ]; then
+        echo "[GUEST-INIT] §*" >&2
+    fi
 }
 
 init_err() {
