@@ -20,8 +20,11 @@ die() { echo "[$SCRIPT_NAME] ERROR: $*" >&2; exit 1; }
 NDK_ROOT="${ANDROID_NDK_ROOT:-${NDK_ROOT:-}}"
 if [[ -z "$NDK_ROOT" || ! -d "$NDK_ROOT" ]]; then
     for candidate in \
+        "/home/codespace/Android/Sdk/ndk/30.0.16138531" \
         "/home/codespace/Android/Sdk/ndk/29.0.14206865" \
+        "${ANDROID_HOME:-/nonexistent}/ndk/30.0.16138531" \
         "${ANDROID_HOME:-/nonexistent}/ndk/29.0.14206865" \
+        "$HOME/Android/Sdk/ndk/30.0.16138531" \
         "$HOME/Android/Sdk/ndk/29.0.14206865" \
         $(ls -d "${ANDROID_HOME:-/nonexistent}/ndk/"* 2>/dev/null | tail -n1) \
         $(ls -d "$HOME/Android/Sdk/ndk/"* 2>/dev/null | tail -n1)
@@ -35,8 +38,17 @@ fi
 
 [[ -n "$NDK_ROOT" && -d "$NDK_ROOT" ]] || die "Android NDK not found. Please set ANDROID_NDK_ROOT or NDK_ROOT."
 TOOLCHAIN_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-[[ -x "$TOOLCHAIN_BIN/aarch64-linux-android35-clang" ]] || die "NDK Clang toolchain not found in $TOOLCHAIN_BIN"
-info "Using Android NDK: $NDK_ROOT"
+CLANG_BIN=""
+CLANGXX_BIN=""
+for api in 37 36 35; do
+    if [[ -x "$TOOLCHAIN_BIN/aarch64-linux-android${api}-clang" ]]; then
+        CLANG_BIN="$TOOLCHAIN_BIN/aarch64-linux-android${api}-clang"
+        CLANGXX_BIN="$TOOLCHAIN_BIN/aarch64-linux-android${api}-clang++"
+        break
+    fi
+done
+[[ -n "$CLANG_BIN" ]] || die "NDK Clang toolchain not found in $TOOLCHAIN_BIN"
+info "Using Android NDK: $NDK_ROOT (compiler: $(basename "$CLANG_BIN"))"
 
 # 2. Check build tools
 for tool in git python3 bison flex pkg-config; do
@@ -56,8 +68,8 @@ mkdir -p "$PREFIX" "$BUILD_DIR" "$SRC_DIR" "$HOST_TOOLS_DIR"
 CROSS_FILE="$BUILD_DIR/android-arm64.ini"
 cat << EOF > "$CROSS_FILE"
 [binaries]
-c = '$TOOLCHAIN_BIN/aarch64-linux-android35-clang'
-cpp = '$TOOLCHAIN_BIN/aarch64-linux-android35-clang++'
+c = '$CLANG_BIN'
+cpp = '$CLANGXX_BIN'
 ar = '$TOOLCHAIN_BIN/llvm-ar'
 strip = '$TOOLCHAIN_BIN/llvm-strip'
 pkg-config = 'pkg-config'

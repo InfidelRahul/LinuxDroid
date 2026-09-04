@@ -64,7 +64,7 @@ static void test_wayland_connection_and_globals() {
     } ctx;
 
     static const struct wl_registry_listener reg_listener = {
-        .global = [](void* data, struct wl_registry* reg, uint32_t name, const char* iface, uint32_t ver) {
+        .global = [](void* data, struct wl_registry* reg, uint32_t name, const char* iface, [[maybe_unused]] uint32_t ver) {
             auto* c = static_cast<TestContext*>(data);
             if (strcmp(iface, wl_compositor_interface.name) == 0) {
                 c->comp = static_cast<struct wl_compositor*>(wl_registry_bind(reg, name, &wl_compositor_interface, 4));

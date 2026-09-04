@@ -19,6 +19,8 @@ add_compile_options(
     -Wno-unguarded-availability
     -Wno-unguarded-availability-new
     -Wno-missing-field-initializers
+    -Wno-unused-parameter
+    -Wno-unused-variable
 )
 
 get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../.." ABSOLUTE)
