@@ -127,7 +127,8 @@ static bool test_window_tracker_thread_safety() {
         workers.emplace_back([t, &tracker]() {
             for (int i = 0; i < 50; ++i) {
                 uint64_t id = static_cast<uint64_t>(t * 1000 + i);
-                tracker.registerWindow(id, "app_" + std::to_string(id), "Title " + std::to_string(id), nullptr);
+                void* mock_handle = reinterpret_cast<void*>(static_cast<uintptr_t>(id + 1));
+                tracker.registerWindow(id, "app_" + std::to_string(id), "Title " + std::to_string(id), mock_handle);
                 tracker.setWindowActive(id, true);
                 linuxdroid::DesktopWindowEntry entry;
                 bool found = tracker.getWindow(id, &entry);

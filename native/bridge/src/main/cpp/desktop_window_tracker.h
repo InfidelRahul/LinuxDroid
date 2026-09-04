@@ -21,7 +21,7 @@ public:
     static DesktopWindowTracker& getInstance();
 
     // Window registration & lifecycle (called from compositor weston_desktop_api)
-    void registerWindow(uint64_t id, const std::string& app_id, const std::string& title, void* handle);
+    bool registerWindow(uint64_t id, const std::string& app_id, const std::string& title, void* handle);
     void updateWindowTitle(uint64_t id, const std::string& title);
     void setWindowActive(uint64_t id, bool active);
     void unregisterWindow(uint64_t id);

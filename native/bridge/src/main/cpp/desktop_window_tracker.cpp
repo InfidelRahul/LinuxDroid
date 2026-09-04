@@ -14,7 +14,13 @@ DesktopWindowTracker& DesktopWindowTracker::getInstance() {
     return instance;
 }
 
-void DesktopWindowTracker::registerWindow(uint64_t id, const std::string& app_id, const std::string& title, void* handle) {
+bool DesktopWindowTracker::registerWindow(uint64_t id, const std::string& app_id, const std::string& title, void* handle) {
+    if (handle == nullptr) {
+        LOGW("REJECT_REGISTRATION: window %" PRIu64 " ('%s') has null native handle; synthetic windows prohibited",
+             id, app_id.c_str());
+        return false;
+    }
+
     ChangeListener listener_copy;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -44,6 +50,7 @@ void DesktopWindowTracker::registerWindow(uint64_t id, const std::string& app_id
     if (listener_copy) {
         listener_copy();
     }
+    return true;
 }
 
 void DesktopWindowTracker::updateWindowTitle(uint64_t id, const std::string& title) {

@@ -190,18 +190,42 @@ static void test_window_list_and_application_launch() {
     assert(tracker.getWindowCount() == 0);
 
     DesktopShellClient client;
-    // Launch first application (/bin/bash or /bin/sh)
-    client.launchApplication(0);
 
-    // Verify window entry registered
+    // Verify AppLaunchHandler receives launch requests
+    std::string launched_app, launched_path;
+    client.setAppLaunchHandler([&](const std::string& name, const std::string& path) {
+        launched_app = name;
+        launched_path = path;
+    });
+
+    // Launch first application (/bin/bash)
+    client.launchApplication(0);
+    assert(launched_app == "Terminal");
+    assert(launched_path == "/bin/bash");
+
+    // Prohibit fake windows: launchApplication does NOT fabricate windows into tracker
+    assert(tracker.getWindowCount() == 0);
+
+    // Attempting to register a window with nullptr native handle MUST be rejected
+    bool null_reg = tracker.registerWindow(9999, "fake", "Fake Window", nullptr);
+    assert(!null_reg);
+    assert(tracker.getWindowCount() == 0);
+
+    // Register legitimate window with valid native handle
+    void* mock_surface_1 = reinterpret_cast<void*>(0x1000);
+    void* mock_surface_2 = reinterpret_cast<void*>(0x2000);
+    bool reg1 = tracker.registerWindow(1001, "Terminal", "Terminal", mock_surface_1);
+    assert(reg1);
     assert(tracker.getWindowCount() == 1);
     auto windows = tracker.getWindows();
     assert(windows.size() == 1);
     assert(windows[0].is_active);
     assert(windows[0].app_id == "Terminal");
+    assert(windows[0].native_handle == mock_surface_1);
 
     // Register second window
-    tracker.registerWindow(2001, "editor", "Text Editor", nullptr);
+    bool reg2 = tracker.registerWindow(2001, "editor", "Text Editor", mock_surface_2);
+    assert(reg2);
     assert(tracker.getWindowCount() == 2);
 
     windows = tracker.getWindows();

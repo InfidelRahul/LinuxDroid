@@ -2,6 +2,7 @@ package com.linuxdroid.core.session
 
 import com.linuxdroid.core.audio.AudioManager
 import com.linuxdroid.core.display.DisplayManager
+import com.linuxdroid.core.display.GuiHostController
 import com.linuxdroid.core.filesystem.EnvironmentStorage
 import com.linuxdroid.core.gpu.GpuManager
 import com.linuxdroid.core.input.InputManager
@@ -29,6 +30,7 @@ class DefaultSessionManager(
     private val inputManager: InputManager? = null,
     private val audioManager: AudioManager? = null,
     private val networkManager: NetworkManager? = null,
+    private val guiHostController: GuiHostController? = null,
 ) : SessionManager {
 
     private val log = LinuxDroidLogger(LogSubsystem.SESSION)
@@ -104,6 +106,7 @@ class DefaultSessionManager(
 
             val waylandSocket = "wayland-0"
             displayManager?.applyConfig(environment.configuration.display)
+            guiHostController?.start()
 
             val rootfsDir = storage.rootfsDir(environment.id)
             ensureGuiSessionEnvironment(rootfsDir)
@@ -146,6 +149,7 @@ class DefaultSessionManager(
             try {
                 audioManager?.stop()
                 inputManager?.stop()
+                guiHostController?.stop()
                 runtimeBackend.stop(environment)
             } catch (cleanupEx: Exception) {
                 log.warn("Secondary error during cleanup: ${cleanupEx.message}")
@@ -165,8 +169,9 @@ class DefaultSessionManager(
         try {
             audioManager?.stop()
             inputManager?.stop()
+            guiHostController?.stop()
         } catch (e: Exception) {
-            log.warn("Error stopping audio/input: ${e.message}")
+            log.warn("Error stopping audio/input/gui: ${e.message}")
         }
 
         val stoppedSession = stoppingSession.copy(
@@ -213,20 +218,17 @@ class DefaultSessionManager(
                 export WAYLAND_DISPLAY=wayland-0
                 export DISPLAY=:0
                 mkdir -p /tmp
-                chmod 0700 /tmp
-                if command -v cage >/dev/null 2>&1; then
-                    if command -v foot >/dev/null 2>&1; then
-                        exec cage -- foot
-                    elif command -v xterm >/dev/null 2>&1; then
-                        exec cage -- xterm
-                    else
-                        exec cage -- /bin/sh
-                    fi
-                elif command -v weston >/dev/null 2>&1; then
-                    exec weston --socket=wayland-0
+                chmod 1777 /tmp
+                # LinuxDroid Wayland compositor is hosted by libweston in Android runtime.
+                # Guest GUI clients connect directly to ${'$'}WAYLAND_DISPLAY.
+                if command -v foot >/dev/null 2>&1; then
+                    exec foot
+                elif command -v weston-terminal >/dev/null 2>&1; then
+                    exec weston-terminal
+                elif command -v xterm >/dev/null 2>&1; then
+                    exec xterm
                 else
-                    echo "Minimal Wayland GUI ready. Install cage/weston for graphical session."
-                    exec /bin/sh
+                    exec /bin/sh -c "while true; do sleep 3600; done"
                 fi
                 """.trimIndent() + "\n"
             )

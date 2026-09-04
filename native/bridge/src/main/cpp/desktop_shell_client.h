@@ -56,6 +56,10 @@ public:
     void selectPrevLauncherItem();
     void activateSelectedLauncherItem();
 
+    // Application Launch Dispatch
+    using AppLaunchHandler = std::function<void(const std::string& name, const std::string& exec_path)>;
+    void setAppLaunchHandler(AppLaunchHandler handler);
+
     void launchApplication(size_t index);
     bool launchCustomCommand(const std::string& path, const std::vector<std::string>& args);
 
@@ -199,6 +203,7 @@ private:
     double pointer_y_{0.0};
 
     int wake_pipe_[2]{-1, -1};
+    AppLaunchHandler app_launch_handler_;
 };
 
 } // namespace linuxdroid

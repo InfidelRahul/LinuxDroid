@@ -156,72 +156,49 @@ void DesktopShellClient::activateSelectedLauncherItem() {
     setLauncherOpen(false);
 }
 
+void DesktopShellClient::setAppLaunchHandler(AppLaunchHandler handler) {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    app_launch_handler_ = std::move(handler);
+}
+
 void DesktopShellClient::launchApplication(size_t index) {
     std::string name, path;
+    AppLaunchHandler handler;
     {
         std::lock_guard<std::mutex> lock(render_mutex_);
         if (index >= launcher_menu_.size()) return;
         name = launcher_menu_[index].name;
         path = launcher_menu_[index].exec_path;
+        handler = app_launch_handler_;
     }
 
     LOGI("APPLICATION_LAUNCH_REQUEST: app='%s' path='%s'", name.c_str(), path.c_str());
 
-    std::vector<std::string> args = { path };
-    launchCustomCommand(path, args);
+    if (handler) {
+        handler(name, path);
+    } else {
+        LOGW("APPLICATION_LAUNCH_UNHANDLED: No launch handler registered for '%s'", name.c_str());
+    }
 
-    // Register launched window in DesktopWindowTracker so panel represents it
-    uint64_t fake_id = static_cast<uint64_t>(time(nullptr)) * 1000 + index;
-    DesktopWindowTracker::getInstance().registerWindow(fake_id, name, name, nullptr);
+    // NOTE: Synthetic window fabrication is prohibited.
+    // Windows are registered authoritatively by weston_desktop_api when the client maps its Wayland surface.
     renderPanel();
 }
 
-bool DesktopShellClient::launchCustomCommand(const std::string& path, const std::vector<std::string>& args) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        LOGE("APPLICATION_LAUNCH_FAILED: fork failed: %s", strerror(errno));
-        return false;
+bool DesktopShellClient::launchCustomCommand(const std::string& path, const std::vector<std::string>& /*args*/) {
+    // Authoritative process launches must flow through RuntimeLauncher in the runtime layer.
+    LOGI("APPLICATION_LAUNCH_DISPATCH: dispatching '%s' to launch handler", path.c_str());
+    AppLaunchHandler handler;
+    {
+        std::lock_guard<std::mutex> lock(render_mutex_);
+        handler = app_launch_handler_;
     }
-
-    if (pid == 0) {
-        // Child process
-        setenv("WAYLAND_DISPLAY", "wayland-0", 1);
-        setenv("XDG_RUNTIME_DIR", "/tmp", 1);
-        setenv("DISPLAY", ":0", 1);
-
-        std::vector<char*> argv;
-        for (const auto& arg : args) {
-            argv.push_back(const_cast<char*>(arg.c_str()));
-        }
-        argv.push_back(nullptr);
-
-        // Check if proot rootfs environment is active
-        const char* guest_rootfs = "/data/data/com.linuxdroid/files/rootfs";
-        const char* proot_bin = "/data/data/com.linuxdroid/files/proot";
-
-        if (access(proot_bin, X_OK) == 0 && access(guest_rootfs, F_OK) == 0) {
-            // Launch inside PRoot guest environment
-            std::vector<char*> proot_argv;
-            proot_argv.push_back(const_cast<char*>(proot_bin));
-            proot_argv.push_back(const_cast<char*>("-r"));
-            proot_argv.push_back(const_cast<char*>(guest_rootfs));
-            proot_argv.push_back(const_cast<char*>("-0"));
-            proot_argv.push_back(const_cast<char*>("-b"));
-            proot_argv.push_back(const_cast<char*>("/tmp:/tmp"));
-            for (auto* a : argv) {
-                if (a) proot_argv.push_back(a);
-            }
-            proot_argv.push_back(nullptr);
-            execv(proot_bin, proot_argv.data());
-        }
-
-        // Direct guest or host execution fallback
-        execvp(path.c_str(), argv.data());
-        _exit(127);
+    if (handler) {
+        handler(path, path);
+        return true;
     }
-
-    LOGI("APPLICATION_LAUNCHED: pid=%d command='%s'", pid, path.c_str());
-    return true;
+    LOGW("APPLICATION_LAUNCH_REJECTED: launchCustomCommand called without registered handler for '%s'", path.c_str());
+    return false;
 }
 
 ShmBuffer DesktopShellClient::createShmBuffer(int width, int height) {

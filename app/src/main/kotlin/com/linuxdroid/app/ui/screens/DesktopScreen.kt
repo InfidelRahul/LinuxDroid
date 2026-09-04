@@ -118,6 +118,13 @@ fun DesktopScreen(
         }
     }
 
+    // Automatically transition to DESKTOP when environment becomes active
+    LaunchedEffect(environment.state) {
+        if (environment.state == EnvironmentState.RUNNING && autoLoginEnabled) {
+            currentPhase = DesktopPhase.DESKTOP
+        }
+    }
+
     AnimatedContent(
         targetState = currentPhase,
         label = "DesktopPhaseTransition",
@@ -224,19 +231,30 @@ private fun LinuxBootConsoleScreen(
     var displayedLines by remember { mutableStateOf<List<String>>(emptyList()) }
     var bootCompleted by remember { mutableStateOf(false) }
 
-    LaunchedEffect(environment.id.value) {
+    LaunchedEffect(environment.id.value, environment.state) {
+        if (environment.state == EnvironmentState.RUNNING) {
+            displayedLines = bootLogLines
+            bootCompleted = true
+            onBootComplete()
+            return@LaunchedEffect
+        }
         for (i in bootLogLines.indices) {
             displayedLines = bootLogLines.take(i + 1)
             listState.animateScrollToItem(i)
+            if (environment.state == EnvironmentState.RUNNING) {
+                displayedLines = bootLogLines
+                bootCompleted = true
+                onBootComplete()
+                return@LaunchedEffect
+            }
             val delayMs = when {
-                i < 4 -> 40L
-                bootLogLines[i].startsWith("[  OK  ]") -> 110L
-                else -> 75L
+                i < 4 -> 30L
+                bootLogLines[i].startsWith("[  OK  ]") -> 60L
+                else -> 40L
             }
             delay(delayMs)
         }
         bootCompleted = true
-        delay(400L)
         onBootComplete()
     }
 
@@ -697,136 +715,7 @@ private fun LinuxDesktopWorkspace(
                 },
                 modifier = Modifier.fillMaxSize()
             )
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp),
-                modifier = Modifier.fillMaxWidth().widthIn(max = 500.dp).padding(16.dp),
-            ) {
-                // Desktop Emblem
-                DistroIcon(distribution = environment.distribution, size = 72.dp)
-
-                Text(
-                    text = "${environment.distribution.displayName} Graphical Session",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                )
-
-                Text(
-                    text = "Wayland display server active on socket :0\nRootless hardware accelerated canvas ready.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF8B949E),
-                    textAlign = TextAlign.Center,
-                )
-
-                // Quick Launch Grid
-                NeuCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    elevation = 4.dp,
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Text(
-                            "Linux Desktop Tools",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = neuColors.textPrimary,
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
-                            DesktopAppShortcut(
-                                icon = Icons.Default.Terminal,
-                                label = "Terminal",
-                                onClick = onOpenTerminal,
-                            )
-                            DesktopAppShortcut(
-                                icon = Icons.Default.Folder,
-                                label = "Files",
-                                onClick = onOpenTerminal,
-                            )
-                            DesktopAppShortcut(
-                                icon = Icons.Default.Language,
-                                label = "Browser",
-                                onClick = onOpenTerminal,
-                            )
-                            DesktopAppShortcut(
-                                icon = Icons.Default.Code,
-                                label = "Editor",
-                                onClick = onOpenTerminal,
-                            )
-                        }
-                    }
-                }
-
-                // Action row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    NeuButton(
-                        onClick = onOpenTerminal,
-                        modifier = Modifier.weight(1f),
-                        isAccent = true,
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Open Shell", fontSize = 13.sp)
-                    }
-
-                    NeuButton(
-                        onClick = onLockSession,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Lock Screen", fontSize = 13.sp)
-                    }
-                }
-            }
         }
-    }
-}
-
-@Composable
-private fun DesktopAppShortcut(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-) {
-    val neuColors = NeuTheme.colors
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(8.dp),
-    ) {
-        Surface(
-            color = neuColors.surfacePressed,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.size(44.dp),
-            border = androidx.compose.foundation.BorderStroke(0.5.dp, neuColors.borderHighlight.copy(alpha = 0.4f)),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, contentDescription = label, tint = neuColors.primaryAccent, modifier = Modifier.size(22.dp))
-            }
-        }
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            fontFamily = SfPro,
-            color = neuColors.textPrimary,
-            maxLines = 1,
-        )
     }
 }
 
