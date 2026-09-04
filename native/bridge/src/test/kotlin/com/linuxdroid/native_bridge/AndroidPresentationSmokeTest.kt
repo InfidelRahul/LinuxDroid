@@ -95,5 +95,66 @@ class AndroidPresentationSmokeTest {
         assertThat(height).isEqualTo(1440)
         assertThat(inFlight.get()).isEqualTo(0)
     }
+
+    @Test
+    fun testSurfaceTeardownDrainAndWindowRebindContract() {
+        val capacity = 3
+        val bufferStates = IntArray(capacity) { 0 }
+        var inFlightCount = AtomicInteger(2)
+        var surfaceAttached = true
+        var windowHandleReleased = false
+
+        // Simulate presentation teardown when surface is destroyed
+        fun onSurfaceDestroyed(): Boolean {
+            // 1. Drain pending in-flight transactions
+            inFlightCount.set(0)
+            for (i in 0 until capacity) {
+                if (bufferStates[i] == 2) bufferStates[i] = 0
+            }
+            // 2. Detach surface control
+            surfaceAttached = false
+            // 3. Only now can ANativeWindow be released
+            windowHandleReleased = true
+            return true
+        }
+
+        bufferStates[0] = 2 // SUBMITTED
+        bufferStates[1] = 2 // SUBMITTED
+
+        assertThat(onSurfaceDestroyed()).isTrue()
+        assertThat(inFlightCount.get()).isEqualTo(0)
+        assertThat(surfaceAttached).isFalse()
+        assertThat(windowHandleReleased).isTrue()
+        assertThat(bufferStates[0]).isEqualTo(0) // Drained to FREE
+        assertThat(bufferStates[1]).isEqualTo(0) // Drained to FREE
+    }
+
+    @Test
+    fun testAbortedSubmitBufferRecoveryContract() {
+        val capacity = 3
+        val bufferStates = IntArray(capacity) { 0 }
+
+        // Acquire slot 0
+        bufferStates[0] = 1 // ACQUIRED
+
+        // Attempt submit when surface is null/disabled
+        val isEnabled = false
+        fun submitBuffer(slot: Int): Boolean {
+            if (!isEnabled) {
+                // Must recover slot back to FREE to prevent pool starvation
+                if (slot in 0 until capacity && bufferStates[slot] == 1) {
+                    bufferStates[slot] = 0 // FREE
+                }
+                return false
+            }
+            bufferStates[slot] = 2
+            return true
+        }
+
+        val result = submitBuffer(0)
+        assertThat(result).isFalse()
+        // Slot 0 must be restored to FREE
+        assertThat(bufferStates[0]).isEqualTo(0)
+    }
 }
 

@@ -252,14 +252,24 @@ public:
         if (native_window_ == window) return 0;
 
         LOGI("ANDROID_OUTPUT_READY: re-binding native window %p -> %p", native_window_, window);
+
+        if (surface_control_ != nullptr) {
+            // Drain outstanding in-flight presentation buffers before releasing old SurfaceControl
+            drainOutstandingBuffersLocked(lock, 250);
+            ASurfaceTransaction* tx = ASurfaceTransaction_create();
+            if (tx != nullptr) {
+                ASurfaceTransaction_setVisibility(tx, surface_control_, ASURFACE_TRANSACTION_VISIBILITY_HIDE);
+                ASurfaceTransaction_apply(tx);
+                ASurfaceTransaction_delete(tx);
+            }
+            ASurfaceControl_release(surface_control_);
+            surface_control_ = nullptr;
+            LOGI("ANDROID_SURFACECONTROL_DESTROY: released ASurfaceControl on window change");
+        }
+
         native_window_ = window;
 
         if (is_enabled_) {
-            // Recreate ASurfaceControl from new window
-            if (surface_control_ != nullptr) {
-                ASurfaceControl_release(surface_control_);
-                surface_control_ = nullptr;
-            }
             if (native_window_ != nullptr) {
                 surface_control_ = ASurfaceControl_createFromWindow(native_window_, "LinuxDroidOutputLayer");
                 if (surface_control_ != nullptr) {
@@ -391,6 +401,11 @@ public:
         std::unique_lock<std::mutex> lock(mutex_);
         if (!is_enabled_ || surface_control_ == nullptr) {
             if (acquire_fence_fd >= 0) close(acquire_fence_fd);
+            if (slot_index >= 0 && slot_index < LINUXDROID_BUFFER_POOL_CAPACITY) {
+                if (slots_[slot_index].state == LINUXDROID_BUFFER_STATE_ACQUIRED) {
+                    slots_[slot_index].state = LINUXDROID_BUFFER_STATE_FREE;
+                }
+            }
             return -ENODEV;
         }
 
@@ -408,6 +423,7 @@ public:
         ASurfaceTransaction* tx = ASurfaceTransaction_create();
         if (tx == nullptr) {
             if (acquire_fence_fd >= 0) close(acquire_fence_fd);
+            slot.state = LINUXDROID_BUFFER_STATE_FREE;
             LOGE("ANDROID_PRESENTATION_ERROR: ASurfaceTransaction_create failed");
             return -ENOMEM;
         }

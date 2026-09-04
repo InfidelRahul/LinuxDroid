@@ -66,9 +66,10 @@ void DisplayBridge::onSurfaceChanged(JNIEnv* env, jobject surface, int width, in
 
 void DisplayBridge::onSurfaceDestroyed() {
     std::lock_guard<std::mutex> lock(mutex_);
+    LOGI("onSurfaceDestroyed: synchronizing teardown with GUI host and draining buffers");
     linuxdroid::gui::GuiHost::getInstance().destroyNativeWindow();
     if (window_ != nullptr) {
-        LOGI("Releasing ANativeWindow");
+        LOGI("Releasing ANativeWindow: %p", window_);
         ANativeWindow_release(window_);
         window_ = nullptr;
     }

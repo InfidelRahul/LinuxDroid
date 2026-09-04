@@ -323,6 +323,36 @@ linuxdroid_output_enable_pixman(struct weston_output *base)
     return 0;
 }
 
+static void *
+linuxdroid_backend_get_egl_display(struct weston_output *base)
+{
+    struct weston_renderer *renderer = (base && base->compositor) ? base->compositor->renderer : NULL;
+    void *egl_display = EGL_NO_DISPLAY;
+
+    if (renderer && renderer->gl) {
+        if (renderer->gl->get_display) {
+            egl_display = renderer->gl->get_display(base->compositor);
+        }
+        if (renderer->gl->make_current) {
+            renderer->gl->make_current(base->compositor);
+        }
+    }
+
+    if (!egl_display || egl_display == EGL_NO_DISPLAY) {
+        egl_display = eglGetCurrentDisplay();
+    }
+
+    if (!egl_display || egl_display == EGL_NO_DISPLAY) {
+        egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+        if (egl_display != EGL_NO_DISPLAY) {
+            EGLint major = 0, minor = 0;
+            eglInitialize(egl_display, &major, &minor);
+        }
+    }
+
+    return egl_display;
+}
+
 static int
 linuxdroid_output_enable_gles(struct weston_output *base)
 {
@@ -346,11 +376,8 @@ linuxdroid_output_enable_gles(struct weston_output *base)
         }
     }
 
-    // 2. Initialize GLES EGLImage and FBO targets in presentation pool
-    void *egl_display = eglGetCurrentDisplay();
-    if (!egl_display || egl_display == EGL_NO_DISPLAY) {
-        egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    }
+    // 2. Initialize GLES EGLImage and FBO targets in presentation pool using active EGLDisplay
+    void *egl_display = linuxdroid_backend_get_egl_display(base);
     int err = android_presentation_init_gles_targets(output->presentation, egl_display);
     if (err < 0) {
         LOGE("GLES_RENDERER_ERROR: GLES_FBO_ATTACH_FAILURE - failed to init presentation GLES targets: %d", err);
@@ -438,10 +465,7 @@ linuxdroid_output_disable(struct weston_output *base)
         if (renderer && renderer->gl && renderer->gl->output_destroy) {
             renderer->gl->output_destroy(base);
         }
-        void *egl_display = eglGetCurrentDisplay();
-        if (!egl_display || egl_display == EGL_NO_DISPLAY) {
-            egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-        }
+        void *egl_display = linuxdroid_backend_get_egl_display(base);
         android_presentation_destroy_gles_targets(output->presentation, egl_display);
         output->gles_initialized = false;
     }
@@ -790,10 +814,7 @@ linuxdroid_output_resize(struct weston_output *base, int32_t width, int32_t heig
     }
 
     if (output->gles_initialized && base->compositor && base->compositor->renderer) {
-        void *egl_display = eglGetCurrentDisplay();
-        if (!egl_display || egl_display == EGL_NO_DISPLAY) {
-            egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-        }
+        void *egl_display = linuxdroid_backend_get_egl_display(base);
         android_presentation_destroy_gles_targets(output->presentation, egl_display);
         android_presentation_init_gles_targets(output->presentation, egl_display);
 
@@ -844,6 +865,15 @@ linuxdroid_output_resize(struct weston_output *base, int32_t width, int32_t heig
 int
 linuxdroid_output_create_test_scene(struct weston_output *output)
 {
+#ifndef LINUXDROID_ENABLE_TEST_SCENE
+    (void)output;
+    return 0;
+#else
+    const char *env = getenv("LINUXDROID_ENABLE_TEST_SCENE");
+    if (!env || strcmp(env, "1") != 0) {
+        return 0;
+    }
+
     struct linuxdroid_output *droid_output = (struct linuxdroid_output *)output;
     struct weston_compositor *ec = output->compositor;
 
@@ -890,6 +920,7 @@ linuxdroid_output_create_test_scene(struct weston_output *output)
 
     LOGI("LINUXDROID_TEST_SCENE_CREATED: deterministic visible test scene attached (%dx%d)", w, h);
     return 0;
+#endif
 }
 
 struct weston_seat *

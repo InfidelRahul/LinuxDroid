@@ -325,16 +325,16 @@ void GuiHost::changeNativeWindow(ANativeWindow* window, int width, int height, i
 
 void GuiHost::destroyNativeWindow() {
     std::lock_guard<std::mutex> lock(window_mutex_);
-    native_window_ = nullptr;
+    if (vsync_bridge_ != nullptr) {
+        linuxdroid_vsync_bridge_pause(vsync_bridge_);
+    }
     if (backend_ != nullptr) {
         linuxdroid_backend_reset_input(backend_);
     }
     if (output_ != nullptr) {
         linuxdroid_output_set_window(output_, nullptr);
     }
-    if (vsync_bridge_ != nullptr) {
-        linuxdroid_vsync_bridge_pause(vsync_bridge_);
-    }
+    native_window_ = nullptr;
 }
 
 void GuiHost::handleSurfaceAdded(struct weston_desktop_surface* surface, void* user_data) {

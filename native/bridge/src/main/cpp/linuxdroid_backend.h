@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <EGL/egl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -196,6 +197,8 @@ struct gl_renderer_interface {
                              const struct gl_renderer_fbo_options *options);
     void (*output_destroy)(struct weston_output *output);
     int (*create_fence_fd)(struct weston_output *output);
+    EGLDisplay (*get_display)(struct weston_compositor *ec);
+    int (*make_current)(struct weston_compositor *ec);
 };
 
 struct weston_renderer {
