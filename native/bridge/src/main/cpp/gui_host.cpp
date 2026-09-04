@@ -64,11 +64,10 @@ int handleWakeEvent(int fd, uint32_t mask, void* data) {
 int handleSigchld(int signal_number, void* data) {
     (void)signal_number;
     (void)data;
-    pid_t pid;
-    int status;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        LOGI("PROCESS_REAPED: guest child process %d reaped (status=0x%x)", pid, status);
-    }
+    // IMPORTANT: Do NOT execute waitpid(-1, ...) here.
+    // Indiscriminate waitpid(-1) reaps child processes belonging to PRoot and CLI bridges,
+    // destroying exit status codes and causing waitpid() to return ECHILD.
+    // Child processes must be reaped exclusively by their spawning owner.
     return 1;
 }
 
