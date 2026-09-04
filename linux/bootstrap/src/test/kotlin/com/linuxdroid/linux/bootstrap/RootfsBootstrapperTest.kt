@@ -221,4 +221,40 @@ class RootfsBootstrapperTest {
         assertThat(extractedBash.exists()).isTrue()
         assertThat(extractedBash.canExecute()).isTrue()
     }
+
+    @Test
+    fun `extractArchive blocks path traversal attacks in tarball entries`() {
+        val testTarXz = tempFolder.newFile("traversal_test.tar.xz")
+        val extractDir = tempFolder.newFolder("safe_extracted")
+
+        FileOutputStream(testTarXz).use { fos ->
+            XZCompressorOutputStream(fos).use { xzos ->
+                TarArchiveOutputStream(xzos).use { tarOut ->
+                    val evilData = "malicious".toByteArray()
+                    val entry = TarArchiveEntry("../../evil.txt").apply {
+                        size = evilData.size.toLong()
+                    }
+                    tarOut.putArchiveEntry(entry)
+                    tarOut.write(evilData)
+                    tarOut.closeArchiveEntry()
+                }
+            }
+        }
+
+        val context = mockk<Context>(relaxed = true)
+        val storage = mockk<EnvironmentStorage>()
+        val bootstrapper = RootfsBootstrapper(context, storage)
+
+        org.junit.Assert.assertThrows(FilesystemError::class.java) {
+            runBlocking {
+                bootstrapper.extractArchive(
+                    tarball = testTarXz,
+                    destDir = extractDir,
+                    format = ArchiveFormat.TAR_XZ,
+                    stripComponents = 0,
+                    onProgress = { _, _ -> }
+                )
+            }
+        }
+    }
 }

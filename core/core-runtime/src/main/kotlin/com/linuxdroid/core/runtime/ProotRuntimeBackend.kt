@@ -6,6 +6,7 @@ import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -135,18 +136,40 @@ class ProotRuntimeBackend(
 
     suspend fun stopForEnvironment(environmentId: EnvironmentId) = withContext(Dispatchers.IO) {
         log.info("Stopping proot runtime for $environmentId")
-        activeProcesses.entries
+        val procs = activeProcesses.entries
             .filter { it.value.environmentId == environmentId }
-            .forEach { (handleId, process) ->
-                log.debug("Terminating process $handleId")
-                try {
-                    process.process?.destroyForcibly()
-                } catch (e: Exception) {
-                    log.warn("Failed to terminate process $handleId", e)
+            .toList()
+
+        for ((handleId, proc) in procs) {
+            log.debug("Terminating process $handleId")
+            try {
+                // If interactive PTY session, close it cleanly
+                proc.ptySession?.close()
+
+                val p = proc.process
+                if (p != null && p.isAlive) {
+                    p.destroy() // SIGTERM
+                    val exited = withTimeoutOrNull(2000L) {
+                        p.waitFor()
+                    }
+                    if (exited == null) {
+                        log.warn("Process $handleId did not exit on SIGTERM, escalating to SIGKILL")
+                        p.destroyForcibly()
+                        p.waitFor(1, TimeUnit.SECONDS)
+                    }
                 }
+            } catch (e: Exception) {
+                log.warn("Failed to terminate process $handleId cleanly: ${e.message}", e)
+                throw RuntimeError(
+                    environmentId = environmentId,
+                    message = "Failed to terminate process $handleId during runtime shutdown: ${e.message}",
+                    cause = e,
+                )
+            } finally {
                 activeProcesses.remove(handleId)
-                _processEvents.tryEmit(ProcessStateEvent.Signaled(handleId, 15)) // SIGTERM
+                _processEvents.tryEmit(ProcessStateEvent.Signaled(handleId, 15))
             }
+        }
         log.info("proot runtime stopped for $environmentId")
     }
 
@@ -196,6 +219,7 @@ class ProotRuntimeBackend(
             sessionId = sessionId,
             process = process,
             command = resolvedSpec.command,
+            workingDirectory = resolvedSpec.workingDirectory,
         )
         activeProcesses[handleId] = prootProcess
 
@@ -241,24 +265,40 @@ class ProotRuntimeBackend(
         val handle = executeWithSpec(spec)
         val prootProcess = activeProcesses[handle.handleId]
             ?: throw ProcessError(handle.handleId, "Process not found after execute")
+        val process = prootProcess.process
+            ?: throw ProcessError(handle.handleId, "Process object is null")
+
+        // Concurrently consume stdout and stderr to prevent pipe buffer deadlocks
+        val stdoutDeferred = async(Dispatchers.IO) {
+            try {
+                process.inputStream.bufferedReader().use { it.readText() }
+            } catch (_: Exception) { "" }
+        }
+        val stderrDeferred = async(Dispatchers.IO) {
+            try {
+                process.errorStream.bufferedReader().use { it.readText() }
+            } catch (_: Exception) { "" }
+        }
 
         val completed = withTimeoutOrNull(timeoutMs) {
-            prootProcess.process?.waitFor()
+            process.waitFor()
         }
 
-        val exitCode = if (completed != null) {
-            prootProcess.process?.exitValue() ?: -1
+        val (exitCode, signaled) = if (completed != null) {
+            Pair(process.exitValue(), false)
         } else {
-            prootProcess.process?.destroyForcibly()
-            -1
+            log.warn("[PROOT] Process execution timed out after ${timeoutMs}ms for handle ${handle.handleId}")
+            process.destroyForcibly()
+            val forceExit = withTimeoutOrNull(2000L) { process.waitFor() }
+            Pair(forceExit ?: -1, true)
         }
 
-        val stdout = prootProcess.process?.inputStream?.bufferedReader()?.readText() ?: ""
-        val stderr = prootProcess.process?.errorStream?.bufferedReader()?.readText() ?: ""
+        val stdout = stdoutDeferred.await()
+        val stderr = stderrDeferred.await()
 
         activeProcesses.remove(handle.handleId)
 
-        val event = if (completed != null) {
+        val event = if (!signaled) {
             ProcessStateEvent.Exited(handle.handleId, exitCode)
         } else {
             ProcessStateEvent.Signaled(handle.handleId, 9)
@@ -316,6 +356,18 @@ class ProotRuntimeBackend(
             pid = handle.pid,
             masterFd = handle.masterFd,
         )
+        val prootProcess = ProotProcess(
+            handleId = session.sessionId,
+            environmentId = resolvedSpec.environmentId,
+            sessionId = null,
+            process = null,
+            command = resolvedSpec.command,
+            workingDirectory = resolvedSpec.workingDirectory,
+            ptySession = session,
+        )
+        activeProcesses[session.sessionId] = prootProcess
+        _processEvents.tryEmit(ProcessStateEvent.Started(session.sessionId, handle.pid))
+
         log.info("[PROOT] Interactive shell PTY session created: pid=${session.pid}, masterFd=${session.masterFd}")
         session
     }
@@ -352,23 +404,32 @@ class ProotRuntimeBackend(
 
     override suspend fun inspect(handleId: String): ProcessHandle? {
         val prootProcess = activeProcesses[handleId] ?: return null
+        val pty = prootProcess.ptySession
         val process = prootProcess.process
-        val state = when {
-            process == null -> ProcessState.UNKNOWN
-            process.isAlive -> ProcessState.RUNNING
-            else -> ProcessState.EXITED
+        val (state, pid, exitCode) = when {
+            pty != null -> {
+                val isAlive = pty.isAlive()
+                val exit = if (!isAlive) pty.getExitCode(0) else null
+                Triple(if (isAlive) ProcessState.RUNNING else ProcessState.EXITED, pty.pid, exit)
+            }
+            process != null -> {
+                val isAlive = process.isAlive
+                val exit = if (!isAlive) {
+                    try { process.exitValue() } catch (_: Exception) { null }
+                } else null
+                Triple(if (isAlive) ProcessState.RUNNING else ProcessState.EXITED, getProcessPid(process), exit)
+            }
+            else -> Triple(ProcessState.UNKNOWN, -1, null)
         }
         return ProcessHandle(
             handleId = handleId,
             environmentId = prootProcess.environmentId,
             sessionId = prootProcess.sessionId,
             command = prootProcess.command,
-            workingDirectory = "/",
-            pid = getProcessPid(process),
+            workingDirectory = prootProcess.workingDirectory,
+            pid = pid,
             state = state,
-            exitCode = if (state == ProcessState.EXITED) {
-                try { process?.exitValue() } catch (_: Exception) { null }
-            } else null,
+            exitCode = exitCode,
         )
     }
 
@@ -571,6 +632,8 @@ private data class ProotProcess(
     val sessionId: SessionId?,
     val process: Process?,
     val command: List<String>,
+    val workingDirectory: String = "/",
+    val ptySession: PtySession? = null,
 )
 
 private fun getProcessPid(process: Process?): Int {

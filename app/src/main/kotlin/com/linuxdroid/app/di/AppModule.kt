@@ -174,6 +174,10 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideGuiHostController(): GuiHostController = GuiHostController()
+
+    @Provides
+    @Singleton
     fun provideSessionManager(
         runtime: RuntimeBackend,
         storage: EnvironmentStorage,
@@ -182,6 +186,7 @@ object AppModule {
         inputManager: InputManager,
         audioManager: AudioManager,
         networkManager: NetworkManager,
+        guiHostController: GuiHostController,
         applicationManager: ApplicationManager,
     ): SessionManager = DefaultSessionManager(
         runtimeBackend = runtime,
@@ -191,7 +196,7 @@ object AppModule {
         inputManager = inputManager,
         audioManager = audioManager,
         networkManager = networkManager,
-        guiHostController = GuiHostController(),
+        guiHostController = guiHostController,
         applicationManager = applicationManager,
     )
 

@@ -207,24 +207,16 @@ private fun LinuxBootConsoleScreen(
 
     val bootLogLines = remember(environment) {
         listOf(
-            "[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x510f8031]",
-            "[    0.000000] Linux version 6.6.89-android15-8-g97a9aaefab9a (gcc version 14.2.0) #1 SMP PREEMPT",
-            "[    0.000001] Machine model: Android 16 PRoot Guest Container (aarch64)",
-            "[    0.005120] Kernel command line: console=tty0 root=/dev/root rw proot.seccomp=1 quiet",
-            "[    0.012431] Memory: 8192MB Total, 5780MB Free",
-            "[    0.024102] Mount guest rootfs: ${environment.rootfsPath}",
-            "[    0.038910] Initializing PRoot syscall translation layer (ptrace + seccomp-bpf enabled)",
-            "[    0.045120] Checking root filesystem consistency: clean, 28410/196608 files, 142180/786432 blocks",
-            "[  OK  ] Mounted /dev, /dev/pts, /dev/shm, /proc, /sys virtual filesystems.",
-            "[  OK  ] Mounted Android Shared Storage bridge (/sdcard).",
-            "[  OK  ] Configured host DNS loopback resolution (/etc/resolv.conf).",
-            "[  OK  ] Started D-Bus System Message Bus daemon.",
-            "[  OK  ] Started Host Network Name Resolution service.",
-            "[  OK  ] Initialized Wayland / X11 Compositor Socket (:0).",
-            "[  OK  ] Started PulseAudio Sound Server forwarding daemon.",
-            "[  OK  ] Starting Graphical Desktop Display Manager (LightDM)...",
-            "[  OK  ] Reached target Graphical Interface.",
-            "[  OK  ] Linux userspace initialized successfully.",
+            "[  OK  ] Initializing LinuxDroid runtime environment for ${environment.distribution.displayName} (${environment.architecture.abiName})",
+            "[  OK  ] Verifying guest rootfs at ${environment.rootfsPath}",
+            "[  OK  ] Binding virtual guest filesystems: /dev, /dev/pts, /dev/shm, /proc, /sys",
+            "[  OK  ] Configuring DNS resolution and loopback networking",
+            "[  OK  ] Initializing PRoot syscall translation engine (seccomp-bpf enabled)",
+            "[  OK  ] Executing guest init script: /sbin/linuxdroid-init",
+            "[  OK  ] Initializing Wayland display socket (wayland-0)",
+            "[  OK  ] Native GUI compositor ready (libweston)",
+            "[  OK  ] Starting Linux desktop session (/usr/local/bin/linuxdroid-session)",
+            "[  OK  ] Linux guest userspace active (state=RUNNING)",
         )
     }
 
@@ -631,15 +623,6 @@ private fun LinuxDesktopWorkspace(
 ) {
     val neuColors = NeuTheme.colors
     val context = LocalContext.current
-
-    val guiHostController = remember { com.linuxdroid.core.display.GuiHostController() }
-
-    DisposableEffect(Unit) {
-        guiHostController.start()
-        onDispose {
-            guiHostController.stop()
-        }
-    }
 
     Scaffold(
         containerColor = Color(0xFF1E222B),

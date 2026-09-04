@@ -10,8 +10,15 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.linuxdroid.app.R
 import com.linuxdroid.app.ui.MainActivity
+import com.linuxdroid.core.database.dao.EnvironmentDao
+import com.linuxdroid.core.model.EnvironmentState
+import com.linuxdroid.core.runtime.RuntimeBackend
+import com.linuxdroid.core.session.SessionManager
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import timber.log.Timber
+import javax.inject.Inject
 
 /**
  * Foreground service that keeps the Linux session alive independent of
@@ -32,9 +39,12 @@ class LinuxSessionService : Service() {
     companion object {
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.linuxdroid.app.ACTION_STOP_SESSION"
+        const val EXTRA_ENVIRONMENT_ID = "com.linuxdroid.app.EXTRA_ENVIRONMENT_ID"
 
-        fun start(context: Context, sessionName: String = "Linux Session") {
-            val intent = Intent(context, LinuxSessionService::class.java)
+        fun start(context: Context, sessionName: String = "Linux Session", environmentId: String? = null) {
+            val intent = Intent(context, LinuxSessionService::class.java).apply {
+                if (environmentId != null) putExtra(EXTRA_ENVIRONMENT_ID, environmentId)
+            }
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -42,13 +52,25 @@ class LinuxSessionService : Service() {
             }
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, environmentId: String? = null) {
             val intent = Intent(context, LinuxSessionService::class.java).apply {
                 action = ACTION_STOP
+                if (environmentId != null) putExtra(EXTRA_ENVIRONMENT_ID, environmentId)
             }
             context.startService(intent)
         }
     }
+
+    @Inject
+    lateinit var sessionManager: SessionManager
+
+    @Inject
+    lateinit var dao: EnvironmentDao
+
+    @Inject
+    lateinit var runtimeBackend: RuntimeBackend
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
@@ -57,21 +79,83 @@ class LinuxSessionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            Timber.i("Stop action received")
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            Timber.i("Stop action received in LinuxSessionService")
+            val targetEnvId = intent.getStringExtra(EXTRA_ENVIRONMENT_ID)
+            serviceScope.launch {
+                try {
+                    val active = sessionManager.sessions.first()
+                    if (targetEnvId != null) {
+                        val sessionToStop = active.values.firstOrNull { it.environmentId.value == targetEnvId }
+                        if (sessionToStop != null) {
+                            sessionManager.stopSession(sessionToStop.id)
+                        }
+                    } else {
+                        for (session in active.values) {
+                            try {
+                                sessionManager.stopSession(session.id)
+                            } catch (e: Exception) {
+                                Timber.e(e, "Failed to stop session ${session.id}")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error handling stop command in LinuxSessionService")
+                } finally {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
             return START_NOT_STICKY
         }
 
         startForeground(NOTIFICATION_ID, buildNotification())
         Timber.i("LinuxSessionService started in foreground")
+
+        // Reconcile state on service startup / restart
+        reconcileSession()
+
         return START_STICKY
+    }
+
+    private fun reconcileSession() {
+        serviceScope.launch {
+            try {
+                val activeSessions = sessionManager.sessions.first()
+                val environments = dao.getAll()
+                var hasActiveEnvironment = false
+
+                for (envEntity in environments) {
+                    val isSessionActive = activeSessions.values.any { it.environmentId.value == envEntity.id && it.state.isActive() }
+                    if (envEntity.state == EnvironmentState.RUNNING.name && !isSessionActive) {
+                        Timber.w("Reconciling orphaned RUNNING environment ${envEntity.id} -> STOPPED")
+                        dao.updateState(
+                            id = envEntity.id,
+                            state = EnvironmentState.STOPPED.name,
+                            timestamp = System.currentTimeMillis(),
+                            failureMessage = null,
+                        )
+                    } else if (isSessionActive || envEntity.state == EnvironmentState.RUNNING.name) {
+                        hasActiveEnvironment = true
+                    }
+                }
+
+                // If no environments are active after reconciliation, safely stop the service
+                if (!hasActiveEnvironment && activeSessions.isEmpty()) {
+                    Timber.i("No active environments found during reconciliation; stopping service")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Session reconciliation error")
+            }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
         Timber.i("LinuxSessionService destroyed")
+        serviceScope.cancel()
         super.onDestroy()
     }
 

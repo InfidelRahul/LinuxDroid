@@ -64,19 +64,34 @@ class HostPreboot(
             validateGuestInit(spec, rootfs)
         }
 
-        // 5. Host environment construction (strict isolation)
+        // 5. Working directory validation & preparation
+        val guestCwd = spec.workingDirectory.ifBlank { "/" }
+        val targetDir = File(rootfs, guestCwd.removePrefix("/"))
+        val finalGuestCwd = if (!targetDir.exists()) {
+            if (guestCwd.startsWith("/home") || guestCwd.startsWith("/root") || guestCwd.startsWith("/tmp")) {
+                targetDir.mkdirs()
+                guestCwd
+            } else {
+                log.warn("[HOST-PREBOOT] Working directory '$guestCwd' does not exist in rootfs; falling back to '/'")
+                "/"
+            }
+        } else {
+            guestCwd
+        }
+
+        // 6. Host environment construction (strict isolation)
         val hostEnv = assembleHostEnvironment(spec, loader, tmpDir, logFile)
         log.debug("[HOST-PREBOOT] Host environment prepared with ${hostEnv.size} variables (isolated from Android)")
 
-        // 6. Command handover construction
-        val cmd = commandBuilder.build(spec, proot)
+        // 7. Command handover construction
+        val cmd = commandBuilder.build(spec.copy(workingDirectory = finalGuestCwd), proot)
         log.info("[HOST-PREBOOT] Handover command prepared: ${cmd.joinToString(" ")}")
 
         return PrebootLaunchPlan(
             commandLine = cmd,
             environment = hostEnv,
             workingDirectory = rootfs,
-            guestWorkingDirectory = spec.workingDirectory.ifBlank { "/" },
+            guestWorkingDirectory = finalGuestCwd,
             prootExecutable = proot,
             logFile = logFile,
         )
@@ -194,7 +209,7 @@ class HostPreboot(
             put("PROOT_LOG_FILE", targetLog)
         }
         if (!spec.environmentVariables.containsKey("PROOT_VERBOSE")) {
-            put("PROOT_VERBOSE", "9")
+            put("PROOT_VERBOSE", "0")
         }
         // Seccomp mode 2 is enabled by default for optimal syscall filtering performance.
         // PROOT_NO_SECCOMP is only set if explicitly specified in spec.environmentVariables.

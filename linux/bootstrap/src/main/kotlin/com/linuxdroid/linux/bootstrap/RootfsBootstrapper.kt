@@ -295,7 +295,9 @@ class RootfsBootstrapper(
                     val targetCanonical = targetFile.canonicalPath
 
                     // Path traversal guard
-                    if (!targetCanonical.startsWith(destCanonicalPath)) {
+                    val isContained = targetCanonical == destCanonicalPath ||
+                            targetCanonical.startsWith(destCanonicalPath + File.separator)
+                    if (!isContained) {
                         throw FilesystemError(
                             path = entryName,
                             message = "Path traversal attack detected in tarball entry: $entryName",
@@ -310,7 +312,7 @@ class RootfsBootstrapper(
                             Files.deleteIfExists(targetFile.toPath())
                             Files.createSymbolicLink(targetFile.toPath(), Paths.get(entry.linkName))
                         } catch (e: Exception) {
-                            log.debug("Symlink creation fallback for ${targetFile.name} -> ${entry.linkName}: ${e.message}")
+                            log.warn("Symlink creation failed for ${targetFile.name} -> ${entry.linkName}: ${e.message}")
                         }
                     } else {
                         targetFile.parentFile?.mkdirs()

@@ -11,6 +11,8 @@ import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import com.linuxdroid.core.network.NetworkManager
 import com.linuxdroid.core.package_mgr.ApplicationManager
+import com.linuxdroid.core.package_mgr.DesktopExecParser
+import com.linuxdroid.core.runtime.ProotRuntimeBackend
 import com.linuxdroid.core.runtime.RuntimeBackend
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +44,7 @@ class DefaultSessionManager(
 
     private val log = LinuxDroidLogger(LogSubsystem.SESSION)
     private val sessionMap = ConcurrentHashMap<SessionId, Session>()
+    private val activeEnvironments = ConcurrentHashMap<SessionId, Environment>()
 
     private val _sessions = MutableStateFlow<Map<SessionId, Session>>(emptyMap())
     override val sessions: Flow<Map<SessionId, Session>> = _sessions.asStateFlow()
@@ -65,7 +68,9 @@ class DefaultSessionManager(
             startedAt = System.currentTimeMillis(),
         )
         sessionMap[sessionId] = session
+        activeEnvironments[sessionId] = environment
         _sessions.value = sessionMap.toMap()
+        persistSessionState(session)
 
         try {
             // 2. Initialize and start Runtime
@@ -120,17 +125,22 @@ class DefaultSessionManager(
                 sessionScope.launch {
                     log.info("App launch requested from native desktop launcher: app='$name' exec='$execPath'")
                     try {
-                        runtimeBackend.execute(
-                            environment = environment,
-                            command = listOf("/bin/sh", "-c", execPath),
-                            workingDirectory = "/home/user",
-                            extraEnv = mapOf(
-                                "WAYLAND_DISPLAY" to waylandSocket,
-                                "XDG_RUNTIME_DIR" to "/tmp",
-                                "DISPLAY" to ":0",
-                            ),
-                            sessionId = sessionId,
-                        )
+                        val argv = DesktopExecParser.parse(execPath, name = name)
+                        if (argv.isNotEmpty()) {
+                            runtimeBackend.execute(
+                                environment = environment,
+                                command = argv,
+                                workingDirectory = "/home/user",
+                                extraEnv = mapOf(
+                                    "WAYLAND_DISPLAY" to waylandSocket,
+                                    "XDG_RUNTIME_DIR" to "/tmp",
+                                    "DISPLAY" to ":0",
+                                ),
+                                sessionId = sessionId,
+                            )
+                        } else {
+                            log.warn("Parsed argv for app '$name' was empty (exec='$execPath')")
+                        }
                     } catch (e: Exception) {
                         log.error("Failed to launch application '$name' ($execPath)", e)
                     }
@@ -179,6 +189,7 @@ class DefaultSessionManager(
             )
             sessionMap[sessionId] = runningSession
             _sessions.value = sessionMap.toMap()
+            persistSessionState(runningSession)
             log.info("Session $sessionId is now fully active (RUNNING)")
             runningSession
         } catch (e: Exception) {
@@ -190,6 +201,7 @@ class DefaultSessionManager(
             )
             sessionMap[sessionId] = failedSession
             _sessions.value = sessionMap.toMap()
+            persistSessionState(failedSession)
 
             // Teardown partial state safely
             try {
@@ -211,23 +223,52 @@ class DefaultSessionManager(
         val stoppingSession = session.copy(state = SessionState.STOPPING)
         sessionMap[sessionId] = stoppingSession
         _sessions.value = sessionMap.toMap()
+        persistSessionState(stoppingSession)
 
         try {
             guiHostController?.setAppLaunchListener(null)
             audioManager?.stop()
             inputManager?.stop()
             guiHostController?.stop()
-        } catch (e: Exception) {
-            log.warn("Error stopping audio/input/gui: ${e.message}")
-        }
 
-        val stoppedSession = stoppingSession.copy(
-            state = SessionState.STOPPED,
-            stoppedAt = System.currentTimeMillis(),
-        )
-        sessionMap[sessionId] = stoppedSession
-        _sessions.value = sessionMap.toMap()
-        log.info("Session $sessionId cleanly STOPPED")
+            val env = activeEnvironments[sessionId]
+            if (env != null) {
+                runtimeBackend.stop(env)
+            } else if (runtimeBackend is ProotRuntimeBackend) {
+                runtimeBackend.stopForEnvironment(session.environmentId)
+            }
+
+            val stoppedSession = stoppingSession.copy(
+                state = SessionState.STOPPED,
+                stoppedAt = System.currentTimeMillis(),
+            )
+            sessionMap[sessionId] = stoppedSession
+            _sessions.value = sessionMap.toMap()
+            activeEnvironments.remove(sessionId)
+            persistSessionState(stoppedSession)
+            log.info("Session $sessionId cleanly STOPPED")
+        } catch (e: Exception) {
+            log.error("Error during session shutdown for $sessionId: ${e.message}", e)
+            val failedSession = stoppingSession.copy(
+                state = SessionState.FAILED,
+                failureMessage = "Shutdown failure: ${e.message}",
+                stoppedAt = System.currentTimeMillis(),
+            )
+            sessionMap[sessionId] = failedSession
+            _sessions.value = sessionMap.toMap()
+            persistSessionState(failedSession)
+            throw e
+        }
+    }
+
+    private fun persistSessionState(session: Session) {
+        try {
+            val stateFile = File(storage.runtimeStateDir(session.environmentId), "session_state.txt")
+            stateFile.parentFile?.mkdirs()
+            stateFile.writeText("${session.id.value}|${session.state.name}|${session.startedAt}|${session.stoppedAt ?: -1}\n")
+        } catch (e: Exception) {
+            log.warn("Failed to persist session state: ${e.message}")
+        }
     }
 
     override suspend fun getSession(environmentId: EnvironmentId): Session? {

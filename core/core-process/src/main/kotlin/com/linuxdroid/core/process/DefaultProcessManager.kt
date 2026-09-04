@@ -4,7 +4,10 @@ import com.linuxdroid.core.logging.LinuxDroidLogger
 import com.linuxdroid.core.logging.LogSubsystem
 import com.linuxdroid.core.model.*
 import com.linuxdroid.native_bridge.NativeBridge
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -23,10 +26,13 @@ class DefaultProcessManager : ProcessManager {
     override val events: Flow<ProcessStateEvent> = _events.asSharedFlow()
 
     fun registerProcess(handle: ProcessHandle) {
+        val isNew = !processMap.containsKey(handle.handleId)
         processMap[handle.handleId] = handle
         _processes.value = processMap.toMap()
-        _events.tryEmit(ProcessStateEvent.Started(handle.handleId, handle.pid))
-        log.info("Registered process ${handle.handleId} (PID ${handle.pid})")
+        if (isNew) {
+            _events.tryEmit(ProcessStateEvent.Started(handle.handleId, handle.pid))
+            log.info("Registered process ${handle.handleId} (PID ${handle.pid})")
+        }
     }
 
     fun updateProcess(handle: ProcessHandle) {
@@ -38,13 +44,32 @@ class DefaultProcessManager : ProcessManager {
         return processMap[handleId]
     }
 
-    override suspend fun stopProcess(handleId: String, graceful: Boolean) {
-        val handle = processMap[handleId] ?: return
+    override suspend fun stopProcess(handleId: String, graceful: Boolean) = withContext(Dispatchers.IO) {
+        val handle = processMap[handleId] ?: return@withContext
         val pid = handle.pid
         if (pid > 0) {
             val signal = if (graceful) 15 else 9 // SIGTERM vs SIGKILL
             log.info("Sending signal $signal to process $handleId (PID $pid)")
             NativeBridge.sendSignal(pid, signal)
+
+            if (graceful) {
+                // Give up to 1000ms for graceful shutdown before escalating
+                var stillAlive = true
+                for (step in 0 until 10) {
+                    delay(100)
+                    if (NativeBridge.sendSignal(pid, 0) != 0) {
+                        stillAlive = false
+                        break
+                    }
+                }
+                if (stillAlive) {
+                    log.warn("Process $handleId (PID $pid) did not terminate on SIGTERM; escalating to SIGKILL")
+                    NativeBridge.sendSignal(pid, 9)
+                    delay(50)
+                }
+            }
+            // Non-blocking reap attempt
+            NativeBridge.waitpid(pid, false)
         }
         val updated = handle.copy(state = ProcessState.SIGNALED, exitedAt = System.currentTimeMillis())
         processMap[handleId] = updated

@@ -257,41 +257,43 @@ class DiagnosticsManager(
     }
 
     private fun checkXwayland(session: Session?): DiagnosticCheck {
-        val xwaylandRunning = session?.display != null
         return DiagnosticCheck(
             name = "XWayland",
-            status = if (xwaylandRunning) DiagnosticStatus.OK else DiagnosticStatus.NOT_APPLICABLE,
-            detail = if (xwaylandRunning) "Running (${session.display})" else "Standby",
+            status = DiagnosticStatus.NOT_APPLICABLE,
+            detail = "Wayland-native architecture (XWayland disabled)",
         )
     }
 
     private suspend fun checkGpu(): DiagnosticCheck {
-        gpuManager?.let { mgr ->
-            mgr.detect()
-            val info = mgr.gpuInfo
-            return if (info != null && info.hardwareAcceleration) {
-                DiagnosticCheck(
-                    name = "GPU Acceleration",
-                    status = DiagnosticStatus.OK,
-                    detail = "Hardware accelerated (${info.vendor} - ${info.openGlEsVersion})",
-                )
-            } else {
-                DiagnosticCheck(
-                    name = "GPU Acceleration",
-                    status = DiagnosticStatus.WARNING,
-                    detail = info?.openGlEsVersion ?: "Software rendering fallback active",
-                )
-            }
-        }
-        return DiagnosticCheck(
+        val mgr = gpuManager ?: return DiagnosticCheck(
             name = "GPU Acceleration",
-            status = DiagnosticStatus.OK,
-            detail = "Direct Native OpenGL ES 3.2",
+            status = DiagnosticStatus.NOT_APPLICABLE,
+            detail = "GPU subsystem not initialized",
         )
+        mgr.detect()
+        val info = mgr.gpuInfo
+        return if (info != null && info.hardwareAcceleration) {
+            DiagnosticCheck(
+                name = "GPU Acceleration",
+                status = DiagnosticStatus.OK,
+                detail = "Hardware accelerated (${info.vendor} - ${info.openGlEsVersion})",
+            )
+        } else {
+            DiagnosticCheck(
+                name = "GPU Acceleration",
+                status = DiagnosticStatus.WARNING,
+                detail = info?.openGlEsVersion ?: "Software rendering fallback active",
+            )
+        }
     }
 
     private fun checkAudio(): DiagnosticCheck {
-        val latency = audioManager?.getLatencyMs() ?: 20
+        val mgr = audioManager ?: return DiagnosticCheck(
+            name = "Audio Subsystem",
+            status = DiagnosticStatus.NOT_APPLICABLE,
+            detail = "Audio subsystem not initialized",
+        )
+        val latency = mgr.getLatencyMs()
         return DiagnosticCheck(
             name = "Audio Subsystem",
             status = DiagnosticStatus.OK,
@@ -300,8 +302,13 @@ class DiagnosticsManager(
     }
 
     private suspend fun checkNetwork(): DiagnosticCheck {
-        val connected = networkManager?.isConnected?.firstOrNull() ?: true
-        val dnsOk = networkManager?.checkDns() ?: true
+        val mgr = networkManager ?: return DiagnosticCheck(
+            name = "Networking",
+            status = DiagnosticStatus.NOT_APPLICABLE,
+            detail = "Network subsystem not initialized",
+        )
+        val connected = mgr.isConnected.firstOrNull() ?: false
+        val dnsOk = mgr.checkDns()
         return if (connected && dnsOk) {
             DiagnosticCheck(
                 name = "Networking",
@@ -341,18 +348,16 @@ class DiagnosticsManager(
     }
 
     private suspend fun checkResources(environment: Environment): DiagnosticCheck {
-        resourceManager?.let { mgr ->
-            val res = mgr.getResourceStatus(environment)
-            return DiagnosticCheck(
-                name = "System Resources",
-                status = DiagnosticStatus.OK,
-                detail = "RAM: ${res.ramUsedMb}/${res.ramTotalMb}MB | Storage: ${res.storageUsedMb}/${res.storageTotalMb}MB | Battery: ${res.batteryLevel}%",
-            )
-        }
+        val mgr = resourceManager ?: return DiagnosticCheck(
+            name = "System Resources",
+            status = DiagnosticStatus.NOT_APPLICABLE,
+            detail = "Resource monitoring not initialized",
+        )
+        val res = mgr.getResourceStatus(environment)
         return DiagnosticCheck(
             name = "System Resources",
             status = DiagnosticStatus.OK,
-            detail = "Healthy",
+            detail = "RAM: ${res.ramUsedMb}/${res.ramTotalMb}MB | Storage: ${res.storageUsedMb}/${res.storageTotalMb}MB | Battery: ${res.batteryLevel}%",
         )
     }
 }
