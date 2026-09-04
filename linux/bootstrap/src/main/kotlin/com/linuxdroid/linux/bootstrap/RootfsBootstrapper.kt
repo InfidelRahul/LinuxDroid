@@ -21,7 +21,9 @@ import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import java.io.InputStream
+import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -44,6 +46,7 @@ class RootfsBootstrapper(
     private val storage: EnvironmentStorage,
     private val runtimeBackend: RuntimeBackend? = null,
     private val validator: RootfsValidator = RootfsValidator(),
+    private val dynamicResolver: DynamicDistributionResolver = DynamicDistributionResolver(),
 ) {
     private val log = LinuxDroidLogger(LogSubsystem.BOOTSTRAP)
     private val json = Json { prettyPrint = true; ignoreUnknownKeys = true }
@@ -86,7 +89,8 @@ class RootfsBootstrapper(
                 }
             }
 
-            val definition = DistributionCatalog.getDefinition(environment.distribution, environment.architecture)
+            val baseDefinition = DistributionCatalog.getDefinition(environment.distribution, environment.architecture)
+            val definition = dynamicResolver.resolveLatest(baseDefinition, onLog)
             val source = definition.source
             log.info("[BOOTSTRAP_SOURCE] Selected distribution source: ${source.url} (release=${definition.release}, format=${source.format})")
             onLog(">>> [SOURCE] Distribution: ${environment.distribution.displayName} (Release: ${definition.release})")
@@ -238,11 +242,36 @@ class RootfsBootstrapper(
         onProgress: suspend (Float, String) -> Unit,
         onLog: suspend (String) -> Unit = { _ -> },
     ) = withContext(Dispatchers.IO) {
-        val connection = URL(url).openConnection()
-        connection.connect()
+        var currentUrl = url
+        var connection: HttpURLConnection
+        var redirectCount = 0
+        while (true) {
+            connection = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "LinuxDroid/1.0 (Android; ARM64)")
+            }
+            connection.connect()
+            val status = connection.responseCode
+            if (status in 300..399) {
+                val location = connection.getHeaderField("Location")
+                    ?: throw IOException("HTTP $status redirect without Location header from $currentUrl")
+                currentUrl = if (location.startsWith("http")) location else URL(URL(currentUrl), location).toString()
+                redirectCount++
+                if (redirectCount > 8) throw IOException("Too many redirects: $redirectCount (last: $currentUrl)")
+                connection.disconnect()
+                continue
+            }
+            if (status !in 200..299) {
+                throw IOException("HTTP $status error downloading $currentUrl")
+            }
+            break
+        }
+
         val totalBytes = connection.contentLengthLong.takeIf { it > 0 } ?: -1L
 
-        connection.getInputStream().use { input ->
+        connection.inputStream.use { input ->
             dest.outputStream().use { output ->
                 val buffer = ByteArray(32 * 1024)
                 var downloaded = 0L
@@ -258,6 +287,12 @@ class RootfsBootstrapper(
                         if (currentMb >= lastLogMb + 10) {
                             lastLogMb = currentMb
                             onLog(">>> [DOWNLOAD] Transfer progress: $currentMb MB / ${totalBytes / 1_048_576} MB (${(fraction * 100).toInt()}%)")
+                        }
+                    } else {
+                        if (currentMb >= lastLogMb + 10) {
+                            lastLogMb = currentMb
+                            onProgress(0.10f + (currentMb % 100) * 0.005f, "Downloading… ${currentMb}MB")
+                            onLog(">>> [DOWNLOAD] Transfer progress: $currentMb MB downloaded")
                         }
                     }
                 }

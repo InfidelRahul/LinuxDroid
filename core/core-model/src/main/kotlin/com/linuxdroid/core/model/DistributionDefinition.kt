@@ -73,28 +73,29 @@ object DistributionCatalog {
         return when (distribution) {
             Distribution.DEBIAN -> {
                 DistributionDefinition(
-                    id = "debian-trixie-$archSuffix",
-                    name = "Debian 13 Trixie (${architecture.linuxArch} Minimal)",
+                    id = "debian-latest-$archSuffix",
+                    name = "Debian (Latest)",
                     distribution = Distribution.DEBIAN,
                     architecture = architecture,
-                    release = "trixie",
-                    variant = "minimal",
+                    release = "bookworm",
+                    variant = "default",
                     source = DistributionSource(
-                        url = "https://images.linuxcontainers.org/images/debian/trixie/arm64/default/20260831_05:24/rootfs.tar.xz",
-                        expectedChecksum = "1767187c73bf4f84376d2a48741efdf6bd2ca6c22295c1f1ab5934003de0cab4",
+                        url = "https://images.linuxcontainers.org/images/debian/bookworm/arm64/default/20260904_05:24/rootfs.tar.xz",
+                        checksumUrl = "https://images.linuxcontainers.org/images/debian/bookworm/arm64/default/20260904_05:24/SHA256SUMS",
+                        expectedChecksum = "37617e44b118183b2d47c78b24b523ce7c84729154c21ff075be21b3ec4339f0",
                         checksumAlgorithm = "SHA-256",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
                     ),
                     aptSources = """
-                        deb http://deb.debian.org/debian trixie main contrib non-free non-free-firmware
-                        deb http://deb.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
-                        deb http://deb.debian.org/debian trixie-updates main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian bookworm main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian-security bookworm-security main contrib non-free non-free-firmware
+                        deb http://deb.debian.org/debian bookworm-updates main contrib non-free non-free-firmware
                     """.trimIndent() + "\n",
                     manifest = DistributionManifest(
-                        version = "13.0",
-                        release = "trixie",
-                        variant = "minimal",
+                        version = "latest",
+                        release = "bookworm",
+                        variant = "default",
                         defaultShell = "/bin/bash",
                     ),
                 )
@@ -135,11 +136,12 @@ object DistributionCatalog {
                     name = "Kali Linux Rolling (${architecture.linuxArch} Minimal)",
                     distribution = Distribution.KALI,
                     architecture = architecture,
-                    release = "kali-rolling",
-                    variant = "minimal",
+                    release = "current",
+                    variant = "default",
                     source = DistributionSource(
-                        url = "https://images.linuxcontainers.org/images/kali/current/arm64/default/20260830_17:14/rootfs.tar.xz",
-                        expectedChecksum = "90ee4cd49f0ff6a4b6b62ad9144223246b403456f52d1180912bb29f25b00dcd",
+                        url = "https://images.linuxcontainers.org/images/kali/current/arm64/default/20260903_17:14/rootfs.tar.xz",
+                        checksumUrl = "https://images.linuxcontainers.org/images/kali/current/arm64/default/20260903_17:14/SHA256SUMS",
+                        expectedChecksum = "2d1a06f557fab31a55f7a619b6c29c6cc4d036c0e9e3faa8ccf992598318cc8d",
                         checksumAlgorithm = "SHA-256",
                         format = ArchiveFormat.TAR_XZ,
                         stripComponents = 0,
@@ -150,7 +152,7 @@ object DistributionCatalog {
                     manifest = DistributionManifest(
                         version = "rolling",
                         release = "kali-rolling",
-                        variant = "minimal",
+                        variant = "default",
                         defaultShell = "/bin/bash",
                     ),
                 )

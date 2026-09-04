@@ -1209,7 +1209,7 @@ private fun RootfsInstallationCard(
 
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         listOf(
-                            Triple(Distribution.DEBIAN, "Debian 12 (Bookworm)", "Recommended · Ultra-stable & low memory footprint"),
+                            Triple(Distribution.DEBIAN, "Debian (Latest)", "Recommended · Ultra-stable & low memory footprint"),
                             Triple(Distribution.UBUNTU, "Ubuntu 24.04 LTS (Noble)", "Popular · Broad software repository & developer tools"),
                             Triple(Distribution.KALI, "Kali Linux (Rolling)", "Security · Pentesting & analysis environment"),
                         ).forEach { (distro, title, desc) ->
