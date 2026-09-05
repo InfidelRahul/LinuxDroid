@@ -201,12 +201,14 @@ class ProotRuntimeBackend(
 
         val processLog = LinuxDroidLogger(LogSubsystem.PROCESS, resolvedSpec.environmentId, sessionId, category = LogCategory.SYSTEM_PROCESS)
         processLog.info(
-            "[PROCESS_SPAWN] Spawning process: ${resolvedSpec.command.joinToString(" ")} (handle=$handleId)",
+            "[PROCESS_CREATE] handle=$handleId pid=-1 command=\"${resolvedSpec.command.joinToString(" ")}\" cwd=\"${resolvedSpec.workingDirectory}\" environment_count=${resolvedSpec.environmentVariables.size}",
             details = mapOf(
-                "handleId" to handleId,
-                "cwd" to resolvedSpec.workingDirectory,
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to "-1",
                 "command" to resolvedSpec.command.joinToString(" "),
-                "envCount" to resolvedSpec.environmentVariables.size.toString(),
+                "cwd" to resolvedSpec.workingDirectory,
+                "environment_count" to resolvedSpec.environmentVariables.size.toString(),
             )
         )
 
@@ -215,12 +217,17 @@ class ProotRuntimeBackend(
             process = launcher.launchProcess(resolvedSpec, proot, loader, rootfs, tmpDir, logFile)
         } catch (e: IOException) {
             processLog.error(
-                "Failed to launch PRoot executable '${proot.path}': ${e.message}",
+                "[PROCESS_FAIL] handle=$handleId pid=-1 stage=PROOT_STARTUP errno=-1 error=\"${e.message}\"",
                 throwable = e,
                 errorCode = -1,
                 details = mapOf(
+                    "environment_id" to resolvedSpec.environmentId.value,
+                    "handle" to handleId,
+                    "pid" to "-1",
+                    "stage" to "PROOT_STARTUP",
+                    "errno" to "-1",
+                    "error" to (e.message ?: "Launch failed"),
                     "prootPath" to proot.path,
-                    "handleId" to handleId,
                     "command" to resolvedSpec.command.joinToString(" "),
                 )
             )
@@ -232,6 +239,38 @@ class ProotRuntimeBackend(
         }
 
         val pid = getProcessPid(process)
+        processLog.info(
+            "[PROCESS_START] handle=$handleId pid=$pid",
+            details = mapOf(
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to pid.toString(),
+            )
+        )
+
+        val guestInit = resolvedSpec.guestInitPath
+        val useInit = resolvedSpec.executionTarget == ExecutionTarget.GUEST &&
+            resolvedSpec.bootstrapPolicy != BootstrapPolicy.BOOTSTRAP_DIRECT_EXEC &&
+            !guestInit.isNullOrBlank()
+        val actualInitialExec = if (useInit && resolvedSpec.command.firstOrNull() != guestInit) {
+            guestInit
+        } else {
+            resolvedSpec.command.firstOrNull() ?: ""
+        }
+        val requestedCommand = resolvedSpec.command.joinToString(" ")
+        val transitionChain = "$requestedCommand → $actualInitialExec → substituted_loader"
+
+        processLog.info(
+            "[PROCESS_EXEC] handle=$handleId pid=$pid requested_command=\"$requestedCommand\" actual_exec_path=\"$actualInitialExec\" transition=\"$transitionChain\"",
+            details = mapOf(
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to pid.toString(),
+                "requested_command" to requestedCommand,
+                "actual_exec_path" to actualInitialExec,
+                "transition" to transitionChain,
+            )
+        )
 
         val prootProcess = ProotProcess(
             handleId = handleId,
@@ -335,24 +374,70 @@ class ProotRuntimeBackend(
         }
 
         val processLog = LinuxDroidLogger(LogSubsystem.PROCESS, spec.environmentId, category = LogCategory.SYSTEM_PROCESS)
-        if (exitCode == 0) {
-            processLog.info(
-                "[PROCESS_EXIT] Process exited cleanly (exit=0, duration=${durationMs}ms): ${spec.command.joinToString(" ")}",
+        val lastStage = detectLastCompletedStage(spec.environmentId, stderr)
+
+        val signalNumber = when {
+            signaled -> 9
+            exitCode in 129..159 -> exitCode - 128
+            else -> null
+        }
+        val signalName = signalNumber?.let { sig ->
+            when (sig) {
+                1 -> "SIGHUP"
+                2 -> "SIGINT"
+                3 -> "SIGQUIT"
+                4 -> "SIGILL"
+                6 -> "SIGABRT"
+                7 -> "SIGBUS"
+                8 -> "SIGFPE"
+                9 -> "SIGKILL"
+                11 -> "SIGSEGV"
+                13 -> "SIGPIPE"
+                14 -> "SIGALRM"
+                15 -> "SIGTERM"
+                else -> "SIG($sig)"
+            }
+        }
+
+        if (signalNumber != null) {
+            processLog.error(
+                "[PROCESS_SIGNAL] handle=${handle.handleId} pid=${handle.pid} signal=$signalNumber signal_name=$signalName stage=$lastStage duration_ms=${durationMs}ms",
+                errorCode = exitCode,
                 details = mapOf(
-                    "handleId" to handle.handleId,
-                    "exitCode" to "0",
-                    "durationMs" to durationMs.toString(),
+                    "environment_id" to spec.environmentId.value,
+                    "handle" to handle.handleId,
+                    "pid" to handle.pid.toString(),
+                    "signal" to signalNumber.toString(),
+                    "signal_name" to (signalName ?: ""),
+                    "stage" to lastStage,
+                    "duration_ms" to durationMs.toString(),
+                    "stderrSnippet" to stderr.take(500).replace("\n", " "),
+                )
+            )
+        } else if (exitCode == 0) {
+            processLog.info(
+                "[PROCESS_EXIT] handle=${handle.handleId} pid=${handle.pid} exit_code=0 duration_ms=${durationMs}ms",
+                details = mapOf(
+                    "environment_id" to spec.environmentId.value,
+                    "handle" to handle.handleId,
+                    "pid" to handle.pid.toString(),
+                    "exit_code" to "0",
+                    "stage" to lastStage,
+                    "duration_ms" to durationMs.toString(),
                 )
             )
         } else {
             processLog.error(
-                "[PROCESS_FAIL] Process failed with exit code $exitCode (${durationMs}ms): ${spec.command.joinToString(" ")}",
+                "[PROCESS_FAIL] handle=${handle.handleId} pid=${handle.pid} stage=$lastStage errno=$exitCode error=\"${stderr.take(200).replace("\n", " ").trim()}\"",
                 errorCode = exitCode,
                 details = mapOf(
-                    "handleId" to handle.handleId,
-                    "exitCode" to exitCode.toString(),
-                    "durationMs" to durationMs.toString(),
-                    "signaled" to signaled.toString(),
+                    "environment_id" to spec.environmentId.value,
+                    "handle" to handle.handleId,
+                    "pid" to handle.pid.toString(),
+                    "stage" to lastStage,
+                    "errno" to exitCode.toString(),
+                    "error" to stderr.take(200).replace("\n", " ").trim(),
+                    "duration_ms" to durationMs.toString(),
                     "stderrSnippet" to stderr.take(500).replace("\n", " "),
                 )
             )
@@ -410,10 +495,76 @@ class ProotRuntimeBackend(
         val logFile = resolvedSpec.logFilePath?.let { File(it) } ?: storage.prootLogFile(resolvedSpec.environmentId)
         logFile.parentFile?.mkdirs()
 
-        val handle = launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols, logFile)
+        val handleId = UUID.randomUUID().toString()
+        val processLog = LinuxDroidLogger(LogSubsystem.PROCESS, resolvedSpec.environmentId, category = LogCategory.SYSTEM_PROCESS)
+        processLog.info(
+            "[PROCESS_CREATE] handle=$handleId pid=-1 command=\"${resolvedSpec.command.joinToString(" ")}\" cwd=\"${resolvedSpec.workingDirectory}\" environment_count=${resolvedSpec.environmentVariables.size}",
+            details = mapOf(
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to "-1",
+                "command" to resolvedSpec.command.joinToString(" "),
+                "cwd" to resolvedSpec.workingDirectory,
+                "environment_count" to resolvedSpec.environmentVariables.size.toString(),
+            )
+        )
+
+        val handle = try {
+            launcher.launchPty(resolvedSpec, proot, loader, rootfs, tmpDir, rows, cols, logFile)
+        } catch (e: IOException) {
+            processLog.error(
+                "[PROCESS_FAIL] handle=$handleId pid=-1 stage=PROOT_STARTUP errno=-1 error=\"${e.message}\"",
+                throwable = e,
+                errorCode = -1,
+                details = mapOf(
+                    "environment_id" to resolvedSpec.environmentId.value,
+                    "handle" to handleId,
+                    "pid" to "-1",
+                    "stage" to "PROOT_STARTUP",
+                    "errno" to "-1",
+                    "error" to (e.message ?: "Launch failed"),
+                    "prootPath" to proot.path,
+                    "command" to resolvedSpec.command.joinToString(" "),
+                )
+            )
+            throw ProcessError(handleId, "Failed to launch interactive PTY PRoot process: ${e.message}", e)
+        }
+
+        processLog.info(
+            "[PROCESS_START] handle=$handleId pid=${handle.pid}",
+            details = mapOf(
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to handle.pid.toString(),
+            )
+        )
+
+        val guestInit = resolvedSpec.guestInitPath
+        val useInit = resolvedSpec.executionTarget == ExecutionTarget.GUEST &&
+            resolvedSpec.bootstrapPolicy != BootstrapPolicy.BOOTSTRAP_DIRECT_EXEC &&
+            !guestInit.isNullOrBlank()
+        val actualInitialExec = if (useInit && resolvedSpec.command.firstOrNull() != guestInit) {
+            guestInit
+        } else {
+            resolvedSpec.command.firstOrNull() ?: ""
+        }
+        val requestedCommand = resolvedSpec.command.joinToString(" ")
+        val transitionChain = "$requestedCommand → $actualInitialExec → substituted_loader"
+
+        processLog.info(
+            "[PROCESS_EXEC] handle=$handleId pid=${handle.pid} requested_command=\"$requestedCommand\" actual_exec_path=\"$actualInitialExec\" transition=\"$transitionChain\"",
+            details = mapOf(
+                "environment_id" to resolvedSpec.environmentId.value,
+                "handle" to handleId,
+                "pid" to handle.pid.toString(),
+                "requested_command" to requestedCommand,
+                "actual_exec_path" to actualInitialExec,
+                "transition" to transitionChain,
+            )
+        )
 
         val session = PtySession(
-            sessionId = UUID.randomUUID().toString(),
+            sessionId = handleId,
             environmentId = resolvedSpec.environmentId,
             pid = handle.pid,
             masterFd = handle.masterFd,
@@ -664,6 +815,67 @@ class ProotRuntimeBackend(
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────────
+
+    private fun detectLastCompletedStage(environmentId: EnvironmentId, stderr: String): String {
+        val stagesInOrder = listOf(
+            "GUEST_ENTRY",
+            "LOADER_TRANSFER",
+            "LOADER_STACK",
+            "LOADER_STACK_BEGIN",
+            "LOADER_START_STATEMENT",
+            "LOADER_STATEMENT",
+            "LOADER_START",
+            "LOADER_RUNTIME",
+            "EXECVE_DISPATCH_OK",
+            "REGS_AFTER_EXEC",
+            "REGS_PUSH_COMPLETE",
+            "REGS_PUSH_NT_PRSTATUS_COMPLETE",
+            "REGS_PUSH_NT_PRSTATUS_BEGIN",
+            "REGS_PUSH_SYSTEM_CALL_COMPLETE",
+            "REGS_PUSH_SYSTEM_CALL_BEGIN",
+            "REGS_PUSH_BEGIN",
+            "REGS_MODIFIED",
+            "REGS_BEFORE_EXEC",
+            "LOAD_SCRIPT_WRITE_COMPLETE",
+            "LOAD_SCRIPT_WRITE_BEGIN",
+            "LOAD_STATEMENT",
+            "LOAD_SCRIPT_LAYOUT",
+            "LOAD_SCRIPT_PREP",
+            "LOADER_PATH_OK",
+            "INTERP_OK",
+            "LOAD_INFO_OK",
+            "SHEBANG_OK",
+            "EXECVE_PATH_OK",
+            "EXECVE_ENTER",
+            "PROCESS_EXEC",
+            "PROCESS_START",
+            "PROCESS_CREATE",
+        )
+        var logContent = stderr
+        try {
+            val logFile = storage.prootLogFile(environmentId)
+            if (logFile.exists() && logFile.length() > 0) {
+                val length = logFile.length()
+                val readSize = length.coerceAtMost(65536L).toInt()
+                val bytes = java.io.RandomAccessFile(logFile, "r").use { raf ->
+                    raf.seek(length - readSize)
+                    val buffer = ByteArray(readSize)
+                    raf.readFully(buffer)
+                    buffer
+                }
+                logContent = String(bytes) + "\n" + stderr
+            }
+        } catch (_: Throwable) {
+            // ignore read errors
+        }
+
+        for (stage in stagesInOrder) {
+            if (logContent.contains(stage)) {
+                return stage
+            }
+        }
+        return "UNKNOWN"
+    }
 
     private fun getDeviceAbi(): String? {
         return try {
