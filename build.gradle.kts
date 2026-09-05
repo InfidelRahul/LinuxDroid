@@ -16,5 +16,4 @@ if (localPropertiesFile.exists()) {
     localProperties.load(localPropertiesFile.inputStream())
 }
 
-apply(from = "gradle/proot-currency.gradle.kts")
 
