@@ -1,13 +1,14 @@
 LinuxDroid-PRoot v0.1.0
-commit:  42d55fe
+commit:  41b0b57
 ABI:      arm64-v8a
 arch:     aarch64
 cc:       /home/codespace/Android/Sdk/ndk/30.0.16138531/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang
 ndk:      /home/codespace/Android/Sdk/ndk/30.0.16138531
 android: 16+ (API 36)
 sha256:
-  proot:    15042cded751c25f011e4b1a4bec022ee4f541562dd0838db3b51914733aa291
-  loader:   1f54ad559362764bde351a9fc2fdfe9cc02625fa6a60053ef4be0a0146e125d7
-built:   2026-09-05T02:07:30Z
+  proot:    6f43def6f8ac88a2858a115830a6cc61edd59ba45405c23932552898489de7a7
+  loader:   1ef89afa25b222c4ba743a2f0f3487903fd897836c0bf8be7045681f3215f6ce
+built:   2026-09-05T12:54:00Z
+
 
 
